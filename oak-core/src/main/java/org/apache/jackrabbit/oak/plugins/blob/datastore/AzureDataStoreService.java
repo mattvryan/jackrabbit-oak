@@ -39,7 +39,7 @@ public class AzureDataStoreService extends AbstractDataStoreService {
 
     @Override
     protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
-        AzureDataStore dataStore = new AzureDataStore();
+        SharedAzureDataStore dataStore = new SharedAzureDataStore();
 
         Properties properties = new Properties();
         properties.putAll(config);
