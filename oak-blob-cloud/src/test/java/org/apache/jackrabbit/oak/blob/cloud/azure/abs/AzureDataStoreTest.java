@@ -710,6 +710,7 @@ public class AzureDataStoreTest {
         }
     }
 
+    @Ignore
     @Test
     public void testBackendTouchMinModifiedIsZeroDoesNotUpdateLastModified() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (boolean async : Lists.newArrayList(false, true)) {
@@ -824,7 +825,7 @@ public class AzureDataStoreTest {
 
     @Ignore
     @Test
-    public void testBackendGetAllIdentifiersAfterCreateReturnsOne() throws DataStoreException, IOException, NoSuchAlgorithmException {
+    public void testBackendGetAllIdentifiers() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (int expectedRecCount : Lists.newArrayList(1, 2, 5)) {
             for (int i=0; i<expectedRecCount; i++) {
                 File testfile = folder.newFile();
@@ -846,36 +847,42 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
-    @Test
-    public void testBackendGetAllIdentifiersAfterUpdateReturnsOne() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetAllIdentifiersAfterMultipleWritesReturnsAll() {
-
-    }
-
     // GetRecord (Backend)
 
     @Ignore
     @Test
-    public void testBackendGetRecord() {
-
+    public void testBackendGetRecord() throws IOException, DataStoreException {
+        String recordData = "testData";
+        ds.resetSuccessfulUploads();
+        DataRecord record = ds.addRecord(new ByteArrayInputStream(recordData.getBytes()));
+        waitForUpload(ds);
+        DataRecord retrievedRecord = backend.getRecord(record.getIdentifier());
+        validateRecord(record, recordData, retrievedRecord);
     }
 
     @Ignore
     @Test
-    public void testBackendGetRecordNullIdentifier() {
-
+    public void testBackendGetRecordNullIdentifierThrowsNullPointerException() throws DataStoreException {
+        try {
+            DataIdentifier identifier = null;
+            backend.getRecord(identifier);
+            fail();
+        }
+        catch (NullPointerException e) {
+            assertTrue("identifier".equals(e.getMessage()));
+        }
     }
 
     @Ignore
     @Test
-    public void testBackendGetRecordInvalidIdentifier() {
+    public void testBackendGetRecordInvalidIdentifierThrowsDataStoreException() {
+        try {
+            backend.getRecord(new DataIdentifier("invalid"));
+            fail();
+        }
+        catch (DataStoreException e) {
 
+        }
     }
 
     // GetAllRecords (Backend)

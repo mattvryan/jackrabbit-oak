@@ -659,6 +659,10 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     @Override
     public DataRecord getRecord(DataIdentifier identifier) throws DataStoreException {
+        if (null == identifier) {
+            throw new NullPointerException("identifier");
+        }
+
         String key = getKeyName(identifier);
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
@@ -667,6 +671,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
                 throw new DataStoreException("No connection to Azure Blob Storage");
             }
             CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+            blob.downloadAttributes();
             return new AzureBlobStoreDataRecord(blob,
                     blob.getName(),
                     blob.getProperties().getLastModified().getTime(),
@@ -750,7 +755,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
         public AzureBlobStoreDataRecord(final CloudBlobContainer container, final String key, long lastModified, long length, final boolean isMeta) {
             this.blob = Optional.absent();
             this.container = Optional.of(container);
-            this.identifier = new DataIdentifier(key);
+            this.identifier = new DataIdentifier(getIdentifierName(key));
             this.lastModified = lastModified;
             this.length = length;
             this.isMeta = isMeta;
@@ -759,7 +764,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
         public AzureBlobStoreDataRecord(final CloudBlob blob, final String key, long lastModified, long length, final boolean isMeta) {
             this.blob = Optional.of(blob);
             this.container = Optional.absent();
-            this.identifier = new DataIdentifier(key);
+            this.identifier = new DataIdentifier(getIdentifierName(key));
             this.lastModified = lastModified;
             this.length = length;
             this.isMeta = isMeta;
