@@ -18,6 +18,7 @@ package org.apache.jackrabbit.oak.blob.cloud.azure.abs;
 
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
+import com.google.common.base.Strings;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -25,7 +26,6 @@ import com.google.common.collect.Sets;
 import com.microsoft.azure.storage.CloudStorageAccount;
 import com.microsoft.azure.storage.StorageException;
 import com.microsoft.azure.storage.blob.*;
-import org.apache.commons.lang3.ObjectUtils;
 import org.apache.jackrabbit.core.data.*;
 import org.apache.jackrabbit.core.data.util.NamedThreadFactory;
 import org.apache.jackrabbit.oak.blob.cloud.aws.s3.Utils;
@@ -40,8 +40,6 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 
-import static java.lang.System.in;
-
 public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     /**
@@ -51,7 +49,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     private static final String KEY_PREFIX = "dataStore_";
 
-    private static final String META_KEY_PREFIX = "META/";
+    private static final String META_DIR_NAME = "META";
 
     private Properties properties;
 
@@ -81,21 +79,10 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
     private static String getIdentifierName(String key) {
         if (!key.contains(Utils.DASH)) {
             return null;
-        } else if (key.contains(META_KEY_PREFIX)) {
+        } else if (key.contains(META_DIR_NAME)) {
             return key;
         }
         return key.substring(0, 4) + key.substring(5);
-    }
-
-    private static String addMetaKeyPrefix(String key) {
-        return META_KEY_PREFIX + key;
-    }
-
-    private static String stripMetaKeyPrefix(String name) {
-        if (name.startsWith(META_KEY_PREFIX)) {
-            return name.substring(META_KEY_PREFIX.length());
-        }
-        return name;
     }
 
     @Override
@@ -506,14 +493,21 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     @Override
     public void addMetadataRecord(InputStream input, String name) throws DataStoreException {
-        String key = addMetaKeyPrefix(name);
+        if (null == input) {
+            throw new NullPointerException("input");
+        }
+        if (Strings.isNullOrEmpty(name)) {
+            throw new IllegalArgumentException("name");
+        }
+
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
             if (null == getAzureContainer()) {
                 throw new DataStoreException("No connection to Azure Blob Storage");
             }
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
+            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
 
             blob.upload(input, -1);
         }
@@ -529,14 +523,21 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     @Override
     public void addMetadataRecord(File input, String name) throws DataStoreException {
-        String key = addMetaKeyPrefix(name);
+        if (null == input) {
+            throw new NullPointerException("input");
+        }
+        if (Strings.isNullOrEmpty(name)) {
+            throw new IllegalArgumentException("name");
+        }
+
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
             if (null == getAzureContainer()) {
                 throw new DataStoreException("No connection to Azure Blob Storage");
             }
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
+            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
             blob.upload(new FileInputStream(input), input.length());
         }
         catch (Exception e) {
@@ -557,7 +558,9 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
             if (null == getAzureContainer()) {
                 throw new DataStoreException("No connection to Azure Blob Storage");
             }
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(addMetaKeyPrefix(name));
+            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
+            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
+            blob.downloadAttributes();
             long lastModified = blob.getProperties().getLastModified().getTime();
             long length = blob.getProperties().getLength();
             return new AzureBlobStoreDataRecord(getAzureContainer(), name, lastModified, length, true);
@@ -574,23 +577,33 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     @Override
     public List<DataRecord> getAllMetadataRecords(String prefix) {
+        if (null == prefix) {
+            throw new NullPointerException("prefix");
+        }
+
         final List<DataRecord> records = Lists.newArrayList();
-        final String metaPrefix = addMetaKeyPrefix(prefix);
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
             if (null != getAzureContainer()) {
-                for (ListBlobItem item : getAzureContainer().listBlobs()) {
-                    if (item instanceof CloudBlob && ((CloudBlob) item).getName().startsWith(metaPrefix)) {
+                CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
+                for (ListBlobItem item : metaDir.listBlobs(prefix)) {
+                    if (item instanceof CloudBlob) {
                         CloudBlob blob = (CloudBlob) item;
                         records.add(new AzureBlobStoreDataRecord(getAzureContainer(),
-                                stripMetaKeyPrefix(blob.getName()),
+                                blob.getName(),
                                 blob.getProperties().getLastModified().getTime(),
                                 blob.getProperties().getLength(),
                                 true));
                     }
                 }
             }
+        }
+        catch (URISyntaxException e) {
+            // TODO: error message
+        }
+        catch (StorageException e) {
+            // TODO: error message
         }
         finally {
             if (null != contextClassLoader) {
@@ -602,14 +615,14 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     @Override
     public boolean deleteMetadataRecord(String name) {
-        String key = addMetaKeyPrefix(name);
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
             if (null == getAzureContainer()) {
                 throw new DataStoreException("No connection to Azure Blob Storage");
             }
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
+            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
             return blob.deleteIfExists();
         } catch (Exception e) { }
         finally {
@@ -622,13 +635,17 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
 
     @Override
     public void deleteAllMetadataRecords(String prefix) {
-        final String metaPrefix = addMetaKeyPrefix(prefix);
+        if (null == prefix) {
+            throw new NullPointerException("prefix");
+        }
+
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
             if (null != getAzureContainer()) {
-                for (ListBlobItem item : getAzureContainer().listBlobs()) {
-                    if (item instanceof CloudBlob && ((CloudBlob) item).getName().startsWith(metaPrefix)) {
+                CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
+                for (ListBlobItem item : metaDir.listBlobs(prefix)) {
+                    if (item instanceof CloudBlob) {
                         ((CloudBlob)item).deleteIfExists();
                     }
                 }
@@ -648,7 +665,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
                     @Override
                     public DataRecord apply(CloudBlob input) {
                         return new AzureBlobStoreDataRecord(input,
-                                input.getName(),
+                                getIdentifierName(input.getName()),
                                 input.getProperties().getLastModified().getTime(),
                                 input.getProperties().getLength(),
                                 true);
@@ -673,7 +690,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
             CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
             blob.downloadAttributes();
             return new AzureBlobStoreDataRecord(blob,
-                    blob.getName(),
+                    getIdentifierName(blob.getName()),
                     blob.getProperties().getLastModified().getTime(),
                     blob.getProperties().getLength(),
                     true);
@@ -755,7 +772,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
         public AzureBlobStoreDataRecord(final CloudBlobContainer container, final String key, long lastModified, long length, final boolean isMeta) {
             this.blob = Optional.absent();
             this.container = Optional.of(container);
-            this.identifier = new DataIdentifier(getIdentifierName(key));
+            this.identifier = new DataIdentifier(key);
             this.lastModified = lastModified;
             this.length = length;
             this.isMeta = isMeta;
@@ -764,7 +781,7 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
         public AzureBlobStoreDataRecord(final CloudBlob blob, final String key, long lastModified, long length, final boolean isMeta) {
             this.blob = Optional.of(blob);
             this.container = Optional.absent();
-            this.identifier = new DataIdentifier(getIdentifierName(key));
+            this.identifier = new DataIdentifier(key);
             this.lastModified = lastModified;
             this.length = length;
             this.isMeta = isMeta;
@@ -788,12 +805,18 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
         @Override
         public InputStream getStream() throws DataStoreException {
             try {
-                CloudBlob blob = this.blob.isPresent() ? this.blob.get() :
-                        container.get().getBlockBlobReference(isMeta ? addMetaKeyPrefix(identifier.toString()) : getKeyName(identifier));
-                PipedInputStream in = new PipedInputStream();
-                PipedOutputStream out = new PipedOutputStream(in);
-                blob.download(out);
-                return in;
+                CloudBlob blob;
+                if (this.blob.isPresent()) {
+                    blob = this.blob.get();
+                }
+                else if (isMeta) {
+                    CloudBlobDirectory metaDir = container.get().getDirectoryReference(META_DIR_NAME);
+                    blob = metaDir.getBlockBlobReference(identifier.toString());
+                }
+                else {
+                    blob = container.get().getBlockBlobReference(identifier.toString());
+                }
+                return blob.openInputStream();
             }
             catch (Exception e) {
                 throw new DataStoreException(e);

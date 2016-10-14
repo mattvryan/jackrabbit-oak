@@ -18,6 +18,7 @@ package org.apache.jackrabbit.oak.blob.cloud.azure.abs;
 
 import com.amazonaws.util.StringInputStream;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.microsoft.azure.storage.CloudStorageAccount;
 import com.microsoft.azure.storage.StorageException;
@@ -40,10 +41,7 @@ import java.security.DigestOutputStream;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Iterator;
-import java.util.Properties;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 import static org.apache.commons.codec.binary.Hex.encodeHexString;
 import static org.apache.commons.io.FileUtils.copyInputStreamToFile;
@@ -86,6 +84,7 @@ public class AzureDataStoreTest {
         ds = null;
 
         // Empty the container
+        backend.deleteAllMetadataRecords("");
         String connectionString = String.format(
                 "DefaultEndpointsProtocol=http;AccountName=%s;AccountKey=%s",
                 props.getProperty(AzureConstants.AZURE_ACCOUNT_NAME, ""),
@@ -180,7 +179,12 @@ public class AzureDataStoreTest {
         return encodeHexString(digest.digest());
     }
 
-    @Ignore
+    private static int countIteratorEntries(final Iterator<?> iter) {
+        int ctr = 0;
+        while (iter.hasNext()) { iter.next(); ++ctr; }
+        return ctr;
+    }
+
     @Test
     public void testCreateAndDeleteBlobHappyPath() throws DataStoreException, IOException {
         ds.resetSuccessfulUploads();
@@ -199,7 +203,6 @@ public class AzureDataStoreTest {
         assertFalse(backend.exists(uploadedRecord.getIdentifier()));
     }
 
-    @Ignore
     @Test
     public void testCreateAndUpdateBlobHappyPath() throws DataStoreException, IOException {
         ds.resetSuccessfulUploads();
@@ -225,7 +228,6 @@ public class AzureDataStoreTest {
         assertFalse(backend.exists(uploadedRecord.getIdentifier()));
     }
 
-    @Ignore
     @Test
     public void testCreateAndReUploadBlob() throws DataStoreException, IOException {
         ds.resetSuccessfulUploads();
@@ -251,7 +253,6 @@ public class AzureDataStoreTest {
         assertFalse(backend.exists(createdRecord.getIdentifier()));
     }
 
-    @Ignore
     @Test
     public void testListBlobs() throws DataStoreException, IOException {
         ds.resetSuccessfulUploads();
@@ -271,7 +272,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testDeleteAllOlderThan() throws DataStoreException, IOException {
         ds.resetSuccessfulUploads();
@@ -301,14 +301,7 @@ public class AzureDataStoreTest {
         int recordsDeleted = ds.deleteAllOlderThan(deleteAllOlderThanMillis);
         assertEquals(2, recordsDeleted);
 
-        Iterator<DataIdentifier> iter = ds.getAllIdentifiers();
-        int recordsNotDeleted = 0;
-        while (iter.hasNext()) {
-            ds.deleteRecord(iter.next());
-            ++recordsNotDeleted;
-        }
-
-        assertEquals(1, recordsNotDeleted);
+        assertEquals(1, countIteratorEntries(ds.getAllIdentifiers()));
     }
 
 
@@ -331,7 +324,6 @@ public class AzureDataStoreTest {
 
     // Write (Backend)
 
-    @Ignore
     @Test
     public void testBackendWriteDifferentSizedRecords() throws IOException, NoSuchAlgorithmException, DataStoreException {
         boolean async = true;
@@ -392,7 +384,6 @@ public class AzureDataStoreTest {
         while (!async);
     }
 
-    @Ignore
     @Test
     public void testBackendWriteRecordNullIdentifierThrowsNullPointerException() throws IOException, DataStoreException{
         boolean async = true;
@@ -417,7 +408,6 @@ public class AzureDataStoreTest {
         while (!async);
     }
 
-    @Ignore
     @Test
     public void testBackendWriteRecordNullFileThrowsNullPointerException() throws DataStoreException {
         boolean async = true;
@@ -442,7 +432,6 @@ public class AzureDataStoreTest {
         while (!async);
     }
 
-    @Ignore
     @Test
     public void testBackendWriteRecordFileNotFoundThrowsException() throws IOException, NoSuchAlgorithmException {
         boolean async = true;
@@ -468,7 +457,6 @@ public class AzureDataStoreTest {
         while (!async);
     }
 
-    @Ignore
     @Test
     public void testBackendWriteAsyncNullCallbackThrowsNullPointerException() throws IOException, NoSuchAlgorithmException, DataStoreException {
         File testFile = folder.newFile();
@@ -486,7 +474,6 @@ public class AzureDataStoreTest {
 
     // GetLength (Backend)
 
-    @Ignore
     @Test
     public void testBackendGetLengthNullIdentifierThrowsNullPointerException() throws DataStoreException {
         DataIdentifier identifier = null;
@@ -499,7 +486,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendGetLengthInvalidIdentifierThrowsDataStoreException() {
         DataIdentifier identifier = new DataIdentifier("fake");
@@ -514,7 +500,6 @@ public class AzureDataStoreTest {
 
     // LastModified (Backend)
 
-    @Ignore
     @Test
     public void testBackendLastModifiedChangedOnUpdate() throws IOException, NoSuchAlgorithmException, DataStoreException{
         File testFile1 = folder.newFile();
@@ -522,6 +507,8 @@ public class AzureDataStoreTest {
         DataIdentifier identifier = new DataIdentifier(getIdForInputStream(new FileInputStream(testFile1)));
         backend.write(identifier, testFile1);
         long timestamp1 = backend.getLastModified(identifier);
+
+        try { Thread.sleep(1001); } catch (InterruptedException e) { }
 
         File testFile2 = folder.newFile();
         copyInputStreamToFile(randomStream(1, 20), testFile2);
@@ -531,7 +518,6 @@ public class AzureDataStoreTest {
         assertNotEquals(timestamp1, timestamp2);
     }
 
-    @Ignore
     @Test
     public void testBackendLastModifiedNullIdentifierThrowsNullPointerException() throws DataStoreException {
         DataIdentifier identifier = null;
@@ -544,7 +530,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendLastModifiedInvalidIdentifierThrowsDataStoreException() {
         DataIdentifier identifier = new DataIdentifier("fake");
@@ -559,7 +544,6 @@ public class AzureDataStoreTest {
 
     // Read (Backend)
 
-    @Ignore
     @Test
     public void testBackendReadRecordNullIdentifier() throws DataStoreException {
         DataIdentifier identifier = null;
@@ -572,7 +556,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendReadRecordInvalidIdentifier() {
         DataIdentifier identifier = new DataIdentifier("fake");
@@ -587,7 +570,6 @@ public class AzureDataStoreTest {
 
     // Delete (Backend)
 
-    @Ignore
     @Test
     public void testBackendDeleteRecordNullIdentifier() throws DataStoreException {
         DataIdentifier identifier = null;
@@ -600,7 +582,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendDeleteRecordInvalidIdentifier() {
         DataIdentifier identifier = new DataIdentifier("fake");
@@ -615,7 +596,6 @@ public class AzureDataStoreTest {
 
     // DeleteAllOlderThan (Backend)
 
-    @Ignore
     @Test
     public void testBackendDeleteAllOlderThanRemovesCorrectRecords() throws IOException, NoSuchAlgorithmException, DataStoreException {
         boolean deleteAll = true;
@@ -662,7 +642,6 @@ public class AzureDataStoreTest {
 
     // Touch (Backend)
 
-    @Ignore
     @Test
     public void testBackendTouchRecordUpdatesLastModified() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (boolean async : Lists.newArrayList(false, true)) {
@@ -686,7 +665,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendTouchMinModifiedOlderThanLastModifiedDoesNotUpdateLastModified() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (boolean async : Lists.newArrayList(false, true)) {
@@ -710,7 +688,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendTouchMinModifiedIsZeroDoesNotUpdateLastModified() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (boolean async : Lists.newArrayList(false, true)) {
@@ -733,7 +710,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendTouchRecordDoesNotModifyData() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (boolean async : Lists.newArrayList(false, true)) {
@@ -765,13 +741,11 @@ public class AzureDataStoreTest {
 
     // Exists (Backend)
 
-    @Ignore
     @Test
     public void testBackendNotCreatedRecordDoesNotExist() throws DataStoreException {
         assertFalse(backend.exists(new DataIdentifier(("fake"))));
     }
 
-    @Ignore
     @Test
     public void testBackendRecordExistsNullIdentifierThrowsNullPointerException() throws DataStoreException {
         try {
@@ -782,7 +756,6 @@ public class AzureDataStoreTest {
         catch (NullPointerException e) { }
     }
 
-    @Ignore
     @Test
     public void testBackendRecordExistsDoesNotUpdateLastModified() throws DataStoreException, IOException, NoSuchAlgorithmException {
         File testFile1 = folder.newFile();
@@ -798,7 +771,6 @@ public class AzureDataStoreTest {
         assertEquals(lastModified, backend.getLastModified(identifier));
     }
 
-    @Ignore
     @Test
     public void testBackendRecordExistsWithTouchUpdatesLastModified() throws DataStoreException, IOException, NoSuchAlgorithmException {
         File testFile1 = folder.newFile();
@@ -816,30 +788,23 @@ public class AzureDataStoreTest {
 
     // GetAllIdentifiers (Backend)
 
-    @Ignore
     @Test
     public void testBackendGetAllIdentifiersNoRecordsReturnsNone() throws DataStoreException {
         Iterator<DataIdentifier> allIdentifiers = backend.getAllIdentifiers();
         assertFalse(allIdentifiers.hasNext());
     }
 
-    @Ignore
     @Test
     public void testBackendGetAllIdentifiers() throws DataStoreException, IOException, NoSuchAlgorithmException {
         for (int expectedRecCount : Lists.newArrayList(1, 2, 5)) {
             for (int i=0; i<expectedRecCount; i++) {
                 File testfile = folder.newFile();
-                copyInputStreamToFile(randomStream(i, 1024), testfile);
+                copyInputStreamToFile(randomStream(i, 10), testfile);
                 DataIdentifier identifier = new DataIdentifier(getIdForInputStream(new FileInputStream(testfile)));
                 backend.write(identifier, testfile);
             }
 
-            Iterator<DataIdentifier> allIdentifiersIter = backend.getAllIdentifiers();
-            int actualRecCount = 0;
-            while (allIdentifiersIter.hasNext()) {
-                actualRecCount++;
-                allIdentifiersIter.next();
-            }
+            int actualRecCount = countIteratorEntries(backend.getAllIdentifiers());
 
             backend.deleteAllOlderThan(DateTime.now().getMillis() + 10000);
 
@@ -849,7 +814,6 @@ public class AzureDataStoreTest {
 
     // GetRecord (Backend)
 
-    @Ignore
     @Test
     public void testBackendGetRecord() throws IOException, DataStoreException {
         String recordData = "testData";
@@ -860,7 +824,6 @@ public class AzureDataStoreTest {
         validateRecord(record, recordData, retrievedRecord);
     }
 
-    @Ignore
     @Test
     public void testBackendGetRecordNullIdentifierThrowsNullPointerException() throws DataStoreException {
         try {
@@ -873,7 +836,6 @@ public class AzureDataStoreTest {
         }
     }
 
-    @Ignore
     @Test
     public void testBackendGetRecordInvalidIdentifierThrowsDataStoreException() {
         try {
@@ -887,231 +849,265 @@ public class AzureDataStoreTest {
 
     // GetAllRecords (Backend)
 
-    @Ignore
     @Test
-    public void testBackendGetAllRecordsNoRecordsReturnsNone() {
+    public void testBackendGetAllRecordsReturnsAll() throws DataStoreException, IOException {
+        for (int recCount : Lists.newArrayList(0, 1, 2, 5)) {
+            Map<DataIdentifier, String> addedRecords = Maps.newHashMap();
+            if (0 < recCount) {
+                ds.resetSuccessfulUploads();
+                for (int i = 0; i < recCount; i++) {
+                    String data = String.format("testData%d", i);
+                    DataRecord record = ds.addRecord(new ByteArrayInputStream(data.getBytes()));
+                    addedRecords.put(record.getIdentifier(), data);
+                }
+                waitForUpload(ds, recCount);
+            }
 
+            Iterator<DataRecord> iter = backend.getAllRecords();
+            List<DataIdentifier> identifiers = Lists.newArrayList();
+            int actualCount = 0;
+            while (iter.hasNext()) {
+                DataRecord record = iter.next();
+                identifiers.add(record.getIdentifier());
+                assertTrue(addedRecords.containsKey(record.getIdentifier()));
+                StringWriter writer = new StringWriter();
+                IOUtils.copy(record.getStream(), writer);
+                assertTrue(writer.toString().equals(addedRecords.get(record.getIdentifier())));
+                actualCount++;
+            }
+
+            for (DataIdentifier identifier : identifiers) {
+                ds.deleteRecord(identifier);
+            }
+
+            assertEquals(recCount, actualCount);
+        }
     }
 
-    @Ignore
     @Test
-    public void testBackendGetAllRecordsAfterCreateReturnsOne() {
+    public void testBackendGetAllRecordsAfterUpdateReturnsOne() throws DataStoreException, IOException {
+        ds.resetSuccessfulUploads();
+        DataRecord uploadedRecord = ds.addRecord(new ByteArrayInputStream("testData".getBytes()));
+        waitForUpload(ds);
 
-    }
+        assertEquals(1, countIteratorEntries(backend.getAllRecords()));
 
-    @Ignore
-    @Test
-    public void testBackendGetAllRecordsAfterUpdateReturnsOne() {
+        File testFile = folder.newFile();
+        copyInputStreamToFile(randomStream(0, 10), testFile);
+        backend.write(uploadedRecord.getIdentifier(), testFile);
 
-    }
+        assertEquals(1, countIteratorEntries(backend.getAllRecords()));
 
-    @Ignore
-    @Test
-    public void testBackendGetAllRecordsAfterMultipleWritesReturnsAll() {
-
+        ds.deleteRecord(uploadedRecord.getIdentifier());
     }
 
     // AddMetadataRecord (Backend)
 
-    @Ignore
     @Test
-    public void testBackendAddMetadataRecordFromInputStream() {
+    public void testBackendAddMetadataRecordsFromInputStream() throws DataStoreException, IOException, NoSuchAlgorithmException {
+        for (boolean fromInputStream : Lists.newArrayList(false, true)) {
+            String prefix = String.format("%s.META.", getClass().getSimpleName());
+            for (int count : Lists.newArrayList(1, 3)) {
+                Map<String, String> records = Maps.newHashMap();
+                for (int i = 0; i < count; i++) {
+                    String recordName = String.format("%sname.%d", prefix, i);
+                    String data = String.format("testData%d", i);
+                    records.put(recordName, data);
 
+                    if (fromInputStream) {
+                        backend.addMetadataRecord(new ByteArrayInputStream(data.getBytes()), recordName);
+                    }
+                    else {
+                        File testFile = folder.newFile();
+                        copyInputStreamToFile(new StringInputStream(data), testFile);
+                        backend.addMetadataRecord(testFile, recordName);
+                    }
+                }
+
+                assertEquals(count, backend.getAllMetadataRecords(prefix).size());
+
+                for (Map.Entry<String, String> entry : records.entrySet()) {
+                    DataRecord record = backend.getMetadataRecord(entry.getKey());
+                    StringWriter writer = new StringWriter();
+                    IOUtils.copy(record.getStream(), writer);
+                    backend.deleteMetadataRecord(entry.getKey());
+                    assertTrue(writer.toString().equals(entry.getValue()));
+                }
+
+                assertEquals(0, backend.getAllMetadataRecords(prefix).size());
+            }
+        }
     }
 
-    @Ignore
     @Test
-    public void testBackendAddMetadataRecordFromFile() {
-
+    public void testBackendAddMetadataRecordFileNotFoundThrowsDataStoreException() throws IOException {
+        File testFile = folder.newFile();
+        copyInputStreamToFile(randomStream(0, 10), testFile);
+        testFile.delete();
+        try {
+            backend.addMetadataRecord(testFile, "name");
+            fail();
+        }
+        catch (DataStoreException e) {
+            assertTrue(e.getCause() instanceof FileNotFoundException);
+        }
     }
 
-    @Ignore
     @Test
-    public void testBackendAddMetadataRecordInputStreamNotFound() {
-
+    public void testBackendAddMetadataRecordNullInputStreamThrowsNullPointerException() throws DataStoreException {
+        try {
+            backend.addMetadataRecord((InputStream)null, "name");
+            fail();
+        }
+        catch (NullPointerException e) {
+            assertTrue("input".equals(e.getMessage()));
+        }
     }
 
-    @Ignore
     @Test
-    public void testBackendAddMetadataRecordFileNotFound() {
-
+    public void testBackendAddMetadataRecordNullFileThrowsNullPointerException() throws DataStoreException {
+        try {
+            backend.addMetadataRecord((File)null, "name");
+            fail();
+        }
+        catch (NullPointerException e) {
+            assertTrue("input".equals(e.getMessage()));
+        }
     }
 
-    @Ignore
     @Test
-    public void testBackendAddMetadataRecordNullInputStream() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendAddMetadataRecordNullFile() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendAddMetadataRecordWithInputStreamNullName() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendAddMetadataRecordWithInputStreamEmptyName() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendAddMetadataRecordWithFileNullName() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendAddMetadataRecordWithFileEmptyName() {
-
+    public void testBackendAddMetadataRecordNullEmptyNameThrowsIllegalArgumentException() throws DataStoreException, IOException {
+        final String data = "testData";
+        for (boolean fromInputStream : Lists.newArrayList(false, true)) {
+            for (String name : Lists.newArrayList(null, "")) {
+                try {
+                    if (fromInputStream) {
+                        backend.addMetadataRecord(new ByteArrayInputStream(data.getBytes()), name);
+                    } else {
+                        File testFile = folder.newFile();
+                        copyInputStreamToFile(new ByteArrayInputStream(data.getBytes()), testFile);
+                        backend.addMetadataRecord(testFile, name);
+                    }
+                    fail();
+                } catch (IllegalArgumentException e) {
+                    assertTrue("name".equals(e.getMessage()));
+                }
+            }
+        }
     }
 
     // GetMetadataRecord (Backend)
 
-    @Ignore
     @Test
-    public void testBackendGetMetadataRecord() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetMetadataRecordNameDoesNotExist() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetMetadataRecordNullName() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetMetadataRecordEmptyName() {
-
+    public void testBackendGetMetadataRecordInvalidName() throws DataStoreException {
+        backend.addMetadataRecord(randomStream(0, 10), "testRecord");
+        for (String name : Lists.newArrayList("invalid", "", null)) {
+            assertNull(backend.getMetadataRecord(name));
+        }
+        backend.deleteMetadataRecord("testRecord");
     }
 
     // GetAllMetadataRecords (Backend)
 
-    @Ignore
     @Test
-    public void testBackendGetAllMetadataRecordsPrefixMatchesAll() {
+    public void testBackendGetAllMetadataRecordsPrefixMatchesAll() throws DataStoreException {
+        assertEquals(0, backend.getAllMetadataRecords("").size());
 
+        String prefixAll = "prefix1";
+        String prefixSome = "prefix1.prefix2";
+        String prefixOne = "prefix1.prefix3";
+        String prefixNone = "prefix4";
+
+        backend.addMetadataRecord(randomStream(1, 10), String.format("%s.testRecord1", prefixAll));
+        backend.addMetadataRecord(randomStream(2, 10), String.format("%s.testRecord2", prefixSome));
+        backend.addMetadataRecord(randomStream(3, 10), String.format("%s.testRecord3", prefixSome));
+        backend.addMetadataRecord(randomStream(4, 10), String.format("%s.testRecord4", prefixOne));
+        backend.addMetadataRecord(randomStream(5, 10), "prefix5.testRecord5");
+
+        assertEquals(5, backend.getAllMetadataRecords("").size());
+        assertEquals(4, backend.getAllMetadataRecords(prefixAll).size());
+        assertEquals(2, backend.getAllMetadataRecords(prefixSome).size());
+        assertEquals(1, backend.getAllMetadataRecords(prefixOne).size());
+        assertEquals(0, backend.getAllMetadataRecords(prefixNone).size());
+
+        backend.deleteAllMetadataRecords("");
+        assertEquals(0, backend.getAllMetadataRecords("").size());
     }
 
-    @Ignore
     @Test
-    public void testBackendGetAllMetadataRecordsPrefixMatchesSome() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetAllMetadataRecordsPrefixMatchesOne() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetAllMetadataRecordsPrefixMatchesNone() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetAllMetadataRecordsNoRecordsReturnsNone() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetAllMetadataRecordsNullPrefix() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendGetAllMetadataRecordsEmptyPrefix() {
-
+    public void testBackendGetAllMetadataRecordsNullPrefixThrowsNullPointerException() {
+        try {
+            backend.getAllMetadataRecords(null);
+            fail();
+        }
+        catch (NullPointerException e) {
+            assertTrue("prefix".equals(e.getMessage()));
+        }
     }
 
     // DeleteMetadataRecord (Backend)
 
-    @Ignore
     @Test
-    public void testBackendDeleteMetadataRecord() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendDeleteMetadataRecordNameDoesNotExist() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendDeleteMetadataRecordNullName() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendDeleteMetadataRecordEmptyName() {
-
+    public void testBackendDeleteMetadataRecord() throws DataStoreException {
+        backend.addMetadataRecord(randomStream(0, 10), "name");
+        for (String name : Lists.newArrayList("invalid", "", null)) {
+            assertFalse(backend.deleteMetadataRecord(name));
+        }
+        assertTrue(backend.deleteMetadataRecord("name"));
     }
 
     // DeleteAllMetadataRecords (Backend)
 
-    @Ignore
     @Test
-    public void testBackendDeleteAllMetadataRecordsPrefixMatchesAll() {
+    public void testBackendDeleteAllMetadataRecordsPrefixMatchesAll() throws DataStoreException {
+        String prefixAll = "prefix1";
+        String prefixSome = "prefix1.prefix2";
+        String prefixOne = "prefix1.prefix3";
+        String prefixNone = "prefix4";
 
+        Map<String, Integer> prefixCounts = Maps.newHashMap();
+        prefixCounts.put(prefixAll, 4);
+        prefixCounts.put(prefixSome, 2);
+        prefixCounts.put(prefixOne, 1);
+        prefixCounts.put(prefixNone, 0);
+
+        for (Map.Entry<String, Integer> entry : prefixCounts.entrySet()) {
+            backend.addMetadataRecord(randomStream(1, 10), String.format("%s.testRecord1", prefixAll));
+            backend.addMetadataRecord(randomStream(2, 10), String.format("%s.testRecord2", prefixSome));
+            backend.addMetadataRecord(randomStream(3, 10), String.format("%s.testRecord3", prefixSome));
+            backend.addMetadataRecord(randomStream(4, 10), String.format("%s.testRecord4", prefixOne));
+
+            int preCount = backend.getAllMetadataRecords("").size();
+
+            backend.deleteAllMetadataRecords(entry.getKey());
+
+            int deletedCount = preCount - backend.getAllMetadataRecords("").size();
+            assertEquals(entry.getValue().intValue(), deletedCount);
+
+            backend.deleteAllMetadataRecords("");
+        }
     }
 
-    @Ignore
-    @Test
-    public void testBackendDeleteAllMetadataRecordsPrefixMatchesSome() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendDeleteAllMetadataRecordsPrefixMatchesOne() {
-
-    }
-
-    @Ignore
-    @Test
-    public void testBackendDeleteAllMetadataRecordsPrefixMatchesNone() {
-
-    }
-
-    @Ignore
     @Test
     public void testBackendDeleteAllMetadataRecordsNoRecordsNoChange() {
+        assertEquals(0, backend.getAllMetadataRecords("").size());
 
+        backend.deleteAllMetadataRecords("");
+
+        assertEquals(0, backend.getAllMetadataRecords("").size());
     }
 
-    @Ignore
     @Test
-    public void testBackendDeleteAllMetadataRecordsNullPrefix() {
-
+    public void testBackendDeleteAllMetadataRecordsNullPrefixThrowsNullPointerException() {
+        try {
+            backend.deleteAllMetadataRecords(null);
+            fail();
+        }
+        catch (NullPointerException e) {
+            assertTrue("prefix".equals(e.getMessage()));
+        }
     }
 
-    @Ignore
-    @Test
-    public void testBackendDeleteAllMetadataRecordsEmptyPrefix() {
-
-    }
 
     private static class TestAzureDataStore extends AzureDataStore {
         public TestAzureDataStore(final Properties properties) {
