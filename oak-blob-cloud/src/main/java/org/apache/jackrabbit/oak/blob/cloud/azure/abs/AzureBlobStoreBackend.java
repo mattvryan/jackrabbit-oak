@@ -25,7 +25,13 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.microsoft.azure.storage.CloudStorageAccount;
 import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.*;
+import com.microsoft.azure.storage.blob.BlobProperties;
+import com.microsoft.azure.storage.blob.CloudBlob;
+import com.microsoft.azure.storage.blob.CloudBlobClient;
+import com.microsoft.azure.storage.blob.CloudBlobContainer;
+import com.microsoft.azure.storage.blob.CloudBlobDirectory;
+import com.microsoft.azure.storage.blob.CloudBlockBlob;
+import com.microsoft.azure.storage.blob.ListBlobItem;
 import org.apache.jackrabbit.core.data.*;
 import org.apache.jackrabbit.core.data.util.NamedThreadFactory;
 import org.apache.jackrabbit.oak.blob.cloud.aws.s3.Utils;
@@ -90,15 +96,17 @@ public class AzureBlobStoreBackend implements SharedAzureBlobStoreBackend {
         Properties initProps = null;
         //Check is configuration is already provided. That takes precedence
         //over config provided via file based config
-        if(this.properties != null){
+        if(this.properties != null) {
             initProps = this.properties;
-        } else {
+        }
+        else {
             if(config == null){
                 config = Utils.DEFAULT_CONFIG_FILE;
             }
-            try{
+            try {
                 initProps = Utils.readConfig(config);
-            }catch(IOException e){
+            }
+            catch (IOException e) {
                 throw new DataStoreException("Could not initialize Azure from "
                         + config, e);
             }
