@@ -22,6 +22,7 @@ import org.apache.jackrabbit.oak.api.jmx.PersistentCacheStatsMBean;
 import org.apache.jackrabbit.oak.commons.IOUtils;
 import org.apache.jackrabbit.oak.commons.jmx.AnnotatedStandardMBean;
 import org.apache.jackrabbit.oak.stats.CounterStats;
+import org.apache.jackrabbit.oak.stats.Counting;
 import org.apache.jackrabbit.oak.stats.MeterStats;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.apache.jackrabbit.oak.stats.StatsOptions;
@@ -40,11 +41,14 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
 
     private static final Boolean ENABLE_READ_TIMER;
     private static final Boolean ENABLE_LOAD_TIMER;
+    private static final Boolean ENABLE_REJECTED_PUT;
     static {
         String enableReadTimer = System.getProperty("PersistentCacheStats.readTimer", "false");
         String enableLoadTimer = System.getProperty("PersistentCacheStats.loadTimer", "false");
+        String enableRejectedPut = System.getProperty("PersistentCacheStats.rejectedPut", "false");
         ENABLE_READ_TIMER = Boolean.parseBoolean(enableReadTimer);
         ENABLE_LOAD_TIMER = Boolean.parseBoolean(enableLoadTimer);
+        ENABLE_REJECTED_PUT = Boolean.parseBoolean(enableRejectedPut);
     }
 
     private static final String HITS = "HITS";
@@ -57,6 +61,10 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
     private static final String INVALIDATE_ALL = "INVALIDATE_ALL";
     private static final String READ_TIMER = "READ_TIMER";
     private static final String USED_DISK_SPACE = "USED_SPACE_BYTES";
+    private static final String PUT_REJECTED_ALREADY_PERSISTED = "PUT_REJECTED_ALREADY_PERSISTED";
+    private static final String PUT_REJECTED_ENTRY_NOT_USED = "PUT_REJECTED_ENTRY_NOT_USED";
+    private static final String PUT_REJECTED_FULL_QUEUE = "PUT_REJECTED_FULL_QUEUE";
+    private static final String PUT_REJECTED_SECONDARY_CACHE = "PUT_REJECTED_SECONDARY_CACHE";
 
     private final StatisticsProvider statisticsProvider;
     private final String cacheName;
@@ -84,6 +92,18 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
 
     private final MeterStats invalidateAllMeter;
     private final TimeSeries invalidateAllRateHistory;
+
+    private final MeterStats putRejectedAlreadyPersistedMeter;
+    private final TimeSeries putRejectedAlreadyPersistedHistory;
+
+    private final MeterStats putRejectedEntryNotUsedMeter;
+    private final TimeSeries putRejectedEntryNotUseHistory;
+
+    private final MeterStats putRejectedByFullQueueMeter;
+    private final TimeSeries putRejectedByFullQueueHistory;
+
+    private final MeterStats putRejectedAsCachedInSecMeter;
+    private final TimeSeries putRejectedAsCachedInSecHistory;
 
     private final TimerStats readTimer;
 
@@ -160,6 +180,37 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
             readTimer = StatisticsProvider.NOOP.getTimer(statName, StatsOptions.METRICS_ONLY);
         }
 
+        statName = getStatName(PUT_REJECTED_ALREADY_PERSISTED, cacheName);
+        if (ENABLE_REJECTED_PUT) {
+            putRejectedAlreadyPersistedMeter = statisticsProvider.getMeter(statName, StatsOptions.DEFAULT);
+            putRejectedAlreadyPersistedHistory = getTimeSeries(statName);
+        } else {
+            putRejectedAlreadyPersistedMeter = StatisticsProvider.NOOP.getMeter(statName, StatsOptions.DEFAULT);
+            putRejectedAlreadyPersistedHistory = StatisticsProvider.NOOP.getStats().getTimeSeries(statName, false);
+        }
+
+        statName = getStatName(PUT_REJECTED_ENTRY_NOT_USED, cacheName);
+        if (ENABLE_REJECTED_PUT) {
+            putRejectedEntryNotUsedMeter = statisticsProvider.getMeter(statName, StatsOptions.DEFAULT);
+            putRejectedEntryNotUseHistory = getTimeSeries(statName);
+        } else {
+            putRejectedEntryNotUsedMeter = StatisticsProvider.NOOP.getMeter(statName, StatsOptions.DEFAULT);
+            putRejectedEntryNotUseHistory = StatisticsProvider.NOOP.getStats().getTimeSeries(statName, false);
+        }
+
+        statName = getStatName(PUT_REJECTED_FULL_QUEUE, cacheName);
+        if (ENABLE_REJECTED_PUT) {
+            putRejectedByFullQueueMeter = statisticsProvider.getMeter(statName, StatsOptions.DEFAULT);
+            putRejectedByFullQueueHistory = getTimeSeries(statName);
+        } else {
+            putRejectedByFullQueueMeter = StatisticsProvider.NOOP.getMeter(statName, StatsOptions.DEFAULT);
+            putRejectedByFullQueueHistory = StatisticsProvider.NOOP.getStats().getTimeSeries(statName, false);
+        }
+
+        statName = getStatName(PUT_REJECTED_SECONDARY_CACHE, cacheName);
+        putRejectedAsCachedInSecMeter = statisticsProvider.getMeter(statName, StatsOptions.DEFAULT);
+        putRejectedAsCachedInSecHistory = getTimeSeries(statName);
+
         diskStats = new UsedSpaceTracker(usedSpaceByteCounter);
     }
 
@@ -191,6 +242,22 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
 
     public void markInvalidateAll() {
         invalidateAllMeter.mark();
+    }
+
+    public void markPutRejectedAlreadyPersisted() {
+        putRejectedAlreadyPersistedMeter.mark();
+    }
+
+    public void markPutRejectedEntryNotUsed() {
+        putRejectedEntryNotUsedMeter.mark();
+    }
+
+    public void markPutRejectedAsCachedInSecondary() {
+        putRejectedAsCachedInSecMeter.mark();
+    }
+
+    public void markPutRejectedQueueFull() {
+        putRejectedByFullQueueMeter.mark();
     }
 
     public TimerStats.Context startReadTimer() {
@@ -341,6 +408,27 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
     }
 
     @Override
+    public CompositeData getPutRejectedAlreadyPersistedRateHistory() {
+        return TimeSeriesStatsUtil.asCompositeData(putRejectedAlreadyPersistedHistory, "Persistent cache put rejected (already persisted)");
+    }
+
+    @Override
+    public CompositeData getPutRejectedEntryNotUsedRateHistory() {
+        return TimeSeriesStatsUtil.asCompositeData(putRejectedEntryNotUseHistory, "Persistent cache put rejected (entry not used)");
+    }
+
+    @Override
+    public CompositeData getPutRejectedQueueFullRateHistory() {
+        return TimeSeriesStatsUtil.asCompositeData(putRejectedByFullQueueHistory, "Persistent cache put rejected (queue is full)");
+    }
+
+    @Override
+    public CompositeData getPutRejectedAsCachedInSecRateHistory() {
+        return TimeSeriesStatsUtil.asCompositeData(putRejectedAsCachedInSecHistory, "Persistent cache put rejected " +
+                "(entry is covered by secondary)");
+    }
+
+    @Override
     public CompositeData getInvalidateOneRateHistory() {
         return TimeSeriesStatsUtil.asCompositeData(invalidateOneRateHistory, "Persistent cache invalidate one entry");
     }
@@ -403,8 +491,12 @@ public class PersistentCacheStats extends AnnotatedStandardMBean implements Pers
 
     @Override
     public void resetStats() {
+        // ignored
     }
 
+    Counting getPutRejectedAsCachedInSecCounter() {
+        return putRejectedAsCachedInSecMeter;
+    }
 
     //~--------------------------------------< private helpers
 

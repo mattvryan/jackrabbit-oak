@@ -28,7 +28,6 @@ import org.apache.jackrabbit.oak.commons.jmx.AnnotatedStandardMBean;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
 import org.apache.jackrabbit.oak.segment.file.FileStoreGCMonitor;
 
-// FIXME OAK-4617: Align SegmentRevisionGC MBean with new generation based GC
 public class SegmentRevisionGCMBean
         extends AnnotatedStandardMBean
         implements SegmentRevisionGC {
@@ -156,5 +155,15 @@ public class SegmentRevisionGCMBean
     @Override
     public String getStatus() {
         return fileStoreGCMonitor.getStatus();
+    }
+
+    @Override
+    public int getMemoryThreshold() {
+        return gcOptions.getMemoryThreshold();
+    }
+
+    @Override
+    public void setMemoryThreshold(int memoryThreshold) {
+        gcOptions.setMemoryThreshold(memoryThreshold);
     }
 }

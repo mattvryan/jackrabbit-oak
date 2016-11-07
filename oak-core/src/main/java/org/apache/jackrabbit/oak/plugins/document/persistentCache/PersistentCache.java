@@ -53,7 +53,7 @@ import com.google.common.cache.Cache;
 public class PersistentCache implements Broadcaster.Listener {
     
     static final Logger LOG = LoggerFactory.getLogger(PersistentCache.class);
-   
+
     private static final String FILE_PREFIX = "cache-";
     private static final String FILE_SUFFIX = ".data";
     private static final AtomicInteger COUNTER = new AtomicInteger();
@@ -67,6 +67,8 @@ public class PersistentCache implements Broadcaster.Listener {
     private boolean cacheDocChildren;
     private boolean compactOnClose;
     private boolean compress = true;
+    private boolean asyncCache = true;
+    private boolean asyncDiffCache = false;
     private HashMap<CacheType, GenerationCache> caches = 
             new HashMap<CacheType, GenerationCache>();
     
@@ -74,6 +76,7 @@ public class PersistentCache implements Broadcaster.Listener {
     private MapFactory writeStore;
     private MapFactory readStore;
     private int maxSizeMB = 1024;
+    private int memCache = -1;
     private int readGeneration = -1;
     private int writeGeneration;
     private long maxBinaryEntry = 1024 * 1024;
@@ -130,6 +133,8 @@ public class PersistentCache implements Broadcaster.Listener {
                 dir += "-" + System.currentTimeMillis() + "-" + COUNTER.getAndIncrement();
             } else if (p.startsWith("size=")) {
                 maxSizeMB = Integer.parseInt(p.split("=")[1]);
+            } else if (p.startsWith("memCache=")) {
+                memCache = Integer.parseInt(p.split("=")[1]);
             } else if (p.startsWith("binary=")) {
                 maxBinaryEntry = Long.parseLong(p.split("=")[1]);
             } else if (p.startsWith("autoCompact=")) {
@@ -140,6 +145,10 @@ public class PersistentCache implements Broadcaster.Listener {
                 manualCommit = true;
             } else if (p.startsWith("broadcast=")) {
                 broadcast = p.split("=")[1];               
+            } else if (p.equals("-async")) {
+                asyncCache = false;
+            } else if (p.equals("+asyncDiff")) {
+                asyncDiffCache = true;
             }
         }
         this.directory = dir;
@@ -251,6 +260,9 @@ public class PersistentCache implements Broadcaster.Listener {
                     }
                     if (fileName != null) {
                         builder.fileName(fileName);
+                    }
+                    if (memCache >= 0) {
+                        builder.cacheSize(memCache);
                     }
                     if (readOnly) {
                         builder.readOnly();
@@ -391,6 +403,7 @@ public class PersistentCache implements Broadcaster.Listener {
             Cache<K, V> base, CacheType type,
             StatisticsProvider statisticsProvider) {
         boolean wrap;
+        boolean async = asyncCache;
         switch (type) {
         case NODE:
             wrap = cacheNodes;
@@ -400,6 +413,7 @@ public class PersistentCache implements Broadcaster.Listener {
             break;
         case DIFF:
             wrap = cacheDiff;
+            async = asyncDiffCache;
             break;
         case LOCAL_DIFF:
             wrap = cacheLocalDiff;
@@ -420,7 +434,7 @@ public class PersistentCache implements Broadcaster.Listener {
         if (wrap) {
             NodeCache<K, V> c = new NodeCache<K, V>(this, 
                     base, docNodeStore, docStore,
-                    type, writeDispatcher, statisticsProvider);
+                    type, writeDispatcher, statisticsProvider, async);
             initGenerationCache(c);
             return c;
         }
@@ -502,7 +516,7 @@ public class PersistentCache implements Broadcaster.Listener {
     public int getExceptionCount() {
         return exceptionCount;
     }
-    
+
     void broadcast(CacheType type, Function<WriteBuffer, Void> writer) {
         Broadcaster b = broadcaster;
         if (b == null) {
@@ -540,9 +554,9 @@ public class PersistentCache implements Broadcaster.Listener {
         buff.position(end);
     }
     
-    public static PersistentCacheStats getPersistentCacheStats(Cache cache) {
+    public static PersistentCacheStats getPersistentCacheStats(Cache<?, ?> cache) {
         if (cache instanceof NodeCache) {
-            return ((NodeCache) cache).getPersistentCacheStats();
+            return ((NodeCache<?, ?>) cache).getPersistentCacheStats();
         }
         else {
             return null;

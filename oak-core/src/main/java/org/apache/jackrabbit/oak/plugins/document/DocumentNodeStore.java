@@ -72,6 +72,7 @@ import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.cache.Cache;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -86,6 +87,7 @@ import org.apache.jackrabbit.oak.plugins.blob.MarkSweepGarbageCollector;
 import org.apache.jackrabbit.oak.plugins.blob.ReferencedBlob;
 import org.apache.jackrabbit.oak.plugins.document.Branch.BranchCommit;
 import org.apache.jackrabbit.oak.plugins.document.bundlor.BundlingConfigHandler;
+import org.apache.jackrabbit.oak.plugins.document.bundlor.DocumentBundlor;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.PersistentCache;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.DynamicBroadcastConfig;
 import org.apache.jackrabbit.oak.plugins.document.util.ReadOnlyDocumentStoreWrapperFactory;
@@ -136,6 +138,15 @@ public final class DocumentNodeStore
      * Do not cache more than this number of children for a document.
      */
     static final int NUM_CHILDREN_CACHE_LIMIT = Integer.getInteger("oak.documentMK.childrenCacheLimit", 16 * 1024);
+
+    /**
+     * List of meta properties which are created by DocumentNodeStore and which needs to be
+     * retained in any cloned copy of DocumentNodeState. This does not include other properties defined
+     * in DocumentBundlor as those are only required by DocumentNodeState
+     */
+    public static final List<String> META_PROP_NAMES = ImmutableList.of(
+            DocumentBundlor.META_PROP_PATTERN
+    );
 
     /**
      * Feature flag to enable concurrent add/remove operations of hidden empty
@@ -487,7 +498,7 @@ public final class DocumentNodeStore
         nodeCacheStats = new CacheStats(nodeCache, "Document-NodeState",
                 builder.getWeigher(), builder.getNodeCacheSize());
 
-        nodeChildrenCache = builder.buildChildrenCache();
+        nodeChildrenCache = builder.buildChildrenCache(this);
         nodeChildrenCacheStats = new CacheStats(nodeChildrenCache, "Document-NodeChildren",
                 builder.getWeigher(), builder.getChildrenCacheSize());
 
@@ -835,6 +846,14 @@ public final class DocumentNodeStore
     @Nonnull
     public Iterable<CacheStats> getDiffCacheStats() {
         return diffCache.getStats();
+    }
+
+    public Cache<PathRev, DocumentNodeState> getNodeCache() {
+        return nodeCache;
+    }
+
+    public Cache<PathRev, DocumentNodeState.Children> getNodeChildrenCache() {
+        return nodeChildrenCache;
     }
 
     /**
@@ -2714,6 +2733,9 @@ public final class DocumentNodeStore
 
     static class BackgroundLeaseUpdate extends NodeStoreTask {
 
+        /** OAK-4859 : log if time between two renewClusterIdLease calls is too long **/
+        private long lastRenewClusterIdLeaseCall = -1;
+        
         BackgroundLeaseUpdate(DocumentNodeStore nodeStore,
                               AtomicBoolean isDisposed) {
             super(nodeStore, isDisposed, Suppliers.ofInstance(1000));
@@ -2721,6 +2743,18 @@ public final class DocumentNodeStore
 
         @Override
         protected void execute(@Nonnull DocumentNodeStore nodeStore) {
+            // OAK-4859 : keep track of invocation time of renewClusterIdLease
+            // and warn if time since last call is longer than 5sec
+            final long now = System.currentTimeMillis();
+            if (lastRenewClusterIdLeaseCall <= 0) {
+                lastRenewClusterIdLeaseCall = now;
+            } else {
+                final long diff = now - lastRenewClusterIdLeaseCall;
+                if (diff > 5000) {
+                    LOG.warn("BackgroundLeaseUpdate.execute: time since last renewClusterIdLease() call longer than expected: {}ms", diff);
+                }
+                lastRenewClusterIdLeaseCall = now;
+            }
             // first renew the clusterId lease
             nodeStore.renewClusterIdLease();
 
@@ -2788,6 +2822,10 @@ public final class DocumentNodeStore
 
     public DocumentNodeStoreStatsCollector getStatsCollector() {
         return nodeStoreStatsCollector;
+    }
+
+    public DocumentNodeStateCache getNodeStateCache() {
+        return nodeStateCache;
     }
 
     public void setNodeStateCache(DocumentNodeStateCache nodeStateCache) {

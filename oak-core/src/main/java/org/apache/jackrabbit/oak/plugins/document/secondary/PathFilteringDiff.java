@@ -19,7 +19,10 @@
 
 package org.apache.jackrabbit.oak.plugins.document.secondary;
 
+import java.util.List;
+
 import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.plugins.document.AbstractDocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.index.PathFilter;
@@ -31,7 +34,6 @@ import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.jackrabbit.oak.plugins.document.secondary.DelegatingDocumentNodeState.PROP_LAST_REV;
-import static org.apache.jackrabbit.oak.plugins.document.secondary.DelegatingDocumentNodeState.PROP_PATH;
 import static org.apache.jackrabbit.oak.plugins.document.secondary.DelegatingDocumentNodeState.PROP_REVISION;
 import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.EMPTY_NODE;
 import static org.apache.jackrabbit.oak.plugins.memory.PropertyStates.createProperty;
@@ -41,8 +43,8 @@ class PathFilteringDiff extends ApplyDiff {
     private final DiffContext ctx;
     private final AbstractDocumentNodeState parent;
 
-    public PathFilteringDiff(NodeBuilder builder, PathFilter pathFilter, AbstractDocumentNodeState parent) {
-        this(builder, new DiffContext(pathFilter), parent);
+    public PathFilteringDiff(NodeBuilder builder, PathFilter pathFilter, List<String> metaPropNames, AbstractDocumentNodeState parent) {
+        this(builder, new DiffContext(pathFilter, metaPropNames), parent);
     }
 
     private PathFilteringDiff(NodeBuilder builder, DiffContext ctx, AbstractDocumentNodeState parent) {
@@ -65,7 +67,7 @@ class PathFilteringDiff extends ApplyDiff {
         //super.childNodeAdded(name, after);
 
         NodeBuilder childBuilder = builder.child(name);
-        copyMetaProperties(afterDoc, childBuilder);
+        copyMetaProperties(afterDoc, childBuilder, ctx.metaPropNames);
         return after.compareAgainstBaseState(EMPTY_NODE,
                 new PathFilteringDiff(childBuilder, ctx, afterDoc));
     }
@@ -77,7 +79,7 @@ class PathFilteringDiff extends ApplyDiff {
         if (ctx.pathFilter.filter(nextPath) != PathFilter.Result.EXCLUDE) {
             ctx.traversingNode(nextPath);
             NodeBuilder childBuilder = builder.getChildNode(name);
-            copyMetaProperties(afterDoc, childBuilder);
+            copyMetaProperties(afterDoc, childBuilder, ctx.metaPropNames);
             return after.compareAgainstBaseState(
                     before, new PathFilteringDiff(builder.getChildNode(name), ctx, afterDoc));
         }
@@ -100,10 +102,21 @@ class PathFilteringDiff extends ApplyDiff {
         return (AbstractDocumentNodeState) state;
     }
 
-    static void copyMetaProperties(AbstractDocumentNodeState state, NodeBuilder builder) {
-        builder.setProperty(asPropertyState(PROP_REVISION, state.getRootRevision()));
+    static void copyMetaProperties(AbstractDocumentNodeState state, NodeBuilder builder, List<String> metaPropNames) {
+        //Only set root revision on root node
+        if (PathUtils.denotesRoot(state.getPath())) {
+            builder.setProperty(asPropertyState(PROP_REVISION, state.getRootRevision()));
+        }
+
+        //LastRev would be set on each node
         builder.setProperty(asPropertyState(PROP_LAST_REV, state.getLastRevision()));
-        builder.setProperty(createProperty(PROP_PATH, state.getPath()));
+
+        for (String metaProp : metaPropNames){
+            PropertyState ps = state.getProperty(metaProp);
+            if (ps != null){
+                builder.setProperty(ps);
+            }
+        }
     }
 
     private static PropertyState asPropertyState(String name, RevisionVector revision) {
@@ -113,9 +126,11 @@ class PathFilteringDiff extends ApplyDiff {
     private static class DiffContext {
         private long count;
         final PathFilter pathFilter;
+        final List<String> metaPropNames;
 
-        public DiffContext(PathFilter filter) {
+        public DiffContext(PathFilter filter, List<String> metaPropNames) {
             this.pathFilter = filter;
+            this.metaPropNames = metaPropNames;
         }
 
         public void traversingNode(String path){

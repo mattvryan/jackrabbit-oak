@@ -75,15 +75,14 @@ import org.apache.jackrabbit.oak.plugins.blob.ReferenceCollector;
 import org.apache.jackrabbit.oak.segment.Compactor;
 import org.apache.jackrabbit.oak.segment.RecordId;
 import org.apache.jackrabbit.oak.segment.Segment;
-import org.apache.jackrabbit.oak.segment.SegmentBufferWriter;
 import org.apache.jackrabbit.oak.segment.SegmentId;
 import org.apache.jackrabbit.oak.segment.SegmentIdTable;
 import org.apache.jackrabbit.oak.segment.SegmentNodeState;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundException;
+import org.apache.jackrabbit.oak.segment.SegmentNotFoundExceptionListener;
 import org.apache.jackrabbit.oak.segment.SegmentWriter;
-import org.apache.jackrabbit.oak.segment.WriterCacheManager.Default;
+import org.apache.jackrabbit.oak.segment.WriterCacheManager;
 import org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions;
-import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.slf4j.Logger;
@@ -142,6 +141,12 @@ public class FileStore extends AbstractFileStore {
     private final AtomicBoolean sufficientDiskSpace = new AtomicBoolean(true);
 
     /**
+     * This flag is raised whenever the available memory falls under a specified
+     * threshold. See {@link GCMemoryBarrier}
+     */
+    private final AtomicBoolean sufficientMemory = new AtomicBoolean(true);
+
+    /**
      * Flag signalling shutdown of the file store
      */
     private volatile boolean shutdown;
@@ -149,6 +154,9 @@ public class FileStore extends AbstractFileStore {
     private final ReadWriteLock fileStoreLock = new ReentrantReadWriteLock();
 
     private final FileStoreStats stats;
+
+    @Nonnull
+    private final SegmentNotFoundExceptionListener snfeListener; 
 
     FileStore(final FileStoreBuilder builder) throws InvalidFileStoreVersionException, IOException {
         super(builder);
@@ -172,7 +180,8 @@ public class FileStore extends AbstractFileStore {
                 .with(builder.getCacheManager())
                 .build(this);
         this.maxFileSize = builder.getMaxFileSize() * MB;
-        this.garbageCollector = new GarbageCollector(builder.getGcOptions(), builder.getGcListener(), new GCJournal(directory));
+        this.garbageCollector = new GarbageCollector(
+                builder.getGcOptions(), builder.getGcListener(), new GCJournal(directory), builder.getCacheManager());
 
         Map<Integer, Map<Character, File>> map = collectFiles(directory);
 
@@ -197,12 +206,17 @@ public class FileStore extends AbstractFileStore {
             writeNumber = indices[indices.length - 1] + 1;
         }
         this.tarWriter = new TarWriter(directory, stats, writeNumber);
+        
+        this.snfeListener = builder.getSnfeListener();
 
         fileStoreScheduler.scheduleAtFixedRate(
                 format("TarMK flush [%s]", directory), 5, SECONDS,
                 new Runnable() {
                     @Override
                     public void run() {
+                        if (shutdown) {
+                            return;
+                        }
                         try {
                             flush();
                         } catch (IOException e) {
@@ -592,9 +606,12 @@ public class FileStore extends AbstractFileStore {
                 }
             });
         } catch (ExecutionException e) {
-            throw e.getCause() instanceof SegmentNotFoundException
-                ? (SegmentNotFoundException) e.getCause()
-                : new SegmentNotFoundException(id, e);
+            SegmentNotFoundException snfe = e.getCause() instanceof SegmentNotFoundException
+                    ? (SegmentNotFoundException) e.getCause() : new SegmentNotFoundException(id, e);
+
+            snfeListener.notify(id, snfe);
+            
+            throw snfe;
         }
     }
 
@@ -709,19 +726,26 @@ public class FileStore extends AbstractFileStore {
         @Nonnull
         private final GCJournal gcJournal;
 
+        @Nonnull
+        private final WriterCacheManager cacheManager;
+
         private volatile boolean cancelled;
 
-        GarbageCollector(@Nonnull SegmentGCOptions gcOptions,
-                         @Nonnull GCListener gcListener,
-                         @Nonnull GCJournal gcJournal) {
+        GarbageCollector(
+                @Nonnull SegmentGCOptions gcOptions,
+                @Nonnull GCListener gcListener,
+                @Nonnull GCJournal gcJournal,
+                @Nonnull WriterCacheManager cacheManager) {
             this.gcOptions = gcOptions;
             this.gcListener = gcListener;
             this.gcJournal = gcJournal;
+            this.cacheManager = cacheManager;
         }
 
         synchronized void run() throws IOException {
             gcListener.info("TarMK GC #{}: started", GC_COUNT.incrementAndGet());
-            Stopwatch watch = Stopwatch.createStarted();
+            GCMemoryBarrier gcMemoryBarrier = new GCMemoryBarrier(
+                    sufficientMemory, gcListener, GC_COUNT.get(), gcOptions);
 
             int gainThreshold = gcOptions.getGainThreshold();
             boolean sufficientEstimatedGain = true;
@@ -732,10 +756,12 @@ public class FileStore extends AbstractFileStore {
                 gcListener.info("TarMK GC #{}: estimation skipped because compaction is paused", GC_COUNT);
             } else {
                 gcListener.info("TarMK GC #{}: estimation started", GC_COUNT);
+                Stopwatch watch = Stopwatch.createStarted();
                 Supplier<Boolean> cancel = new CancelCompactionSupplier(FileStore.this);
                 GCEstimation estimate = estimateCompactionGain(cancel);
                 if (cancel.get()) {
                     gcListener.info("TarMK GC #{}: estimation interrupted: {}. Skipping compaction.", GC_COUNT, cancel);
+                    gcMemoryBarrier.close();
                     return;
                 }
 
@@ -769,6 +795,7 @@ public class FileStore extends AbstractFileStore {
                     gcListener.skipped("TarMK GC #{}: compaction paused", GC_COUNT);
                 }
             }
+            gcMemoryBarrier.close();
         }
 
         /**
@@ -837,11 +864,15 @@ public class FileStore extends AbstractFileStore {
                 gcListener.info("TarMK GC #{}: compaction started, gc options={}", GC_COUNT, gcOptions);
 
                 SegmentNodeState before = getHead();
-                final int newGeneration = getGcGeneration() + 1;
-                SegmentBufferWriter bufferWriter = new SegmentBufferWriter(
-                        FileStore.this, tracker.getSegmentCounter(), segmentReader, "c", newGeneration);
                 Supplier<Boolean> cancel = new CancelCompactionSupplier(FileStore.this);
-                SegmentNodeState after = compact(bufferWriter, before, cancel);
+                final int newGeneration = getGcGeneration() + 1;
+                SegmentWriter writer = segmentWriterBuilder("c")
+                        .with(cacheManager)
+                        .withGeneration(newGeneration)
+                        .withoutWriterPool()
+                        .build(FileStore.this);
+
+                SegmentNodeState after = compact(before, writer, cancel);
                 if (after == null) {
                     gcListener.info("TarMK GC #{}: compaction cancelled: {}.", GC_COUNT, cancel);
                     return 0;
@@ -862,7 +893,7 @@ public class FileStore extends AbstractFileStore {
                                     "Compacting these commits. Cycle {} of {}",
                             GC_COUNT, cycles, gcOptions.getRetryCount());
                     SegmentNodeState head = getHead();
-                    after = compact(bufferWriter, head, cancel);
+                    after = compact(head, writer, cancel);
                     if (after == null) {
                         gcListener.info("TarMK GC #{}: compaction cancelled: {}.", GC_COUNT, cancel);
                         return 0;
@@ -881,7 +912,7 @@ public class FileStore extends AbstractFileStore {
                         gcListener.info("TarMK GC #{}: trying to force compact remaining commits for {} seconds",
                                 GC_COUNT, forceTimeout);
                         cycles++;
-                        success = forceCompact(bufferWriter, or(cancel, timeOut(forceTimeout, SECONDS)));
+                        success = forceCompact(writer, or(cancel, timeOut(forceTimeout, SECONDS)));
                         if (!success) {
                             if (cancel.get()) {
                                 gcListener.warn("TarMK GC #{}: compaction failed to force compact remaining commits. " +
@@ -895,6 +926,7 @@ public class FileStore extends AbstractFileStore {
                 }
 
                 if (success) {
+                    writer.flush();
                     gcListener.compactionSucceeded(newGeneration);
                     gcListener.info("TarMK GC #{}: compaction succeeded in {} ({} ms), after {} cycles",
                             GC_COUNT, watch, watch.elapsed(MILLISECONDS), cycles);
@@ -947,20 +979,17 @@ public class FileStore extends AbstractFileStore {
             }
         }
 
-        private SegmentNodeState compact(SegmentBufferWriter bufferWriter, NodeState head,
-                                         Supplier<Boolean> cancel)
+        private SegmentNodeState compact(NodeState head, SegmentWriter writer, Supplier<Boolean> cancel)
         throws IOException {
             if (gcOptions.isOffline()) {
-                BlobStore blobStore = getBlobStore();
-                SegmentWriter writer = new SegmentWriter(FileStore.this, segmentReader, blobStore, new Default(), bufferWriter);
-                return new Compactor(segmentReader, writer, blobStore, cancel, gcOptions)
+                return new Compactor(segmentReader, writer, getBlobStore(), cancel, gcOptions)
                         .compact(EMPTY_NODE, head, EMPTY_NODE);
             } else {
-                return segmentWriter.writeNode(head, bufferWriter, cancel);
+                return writer.writeNode(head, cancel);
             }
         }
 
-        private boolean forceCompact(@Nonnull final SegmentBufferWriter bufferWriter,
+        private boolean forceCompact(@Nonnull final SegmentWriter writer,
                                      @Nonnull final Supplier<Boolean> cancel)
         throws InterruptedException {
             return revisions.
@@ -970,8 +999,8 @@ public class FileStore extends AbstractFileStore {
                                 public RecordId apply(RecordId base) {
                                     try {
                                         long t0 = currentTimeMillis();
-                                        SegmentNodeState after = compact(bufferWriter,
-                                                segmentReader.readNode(base), cancel);
+                                        SegmentNodeState after = compact(
+                                                segmentReader.readNode(base), writer, cancel);
                                         if (after == null) {
                                             gcListener.info("TarMK GC #{}: compaction cancelled after {} seconds",
                                                     GC_COUNT, (currentTimeMillis() - t0) / 1000);
@@ -1217,6 +1246,10 @@ public class FileStore extends AbstractFileStore {
                 // be no way to go back.
                 if (!store.sufficientDiskSpace.get()) {
                     reason = "Not enough disk space";
+                    return true;
+                }
+                if (!store.sufficientMemory.get()) {
+                    reason = "Not enough memory";
                     return true;
                 }
                 if (store.shutdown) {

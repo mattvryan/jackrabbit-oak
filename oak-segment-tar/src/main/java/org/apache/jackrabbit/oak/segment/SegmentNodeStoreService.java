@@ -24,8 +24,10 @@ import static org.apache.jackrabbit.oak.commons.PropertiesUtil.toBoolean;
 import static org.apache.jackrabbit.oak.commons.PropertiesUtil.toInteger;
 import static org.apache.jackrabbit.oak.commons.PropertiesUtil.toLong;
 import static org.apache.jackrabbit.oak.osgi.OsgiUtil.lookupConfigurationThenFramework;
+import static org.apache.jackrabbit.oak.segment.SegmentNotFoundExceptionListener.IGNORE_SNFE;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.FORCE_TIMEOUT_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.GAIN_THRESHOLD_DEFAULT;
+import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.MEMORY_THRESHOLD_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.PAUSE_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.RETAINED_GENERATIONS_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.RETRY_COUNT_DEFAULT;
@@ -45,8 +47,6 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.base.Strings;
-import com.google.common.base.Supplier;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.ConfigurationPolicy;
@@ -59,6 +59,8 @@ import org.apache.jackrabbit.commons.SimpleValueFactory;
 import org.apache.jackrabbit.oak.api.Descriptors;
 import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.api.jmx.CheckpointMBean;
+import org.apache.jackrabbit.oak.api.jmx.FileStoreBackupRestoreMBean;
+import org.apache.jackrabbit.oak.backup.impl.FileStoreBackupRestoreImpl;
 import org.apache.jackrabbit.oak.cache.CacheStats;
 import org.apache.jackrabbit.oak.osgi.ObserverTracker;
 import org.apache.jackrabbit.oak.osgi.OsgiWhiteboard;
@@ -101,6 +103,9 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Strings;
+import com.google.common.base.Supplier;
 
 /**
  * An OSGi wrapper for the segment node store.
@@ -228,6 +233,15 @@ public class SegmentNodeStoreService extends ProxyNodeStore
             description = "Number of segment generations to retain."
     )
     public static final String RETAINED_GENERATIONS = "compaction.retainedGenerations";
+
+    @Property(
+            intValue = MEMORY_THRESHOLD_DEFAULT,
+            label = "Compaction Memory Threshold",
+            description = "Set the available memory threshold beyond which revision gc will be canceled. "
+                    + "Value represents a percentage so an input between 0 and 100 is expected. "
+                    + "Setting this to 0 will disable the check."
+    )
+    public static final String MEMORY_THRESHOLD = "compaction.memoryThreshold";
 
     @Property(
             boolValue = false,
@@ -391,6 +405,10 @@ public class SegmentNodeStoreService extends ProxyNodeStore
         if (customBlobStore) {
             log.info("Initializing SegmentNodeStore with BlobStore [{}]", blobStore);
             builder.withBlobStore(blobStore);
+        }
+        
+        if (toBoolean(property(STANDBY), true)) {
+            builder.withSnfeListener(IGNORE_SNFE);
         }
 
         try {
@@ -589,6 +607,15 @@ public class SegmentNodeStoreService extends ProxyNodeStore
                     "Segment node store blob garbage collection"
             ));
         }
+        
+        // Expose an MBean for backup/restore operations
+        
+        registrations.add(registerMBean(
+                whiteboard,
+                FileStoreBackupRestoreMBean.class,
+                new FileStoreBackupRestoreImpl(segmentNodeStore, store.getRevisions(), store.getReader(), getDirectory(), executor), 
+                FileStoreBackupRestoreMBean.TYPE, "Segment node store backup/restore"
+        ));
 
         log.info("SegmentNodeStore initialized");
 
@@ -607,10 +634,12 @@ public class SegmentNodeStoreService extends ProxyNodeStore
 
         byte gainThreshold = getGainThreshold();
         long sizeDeltaEstimation = toLong(property(COMPACTION_SIZE_DELTA_ESTIMATION), SIZE_DELTA_ESTIMATION_DEFAULT);
+        int memoryThreshold = toInteger(property(MEMORY_THRESHOLD), MEMORY_THRESHOLD_DEFAULT);
 
         return new SegmentGCOptions(pauseCompaction, gainThreshold, retryCount, forceTimeout)
                 .setRetainedGenerations(retainedGenerations)
-                .setGcSizeDeltaEstimation(sizeDeltaEstimation);
+                .setGcSizeDeltaEstimation(sizeDeltaEstimation)
+                .setMemoryThreshold(memoryThreshold);
     }
 
     private void unregisterNodeStore() {

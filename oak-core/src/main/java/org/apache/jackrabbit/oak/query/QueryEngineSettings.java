@@ -31,16 +31,25 @@ public class QueryEngineSettings implements QueryEngineSettingsMBean {
      */
     public static final String SQL2_OPTIMISATION_FLAG = "oak.query.sql2optimisation";
     
-    private static final int DEFAULT_QUERY_LIMIT_IN_MEMORY = 
-            Integer.getInteger("oak.queryLimitInMemory", Integer.MAX_VALUE);
+    public static final String SQL2_OPTIMISATION_FLAG_2 = "oak.query.sql2optimisation2";
     
-    private static final int DEFAULT_QUERY_LIMIT_READS = 
-            Integer.getInteger("oak.queryLimitReads", Integer.MAX_VALUE);
-    
+    public static final boolean SQL2_OPTIMIZATION_2 = 
+            Boolean.parseBoolean(System.getProperty(SQL2_OPTIMISATION_FLAG_2, "true"));
+
+    static final String OAK_QUERY_LIMIT_IN_MEMORY = "oak.queryLimitInMemory";
+
+    static final int DEFAULT_QUERY_LIMIT_IN_MEMORY =
+            Integer.getInteger(OAK_QUERY_LIMIT_IN_MEMORY, Integer.MAX_VALUE);
+
+    static final String OAK_QUERY_LIMIT_READS = "oak.queryLimitReads";
+    static final int DEFAULT_QUERY_LIMIT_READS =
+            Integer.getInteger(OAK_QUERY_LIMIT_READS, Integer.MAX_VALUE);
+
+    static final String OAK_QUERY_FAIL_TRAVERSAL = "oak.queryFailTraversal";
     private static final boolean DEFAULT_FAIL_TRAVERSAL =
-            Boolean.getBoolean("oak.queryFailTraversal");
-    
-    private static final boolean DEFAULT_FULL_TEXT_COMPARISON_WITHOUT_INDEX = 
+            Boolean.getBoolean(OAK_QUERY_FAIL_TRAVERSAL);
+
+    private static final boolean DEFAULT_FULL_TEXT_COMPARISON_WITHOUT_INDEX =
             Boolean.getBoolean("oak.queryFullTextComparisonWithoutIndex");
     
     private long limitInMemory = DEFAULT_QUERY_LIMIT_IN_MEMORY;
@@ -52,8 +61,13 @@ public class QueryEngineSettings implements QueryEngineSettingsMBean {
     private boolean fullTextComparisonWithoutIndex = 
             DEFAULT_FULL_TEXT_COMPARISON_WITHOUT_INDEX;
     
-    private boolean sql2Optimisation = Boolean.parseBoolean(System.getProperty(SQL2_OPTIMISATION_FLAG, "true"));
-    
+    private boolean sql2Optimisation = 
+            Boolean.parseBoolean(System.getProperty(SQL2_OPTIMISATION_FLAG, "true"));
+
+    private static final String OAK_FAST_QUERY_SIZE = "oak.fastQuerySize";
+    static final boolean DEFAULT_FAST_QUERY_SIZE = Boolean.getBoolean(OAK_FAST_QUERY_SIZE);
+    private boolean fastQuerySize = DEFAULT_FAST_QUERY_SIZE;
+
     public QueryEngineSettings() {
     }
     
@@ -86,7 +100,18 @@ public class QueryEngineSettings implements QueryEngineSettingsMBean {
     public void setFailTraversal(boolean failTraversal) {
         this.failTraversal = failTraversal;
     }
-    
+
+    @Override
+    public boolean isFastQuerySize() {
+        return fastQuerySize;
+    }
+
+    @Override
+    public void setFastQuerySize(boolean fastQuerySize) {
+        this.fastQuerySize = fastQuerySize;
+        System.setProperty(OAK_FAST_QUERY_SIZE, String.valueOf(fastQuerySize));
+    }
+
     public void setFullTextComparisonWithoutIndex(boolean fullTextComparisonWithoutIndex) {
         this.fullTextComparisonWithoutIndex = fullTextComparisonWithoutIndex;
     }
@@ -99,4 +124,15 @@ public class QueryEngineSettings implements QueryEngineSettingsMBean {
         return sql2Optimisation;
     }
 
+    @Override
+    public String toString() {
+        return "QueryEngineSettings{" +
+                "limitInMemory=" + limitInMemory +
+                ", limitReads=" + limitReads +
+                ", failTraversal=" + failTraversal +
+                ", fullTextComparisonWithoutIndex=" + fullTextComparisonWithoutIndex +
+                ", sql2Optimisation=" + sql2Optimisation +
+                ", fastQuerySize=" + fastQuerySize +
+                '}';
+    }
 }
