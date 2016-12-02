@@ -43,13 +43,18 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 
 import com.google.common.base.StandardSystemProperty;
+import com.google.common.collect.ImmutableList;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.CachingFileDataStore;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils;
 import org.apache.jackrabbit.oak.plugins.index.CompositeIndexEditorProvider;
 import org.apache.jackrabbit.oak.plugins.index.IndexConstants;
 import org.apache.jackrabbit.oak.plugins.index.IndexEditor;
@@ -68,6 +73,7 @@ import org.apache.jackrabbit.oak.spi.mount.Mount;
 import org.apache.jackrabbit.oak.spi.mount.MountInfoProvider;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.spi.state.NodeStateUtils;
 import org.apache.jackrabbit.test.ISO8601;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
@@ -81,15 +87,17 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class LuceneIndexEditorTest {
-    private static final EditorHook HOOK = new EditorHook(
-            new IndexUpdateProvider(
-                    new LuceneIndexEditorProvider()));
+    private EditorHook HOOK;
 
     private NodeState root = INITIAL_CONTENT;
 
@@ -101,6 +109,28 @@ public class LuceneIndexEditorTest {
 
     @Rule
     public final TemporaryFolder temporaryFolder = new TemporaryFolder(new File("target"));
+
+    @Parameterized.Parameter
+    public boolean useBlobStore;
+
+    @Parameterized.Parameters(name = "{index}: useBlobStore ({0})")
+    public static List<Boolean[]> fixtures() {
+        return ImmutableList.of(new Boolean[] {true}, new Boolean[] {false});
+    }
+
+    @Before
+    public void setup() throws Exception {
+        if (useBlobStore) {
+            LuceneIndexEditorProvider provider = new LuceneIndexEditorProvider();
+            CachingFileDataStore ds = DataStoreUtils
+                .createCachingFDS(temporaryFolder.newFolder().getAbsolutePath(),
+                    temporaryFolder.newFolder().getAbsolutePath());
+            provider.setBlobStore(new DataStoreBlobStore(ds));
+            HOOK = new EditorHook(new IndexUpdateProvider(provider));
+        } else {
+            HOOK = new EditorHook(new IndexUpdateProvider(new LuceneIndexEditorProvider()));
+        }
+    }
 
     @Test
     public void testLuceneWithFullText() throws Exception {
@@ -120,6 +150,36 @@ public class LuceneIndexEditorTest {
         assertEquals("/test", query(escape(FieldNames.createAnalyzedFieldName("foo"))+":fox", defn));
         assertNull("Non string properties not indexed by default",
                 getPath(NumericRangeQuery.newLongRange("price", 100L, 100L, true, true)));
+    }
+
+    @Ignore("OAK-5212")
+    @Test
+    public void noChangeIfNonIndexedDelete() throws Exception{
+        NodeState before = builder.getNodeState();
+        NodeBuilder index = builder.child(INDEX_DEFINITIONS_NAME);
+        NodeBuilder nb = newLuceneIndexDefinitionV2(index, "lucene", of(TYPENAME_STRING));
+        nb.setProperty(LuceneIndexConstants.FULL_TEXT_ENABLED, false);
+        nb.setProperty(createProperty(INCLUDE_PROPERTY_NAMES, of("foo"), STRINGS));
+
+
+        builder.child("test").setProperty("foo", "bar");
+        builder.child("test").child("a");
+        NodeState after = builder.getNodeState();
+
+        NodeState indexed = HOOK.processCommit(before, after, CommitInfo.EMPTY);
+        tracker.update(indexed);
+        assertEquals("/test", getPath(new TermQuery(new Term("foo", "bar"))));
+
+        NodeState luceneIdxState1 = NodeStateUtils.getNode(indexed, "/oak:index/lucene");
+
+        before = indexed;
+        builder = indexed.builder();
+        builder.getChildNode("test").getChildNode("a").remove();
+        after = builder.getNodeState();
+        indexed = HOOK.processCommit(before, after, CommitInfo.EMPTY);
+
+        NodeState luceneIdxState2 = NodeStateUtils.getNode(indexed, "/oak:index/lucene");
+        assertEquals(luceneIdxState1, luceneIdxState2);
     }
 
     private String escape(String name) {
@@ -167,7 +227,7 @@ public class LuceneIndexEditorTest {
     }
 
     @Test
-    public void noOfDocsIndexedNonFullText() throws Exception{
+    public void noOfDocsIndexedNonFullText() throws Exception {
         NodeBuilder index = builder.child(INDEX_DEFINITIONS_NAME);
         NodeBuilder nb = newLuceneIndexDefinitionV2(index, "lucene",
                 of(TYPENAME_STRING));
@@ -187,10 +247,10 @@ public class LuceneIndexEditorTest {
     }
 
     @Test
-    public void saveDirectoryListing() throws Exception{
+    public void saveDirectoryListing() throws Exception {
         NodeBuilder index = builder.child(INDEX_DEFINITIONS_NAME);
         NodeBuilder nb = newLuceneIndexDefinitionV2(index, "lucene",
-                of(TYPENAME_STRING));
+            of(TYPENAME_STRING));
         nb.setProperty(LuceneIndexConstants.SAVE_DIR_LISTING, true);
         nb.setProperty(LuceneIndexConstants.FULL_TEXT_ENABLED, false);
         nb.setProperty(createProperty(INCLUDE_PROPERTY_NAMES, of("foo"), STRINGS));

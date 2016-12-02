@@ -764,6 +764,39 @@ public class MongoDocumentStore implements DocumentStore, RevisionListener {
         return num;
     }
 
+    @Override
+    public <T extends Document> int remove(Collection<T> collection,
+                                    String indexedProperty, long startValue, long endValue)
+            throws DocumentStoreException {
+        log("remove", collection, indexedProperty, startValue, endValue);
+        int num = 0;
+        DBCollection dbCollection = getDBCollection(collection);
+        long start = PERFLOG.start();
+        try {
+            QueryBuilder queryBuilder = QueryBuilder.start(indexedProperty);
+            queryBuilder.greaterThan(startValue);
+            queryBuilder.lessThan(endValue);
+            try {
+                num = dbCollection.remove(queryBuilder.get()).getN();
+            } catch (Exception e) {
+                throw DocumentStoreException.convert(e, "Remove failed for " + collection + ": " +
+                    indexedProperty + " in (" + startValue + ", " + endValue + ")");
+            } finally {
+                if (collection == Collection.NODES) {
+                    // this method is currently being used only for Journal collection while GC.
+                    // But, to keep sanctity of the API, we need to acknowledge that Nodes collection
+                    // could've been used. But, in this signature, there's no useful way to invalidate
+                    // cache.
+                    // So, we use the hammer for this task
+                    invalidateCache();
+                }
+            }
+        } finally {
+            PERFLOG.end(start, 1, "remove from {}: {} in ({}, {})", collection, indexedProperty, startValue, endValue);
+        }
+        return num;
+    }
+
     @SuppressWarnings("unchecked")
     @CheckForNull
     private <T extends Document> T findAndModify(Collection<T> collection,
@@ -1523,11 +1556,6 @@ public class MongoDocumentStore implements DocumentStore, RevisionListener {
         // other updates
         for (Entry<Key, Operation> entry : updateOp.getChanges().entrySet()) {
             Key k = entry.getKey();
-            if (!includeId && k.getName().equals(Document.ID)) {
-                // TODO: remove once set _id is prohibited (OAK-4952)
-                // avoid exception "Mod on _id not allowed"
-                continue;
-            }
             Operation op = entry.getValue();
             switch (op.type) {
                 case SET:

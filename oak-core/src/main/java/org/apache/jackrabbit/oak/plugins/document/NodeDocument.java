@@ -1205,17 +1205,16 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
      * @param context the revision context.
      * @param head    the head revision before this document was retrieved from
      *                the document store.
-     * @param isBinaryValue a predicate that returns {@code true} if the given
-     *                      String value is considered a binary; {@code false}
-     *                      otherwise.
+     * @param binarySize a function that returns the binary size of the given
+     *                   JSON property value String.
      * @return the split operations.
      */
     @Nonnull
     public Iterable<UpdateOp> split(@Nonnull RevisionContext context,
                                     @Nonnull RevisionVector head,
-                                    @Nonnull Predicate<String> isBinaryValue) {
+                                    @Nonnull Function<String, Long> binarySize) {
         return SplitOperations.forDocument(this, context, head,
-                isBinaryValue, NUM_REVS_THRESHOLD);
+                binarySize, NUM_REVS_THRESHOLD);
     }
 
     /**
@@ -1545,7 +1544,10 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             }
         };
         List<Iterable<Map.Entry<Revision, String>>> changes = Lists.newArrayList();
-        changes.add(filter(getLocalMap(property).entrySet(), p));
+        Map<Revision, String> localChanges = getLocalMap(property);
+        if (!localChanges.isEmpty()) {
+            changes.add(filter(localChanges.entrySet(), p));
+        }
 
         boolean overlapping = false;
         List<Range> ranges = Lists.newArrayList();

@@ -18,6 +18,7 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -51,8 +52,8 @@ public class S3DataStoreUtils extends DataStoreUtils {
 
     private static final String DEFAULT_CONFIG_PATH = "./src/test/resources/aws.properties";
 
-    private static Class JR2_S3 = SharedS3DataStore.class;
-    private static Class S3 = S3DataStore.class;
+    protected static Class JR2_S3 = SharedS3DataStore.class;
+    protected static Class S3 = S3DataStore.class;
 
     public static List<String> getFixtures() {
         return ImmutableList.of(
@@ -97,24 +98,24 @@ public class S3DataStoreUtils extends DataStoreUtils {
             config = DEFAULT_CONFIG_PATH;
         }
         Properties props = new Properties();
-        InputStream is = null;
-        try {
-            props.load(new FileInputStream(config));
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            IOUtils.closeQuietly(is);
-        }
-        props.putAll(getConfig());
-        Map filtered = Maps.filterEntries(Maps.fromProperties(props),
-            new Predicate<Map.Entry<? extends Object, ? extends Object>>() {
-                @Override
-                public boolean apply(Map.Entry<? extends Object, ? extends Object> input) {
+        if (new File(config).exists()) {
+            InputStream is = null;
+            try {
+                props.load(new FileInputStream(config));
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                IOUtils.closeQuietly(is);
+            }
+            props.putAll(getConfig());
+            Map filtered = Maps.filterEntries(Maps.fromProperties(props), new Predicate<Map.Entry<? extends Object, ? extends Object>>() {
+                @Override public boolean apply(Map.Entry<? extends Object, ? extends Object> input) {
                     return !Strings.isNullOrEmpty((String) input.getValue());
                 }
             });
-        props = new Properties();
-        props.putAll(filtered);
+            props = new Properties();
+            props.putAll(filtered);
+        }
         return props;
     }
 

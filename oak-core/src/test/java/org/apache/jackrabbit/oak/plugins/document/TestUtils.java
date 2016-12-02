@@ -20,14 +20,21 @@ import java.util.Map;
 
 import javax.annotation.Nullable;
 
+import com.google.common.base.Function;
+import com.google.common.base.Functions;
 import com.google.common.base.Predicate;
 
 import org.apache.jackrabbit.oak.api.CommitFailedException;
+import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
+
+import static com.google.common.base.Functions.compose;
+import static com.google.common.base.Functions.constant;
+import static org.junit.Assert.fail;
 
 public class TestUtils {
 
@@ -37,6 +44,8 @@ public class TestUtils {
             return input != null && isLastRevUpdate(input);
         }
     };
+
+    public static final Function<String, Long> NO_BINARY = compose(constant(-1L), Functions.<String>identity());
 
     /**
      * Returns {@code true} if the given {@code update} performs a
@@ -59,5 +68,28 @@ public class TestUtils {
     public static NodeState merge(NodeStore store, NodeBuilder builder)
             throws CommitFailedException {
         return store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+    }
+
+    public static NodeBuilder createChild(NodeBuilder root, String ... paths){
+        for (String path : paths){
+            childBuilder(root, path);
+        }
+        return root;
+    }
+
+    public static NodeBuilder childBuilder(NodeBuilder root, String path){
+        NodeBuilder nb = root;
+        for (String nodeName : PathUtils.elements(path)){
+            nb = nb.child(nodeName);
+        }
+        return nb;
+    }
+
+    public static DocumentNodeState asDocumentState(NodeState state){
+        if (state instanceof DocumentNodeState){
+            return (DocumentNodeState) state;
+        }
+        fail("Not of type DocumentNodeState " + state.getClass());
+        return null;
     }
 }

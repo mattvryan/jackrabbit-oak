@@ -372,13 +372,13 @@ public class LuceneIndexTest {
     }
 
     private void purgeDeletedDocs(NodeBuilder idx, IndexDefinition definition) throws IOException {
-        IndexWriter writer = new IndexWriter(newIndexDirectory(definition, idx, LuceneIndexConstants.INDEX_DATA_CHILD_NAME), getIndexWriterConfig(definition, true));
+        IndexWriter writer = new IndexWriter(newIndexDirectory(definition, idx, LuceneIndexConstants.INDEX_DATA_CHILD_NAME, null), getIndexWriterConfig(definition, true));
         writer.forceMergeDeletes();
         writer.close();
     }
 
     public int getDeletedDocCount(NodeBuilder idx, IndexDefinition definition) throws IOException {
-        IndexReader reader = DirectoryReader.open(newIndexDirectory(definition, idx, LuceneIndexConstants.INDEX_DATA_CHILD_NAME));
+        IndexReader reader = DirectoryReader.open(newIndexDirectory(definition, idx, LuceneIndexConstants.INDEX_DATA_CHILD_NAME, null));
         int numDeletes = reader.numDeletedDocs();
         reader.close();
         return numDeletes;
@@ -713,7 +713,7 @@ public class LuceneIndexTest {
         tracker = new IndexTracker();
         ((Observable)nodeStore).addObserver(new Observer() {
             @Override
-            public void contentChanged(@Nonnull NodeState root, @Nullable CommitInfo info) {
+            public void contentChanged(@Nonnull NodeState root, @Nonnull CommitInfo info) {
                 tracker.update(root);
             }
         });

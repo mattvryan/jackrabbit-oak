@@ -88,6 +88,10 @@ public final class IndexDefinitionBuilder {
         return this;
     }
 
+    public Tree getBuilderTree(){
+        return tree;
+    }
+
     public NodeState build(){
         return builder.getNodeState();
     }
@@ -129,6 +133,11 @@ public final class IndexDefinitionBuilder {
 
         public IndexRule indexNodeName(){
             indexRule.setProperty(LuceneIndexConstants.INDEX_NODE_NAME, true);
+            return this;
+        }
+
+        public IndexRule includePropertyTypes(String ... types){
+            indexRule.setProperty(LuceneIndexConstants.INCLUDE_PROPERTY_TYPES, asList(types), STRINGS);
             return this;
         }
 
@@ -180,6 +189,16 @@ public final class IndexDefinitionBuilder {
             return this;
         }
 
+        public PropertyRule useInSpellcheck(){
+            propTree.setProperty(LuceneIndexConstants.PROP_USE_IN_SPELLCHECK, true);
+            return this;
+        }
+
+        public PropertyRule useInSuggest(){
+            propTree.setProperty(LuceneIndexConstants.PROP_USE_IN_SUGGEST, true);
+            return this;
+        }
+
         public PropertyRule analyzed(){
             propTree.setProperty(LuceneIndexConstants.PROP_ANALYZED, true);
             return this;
@@ -200,6 +219,11 @@ public final class IndexDefinitionBuilder {
             PropertyType.valueFromName(type);
             propTree.setProperty(LuceneIndexConstants.PROP_ORDERED, true);
             propTree.setProperty(LuceneIndexConstants.PROP_TYPE, type);
+            return this;
+        }
+
+        public PropertyRule disable() {
+            propTree.setProperty(LuceneIndexConstants.PROP_INDEX, false);
             return this;
         }
 

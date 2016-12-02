@@ -22,6 +22,7 @@ package org.apache.jackrabbit.oak.plugins.document.bundlor;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyStates;
@@ -29,7 +30,7 @@ import org.junit.Test;
 
 import static java.util.Arrays.asList;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
-import static org.apache.jackrabbit.oak.plugins.document.bundlor.DocumentBundlor.META_PROP_NODE;
+import static org.apache.jackrabbit.oak.plugins.document.bundlor.DocumentBundlor.META_PROP_BUNDLING_PATH;
 import static org.apache.jackrabbit.oak.plugins.document.bundlor.DocumentBundlor.META_PROP_PATTERN;
 import static org.hamcrest.CoreMatchers.hasItem;
 import static org.hamcrest.CoreMatchers.hasItems;
@@ -52,7 +53,7 @@ public class BundlorUtilsTest {
         Matcher m = new Include("jcr:content").createMatcher();
         Map<String, PropertyState> result = BundlorUtils.getMatchingProperties(
                 create("a",
-                        concat("jcr:content", META_PROP_NODE),
+                        concat("jcr:content", META_PROP_BUNDLING_PATH),
                         "jcr:content/jcr:data",
                         "jcr:primaryType",
                         META_PROP_PATTERN
@@ -66,7 +67,7 @@ public class BundlorUtilsTest {
         Matcher m = new Include("jcr:content").createMatcher().next("jcr:content");
         Map<String, PropertyState> result = BundlorUtils.getMatchingProperties(
                 create("a",
-                        concat("jcr:content", META_PROP_NODE),
+                        concat("jcr:content", META_PROP_BUNDLING_PATH),
                         "jcr:content/jcr:data",
                         "jcr:content/metadata/format",
                         "jcr:primaryType",
@@ -80,16 +81,16 @@ public class BundlorUtilsTest {
     @Test
     public void childNodeNames() throws Exception{
         List<String> testData = asList("x",
-                concat("jcr:content", META_PROP_NODE),
+                concat("jcr:content", META_PROP_BUNDLING_PATH),
                 "jcr:content/jcr:data",
-                concat("jcr:content/metadata", META_PROP_NODE),
+                concat("jcr:content/metadata", META_PROP_BUNDLING_PATH),
                 "jcr:content/metadata/format",
-                concat("jcr:content/comments", META_PROP_NODE),
-                concat("jcr:content/renditions/original", META_PROP_NODE)
+                concat("jcr:content/comments", META_PROP_BUNDLING_PATH),
+                concat("jcr:content/renditions/original", META_PROP_BUNDLING_PATH)
         );
 
         Matcher m = new Include("jcr:content/*").createMatcher();
-        List<String> names = BundlorUtils.getChildNodeNames(testData, m);
+        Set<String> names = BundlorUtils.getChildNodeNames(testData, m);
         assertThat(names, hasItem("jcr:content"));
 
         names = BundlorUtils.getChildNodeNames(testData, m.next("jcr:content"));

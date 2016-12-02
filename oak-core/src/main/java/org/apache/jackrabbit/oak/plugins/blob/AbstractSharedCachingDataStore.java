@@ -46,17 +46,20 @@ import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.core.data.MultiDataStoreAware;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.TypedDataStore;
 import org.apache.jackrabbit.oak.spi.blob.AbstractDataRecord;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
+import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.apache.jackrabbit.util.TransientFileFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.jackrabbit.oak.spi.blob.BlobOptions.UploadType.SYNCHRONOUS;
 
 /**
- * Caches files locally and stages files locally for async uploads.
+ * Cache files locally and stage files locally for async uploads.
  * Configuration:
  *
  * <pre>
@@ -64,14 +67,14 @@ import static com.google.common.base.Preconditions.checkArgument;
  *
  *     &lt;param name="{@link #setPath(String) path}"/>
  *     &lt;param name="{@link #setCacheSize(long) cacheSize}" value="68719476736"/>
- *     &lt;param name="{@link #setStagingSplitPercentage(int) staginSplitPercentage}" value="10"/>
+ *     &lt;param name="{@link #setStagingSplitPercentage(int) stagingSplitPercentage}" value="10"/>
  *     &lt;param name="{@link #setUploadThreads(int) uploadThreads}" value="10"/>
  *     &lt;param name="{@link #setStagingPurgeInterval(int) stagingPurgeInterval}" value="300"/>
  *     &lt;param name="{@link #setStagingRetryInterval(int) stagingRetryInterval} " value="600"/>
  * &lt;/DataStore>
  */
 public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
-    implements MultiDataStoreAware, SharedDataStore {
+    implements MultiDataStoreAware, SharedDataStore, TypedDataStore {
     /**
      * Logger instance.
      */
@@ -145,7 +148,7 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
         if (path == null) {
             path = homeDir + "/repository/datastore";
         }
-        path = FilenameUtils.normalizeNoEndSeparator(path);
+        path = FilenameUtils.normalizeNoEndSeparator(new File(path).getAbsolutePath());
         checkArgument(stagingSplitPercentage >= 0 && stagingSplitPercentage <= 50,
             "Staging percentage cache should be between 0 and 50");
 
@@ -156,8 +159,10 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
         this.backend = createBackend();
         backend.init();
 
+        String home = FilenameUtils.normalizeNoEndSeparator(new File(homeDir).getAbsolutePath());
         this.cache =
-            new CompositeDataStoreCache(path, cacheSize, stagingSplitPercentage, uploadThreads,
+            new CompositeDataStoreCache(path, new File(home), cacheSize, stagingSplitPercentage,
+                uploadThreads,
                 new CacheLoader<String, InputStream>() {
                     @Override public InputStream load(String key) throws Exception {
                         InputStream is = null;
@@ -215,6 +220,12 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
 
     @Override
     public DataRecord addRecord(InputStream inputStream) throws DataStoreException {
+        return addRecord(inputStream, new BlobOptions());
+    }
+
+    @Override
+    public DataRecord addRecord(InputStream inputStream, BlobOptions blobOptions)
+        throws DataStoreException {
         Stopwatch watch = Stopwatch.createStarted();
         try {
             TransientFileFactory fileFactory = TransientFileFactory.getInstance();
@@ -237,8 +248,10 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
 
             // asynchronously stage for upload if the size limit of staging cache permits
             // otherwise add to backend
-            if (!cache.stage(identifier.toString(), tmpFile)) {
+            if (blobOptions.getUpload() == SYNCHRONOUS
+                || !cache.stage(identifier.toString(), tmpFile)) {
                 backend.write(identifier, tmpFile);
+                LOG.info("Added blob [{}] to backend", identifier);
                 // offer to download cache
                 cache.getDownloadCache().put(identifier.toString(), tmpFile);
             }
@@ -280,10 +293,7 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
     }
 
     /**
-     * Need a DataRecord implementation that
-     * * decorates the data record of the backend if available
-     * * creates a record from the parameters of the file in cache
-     *
+     * DataRecord implementation fetching the stream from the cache.
      */
     static class FileCacheDataRecord extends AbstractDataRecord {
         private final long length;

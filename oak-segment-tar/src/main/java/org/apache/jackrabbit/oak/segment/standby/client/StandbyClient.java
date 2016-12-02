@@ -21,6 +21,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 
+import javax.annotation.Nullable;
+
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -75,14 +77,14 @@ class StandbyClient implements AutoCloseable {
 
     private Channel channel;
 
-    StandbyClient(String clientId, boolean secure, int readTimeoutMs) {
+    StandbyClient(NioEventLoopGroup group, String clientId, boolean secure, int readTimeoutMs) {
+        this.group = group;
         this.clientId = clientId;
         this.secure = secure;
         this.readTimeoutMs = readTimeoutMs;
     }
 
     void connect(String host, int port) throws Exception {
-        group = new NioEventLoopGroup();
 
         final SslContext sslContext;
 
@@ -137,6 +139,10 @@ class StandbyClient implements AutoCloseable {
                         p.addLast(new GetSegmentResponseHandler(segmentQueue));
                         p.addLast(new GetBlobResponseHandler(blobQueue));
                         p.addLast(new GetReferencesResponseHandler(referencesQueue));
+
+                        // Exception handler
+
+                        p.addLast(new ExceptionHandler(clientId));
                     }
 
                 });
@@ -146,11 +152,6 @@ class StandbyClient implements AutoCloseable {
 
     @Override
     public void close() {
-        closeChannel();
-        closeGroup();
-    }
-
-    private void closeChannel() {
         if (channel == null) {
             return;
         }
@@ -161,17 +162,7 @@ class StandbyClient implements AutoCloseable {
         }
     }
 
-    private void closeGroup() {
-        if (group == null) {
-            return;
-        }
-        if (group.shutdownGracefully(2, 15, TimeUnit.SECONDS).awaitUninterruptibly(20, TimeUnit.SECONDS)) {
-            log.debug("Group shut down");
-        } else {
-            log.debug("Group shutdown timed out");
-        }
-    }
-
+    @Nullable
     String getHead() throws InterruptedException {
         channel.writeAndFlush(new GetHeadRequest(clientId));
 
@@ -184,6 +175,7 @@ class StandbyClient implements AutoCloseable {
         return response.getHeadRecordId();
     }
 
+    @Nullable
     byte[] getSegment(String segmentId) throws InterruptedException {
         channel.writeAndFlush(new GetSegmentRequest(clientId, segmentId));
 
@@ -196,6 +188,7 @@ class StandbyClient implements AutoCloseable {
         return response.getSegmentData();
     }
 
+    @Nullable
     byte[] getBlob(String blobId) throws InterruptedException {
         channel.writeAndFlush(new GetBlobRequest(clientId, blobId));
 
@@ -208,6 +201,7 @@ class StandbyClient implements AutoCloseable {
         return response.getBlobData();
     }
 
+    @Nullable
     Iterable<String> getReferences(String segmentId) throws InterruptedException {
         channel.writeAndFlush(new GetReferencesRequest(clientId, segmentId));
 

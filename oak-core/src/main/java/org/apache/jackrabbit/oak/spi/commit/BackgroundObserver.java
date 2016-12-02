@@ -30,9 +30,9 @@ import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
 import com.google.common.base.Predicate;
 import org.apache.jackrabbit.oak.commons.concurrent.NotifyingFutureTask;
@@ -54,6 +54,8 @@ import org.slf4j.LoggerFactory;
  * automatically merged to just one change.
  */
 public class BackgroundObserver implements Observer, Closeable {
+
+    public final static int DEFAULT_QUEUE_SIZE = 10000;
 
     /**
      * Signal for the background thread to stop processing changes.
@@ -179,7 +181,7 @@ public class BackgroundObserver implements Observer, Closeable {
     public BackgroundObserver(
             @Nonnull Observer observer,
             @Nonnull Executor executor) {
-        this(observer, executor, 1000);
+        this(observer, executor, DEFAULT_QUEUE_SIZE);
     }
 
     /**
@@ -245,7 +247,7 @@ public class BackgroundObserver implements Observer, Closeable {
                 return size(filter(queue, new Predicate<ContentChange>() {
                     @Override
                     public boolean apply(ContentChange input) {
-                        return input.info != null;
+                        return !input.info.isExternal();
                     }
                 }));
             }
@@ -255,7 +257,7 @@ public class BackgroundObserver implements Observer, Closeable {
                 return size(filter(queue, new Predicate<ContentChange>() {
                     @Override
                     public boolean apply(ContentChange input) {
-                        return input.info == null;
+                        return input.info.isExternal();
                     }
                 }));
             }
@@ -268,15 +270,18 @@ public class BackgroundObserver implements Observer, Closeable {
      * @throws IllegalStateException  if {@link #close()} has already been called.
      */
     @Override
-    public synchronized void contentChanged(@Nonnull NodeState root, @Nullable CommitInfo info) {
+    public synchronized void contentChanged(@Nonnull NodeState root, @Nonnull CommitInfo info) {
         checkState(!stopped);
         checkNotNull(root);
+        checkNotNull(info);
 
-        if (alwaysCollapseExternalEvents && info == null && last != null && last.info == null) {
+        if (alwaysCollapseExternalEvents && info.isExternal() && last != null && last.info.isExternal()) {
             // This is an external change. If the previous change was
             // also external, we can drop it from the queue (since external
             // changes in any case can cover multiple commits) to help
             // prevent the queue from filling up too fast.
+
+            //TODO - Support for merging ChangeSet for external changes
             queue.remove(last);
             full = false;
         }
@@ -286,7 +291,7 @@ public class BackgroundObserver implements Observer, Closeable {
             // If the queue is full, some commits have already been skipped
             // so we need to drop the possible local commit information as
             // only external changes can be merged together to larger chunks.
-            change = new ContentChange(root, null);
+            change = new ContentChange(root, CommitInfo.EMPTY_EXTERNAL);
         } else {
             change = new ContentChange(root, info);
         }
@@ -312,5 +317,29 @@ public class BackgroundObserver implements Observer, Closeable {
 
     private static Logger getLogger(@Nonnull Observer observer) {
         return LoggerFactory.getLogger(checkNotNull(observer).getClass());
+    }
+
+    
+    /** FOR TESTING ONLY 
+     * @throws InterruptedException **/
+    boolean waitUntilStopped(int timeout, TimeUnit unit) throws InterruptedException {
+        long done = System.currentTimeMillis() + unit.toMillis(timeout);
+        boolean added;
+        synchronized(this) {
+            added = queue.offer(STOP);
+            currentTask.onComplete(completionHandler);
+        }
+        while(done > System.currentTimeMillis()) {
+            synchronized(this) {
+                if (!added) {
+                    added = queue.offer(STOP);
+                }
+                if (queue.size() == 0 || (queue.size() == 1 && queue.peek() == STOP)) {
+                    return true;
+                }
+                wait(1);
+            }
+        }
+        return false;
     }
 }

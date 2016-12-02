@@ -45,10 +45,12 @@ import org.apache.jackrabbit.oak.plugins.name.NameValidatorProvider;
 import org.apache.jackrabbit.oak.plugins.name.NamespaceEditorProvider;
 import org.apache.jackrabbit.oak.plugins.nodetype.TypeEditorProvider;
 import org.apache.jackrabbit.oak.plugins.nodetype.write.InitialContent;
+import org.apache.jackrabbit.oak.plugins.observation.ChangeCollectorProvider;
 import org.apache.jackrabbit.oak.plugins.observation.CommitRateLimiter;
 import org.apache.jackrabbit.oak.plugins.version.VersionHook;
 import org.apache.jackrabbit.oak.query.QueryEngineSettings;
 import org.apache.jackrabbit.oak.security.SecurityProviderImpl;
+import org.apache.jackrabbit.oak.spi.commit.BackgroundObserver;
 import org.apache.jackrabbit.oak.spi.commit.CommitHook;
 import org.apache.jackrabbit.oak.spi.commit.CompositeConflictHandler;
 import org.apache.jackrabbit.oak.spi.commit.Editor;
@@ -76,7 +78,7 @@ import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
  * {@link Jcr#createRepository()}.</p>
  */
 public class Jcr {
-    public static final int DEFAULT_OBSERVATION_QUEUE_LENGTH = 1000;
+    public static final int DEFAULT_OBSERVATION_QUEUE_LENGTH = BackgroundObserver.DEFAULT_QUEUE_SIZE;
 
     private final Oak oak;
 
@@ -120,6 +122,7 @@ public class Jcr {
             with(new NamespaceEditorProvider());
             with(new TypeEditorProvider());
             with(new ConflictValidatorProvider());
+            with(new ChangeCollectorProvider());
 
             with(new ReferenceEditorProvider());
             with(new ReferenceIndexProvider());

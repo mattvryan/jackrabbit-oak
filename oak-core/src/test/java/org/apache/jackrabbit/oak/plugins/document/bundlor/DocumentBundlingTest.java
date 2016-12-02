@@ -39,7 +39,9 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentMKBuilderProvider;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
+import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.TestNodeObserver;
+import org.apache.jackrabbit.oak.plugins.document.TestUtils;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.plugins.nodetype.write.InitialContent;
@@ -51,16 +53,21 @@ import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.NodeStateDiff;
 import org.apache.jackrabbit.oak.spi.state.NodeStateUtils;
+import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableList.copyOf;
 import static java.lang.String.format;
 import static org.apache.commons.io.FileUtils.ONE_MB;
 import static org.apache.jackrabbit.JcrConstants.JCR_PRIMARYTYPE;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
+import static org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore.SYS_PROP_DISABLE_JOURNAL;
+import static org.apache.jackrabbit.oak.plugins.document.TestUtils.asDocumentState;
+import static org.apache.jackrabbit.oak.plugins.document.TestUtils.childBuilder;
+import static org.apache.jackrabbit.oak.plugins.document.TestUtils.createChild;
 import static org.apache.jackrabbit.oak.plugins.document.bundlor.BundlingConfigHandler.BUNDLOR;
 import static org.apache.jackrabbit.oak.plugins.document.bundlor.BundlingConfigHandler.DOCUMENT_NODE_STORE;
 import static org.apache.jackrabbit.oak.plugins.document.bundlor.DocumentBundlor.META_PROP_BUNDLED_CHILD;
@@ -80,6 +87,7 @@ public class DocumentBundlingTest {
     public DocumentMKBuilderProvider builderProvider = new DocumentMKBuilderProvider();
     private DocumentNodeStore store;
     private RecordingDocumentStore ds = new RecordingDocumentStore();
+    private String journalDisabledProp;
 
     @Before
     public void setUpBundlor() throws CommitFailedException {
@@ -104,6 +112,16 @@ public class DocumentBundlingTest {
                 .setChildNode("app:Asset", registryState.getChildNode("app:Asset"));
         merge(builder);
         store.runBackgroundOperations();
+        journalDisabledProp = System.getProperty(SYS_PROP_DISABLE_JOURNAL);
+    }
+
+    @After
+    public void resetSysProps(){
+        if (journalDisabledProp != null) {
+            System.setProperty(SYS_PROP_DISABLE_JOURNAL, journalDisabledProp);
+        } else {
+            System.clearProperty(SYS_PROP_DISABLE_JOURNAL);
+        }
     }
 
     @Test
@@ -120,13 +138,14 @@ public class DocumentBundlingTest {
         assertTrue(fileNodeState.getChildNode("book.jpg").exists());
         NodeState contentNode = fileNodeState.getChildNode("book.jpg").getChildNode("jcr:content");
         assertTrue(contentNode.exists());
+        assertEquals("jcr:content", getBundlingPath(contentNode));
 
         assertEquals(1, contentNode.getPropertyCount());
         assertEquals(1, Iterables.size(contentNode.getProperties()));
 
         assertNull(getNodeDocument("/test/book.jpg/jcr:content"));
         assertNotNull(getNodeDocument("/test/book.jpg"));
-        assertTrue(hasNodeProperty("/test/book.jpg", concat("jcr:content", DocumentBundlor.META_PROP_NODE)));
+        assertTrue(hasNodeProperty("/test/book.jpg", concat("jcr:content", DocumentBundlor.META_PROP_BUNDLING_PATH)));
 
         AssertingDiff.assertEquals(fileNode.getNodeState(), fileNodeState.getChildNode("book.jpg"));
 
@@ -135,6 +154,24 @@ public class DocumentBundlingTest {
         AssertingDiff.assertEquals(fileNode.getNodeState(), dns.fromExternalChange());
     }
 
+    @Test
+    public void bundlorUtilsIsBundledMethods() throws Exception{
+        NodeBuilder builder = store.getRoot().builder();
+        NodeBuilder fileNode = newNode("nt:file");
+        fileNode.child("jcr:content").setProperty("jcr:data", "foo");
+        builder.child("test").setChildNode("book.jpg", fileNode.getNodeState());
+
+        merge(builder);
+        NodeState fileNodeState =  NodeStateUtils.getNode(store.getRoot(), "/test/book.jpg");
+        assertTrue(BundlorUtils.isBundledNode(fileNodeState));
+        assertFalse(BundlorUtils.isBundledChild(fileNodeState));
+        assertTrue(BundlorUtils.isBundlingRoot(fileNodeState));
+
+        NodeState contentNode =  NodeStateUtils.getNode(store.getRoot(), "/test/book.jpg/jcr:content");
+        assertTrue(BundlorUtils.isBundledNode(contentNode));
+        assertTrue(BundlorUtils.isBundledChild(contentNode));
+        assertFalse(BundlorUtils.isBundlingRoot(contentNode));
+    }
 
     @Test
     public void bundledParent() throws Exception{
@@ -148,6 +185,31 @@ public class DocumentBundlingTest {
         builder.child("test").setChildNode("book.jpg", appNB.getNodeState());
 
         merge(builder);
+    }
+
+    @Test
+    public void bundlingPath() throws Exception{
+        NodeBuilder builder = store.getRoot().builder();
+        NodeBuilder appNB = newNode("app:Asset");
+        createChild(appNB,
+                "jcr:content",
+                "jcr:content/comments", //not bundled
+                "jcr:content/metadata",
+                "jcr:content/metadata/xmp", //not bundled
+                "jcr:content/renditions", //includes all
+                "jcr:content/renditions/original",
+                "jcr:content/renditions/original/jcr:content"
+        );
+        builder.child("test").setChildNode("book.jpg", appNB.getNodeState());
+
+        merge(builder);
+        NodeState appNode = getNode(store.getRoot(), "test/book.jpg");
+
+        assertEquals("jcr:content", getBundlingPath(appNode.getChildNode("jcr:content")));
+        assertEquals("jcr:content/metadata",
+                getBundlingPath(appNode.getChildNode("jcr:content").getChildNode("metadata")));
+        assertEquals("jcr:content/renditions/original",
+                getBundlingPath(appNode.getChildNode("jcr:content").getChildNode("renditions").getChildNode("original")));
     }
     
     @Test
@@ -469,6 +531,36 @@ public class DocumentBundlingTest {
     }
 
     @Test
+    public void documentNodeStateBundledMethods() throws Exception{
+        NodeBuilder builder = store.getRoot().builder();
+        NodeBuilder appNB = newNode("app:Asset");
+        createChild(appNB,
+                "jcr:content",
+                "jcr:content/comments", //not bundled
+                "jcr:content/metadata",
+                "jcr:content/metadata/xmp", //not bundled
+                "jcr:content/renditions", //includes all
+                "jcr:content/renditions/original",
+                "jcr:content/renditions/original/jcr:content"
+        );
+        builder.child("test").setChildNode("book.jpg", appNB.getNodeState());
+
+        merge(builder);
+        DocumentNodeState appNode = (DocumentNodeState) getNode(store.getRoot(), "test/book.jpg");
+        assertTrue(appNode.hasOnlyBundledChildren());
+        assertEquals(ImmutableSet.of("jcr:content"), appNode.getBundledChildNodeNames());
+        assertEquals(ImmutableSet.of("metadata", "renditions"),
+                asDocumentState(appNode.getChildNode("jcr:content")).getBundledChildNodeNames());
+
+        builder = store.getRoot().builder();
+        childBuilder(builder, "/test/book.jpg/foo");
+        merge(builder);
+
+        DocumentNodeState appNode2 = (DocumentNodeState) getNode(store.getRoot(), "test/book.jpg");
+        assertFalse(appNode2.hasOnlyBundledChildren());
+    }
+
+    @Test
     public void bundledDocsShouldNotBePartOfBackgroundUpdate() throws Exception{
         NodeBuilder builder = store.getRoot().builder();
         NodeBuilder fileNode = newNode("nt:file");
@@ -508,6 +600,29 @@ public class DocumentBundlingTest {
         merge(builder);
         assertEquals(4, o.added.size());
 
+    }
+
+    @Test
+    public void bundledNodeAndNodeChildrenCache() throws Exception{
+        NodeBuilder builder = store.getRoot().builder();
+        NodeBuilder appNB = newNode("app:Asset");
+        createChild(appNB,
+                "jcr:content",
+                "jcr:content/comments", //not bundled
+                "jcr:content/metadata",
+                "jcr:content/metadata/xmp", //not bundled
+                "jcr:content/renditions", //includes all
+                "jcr:content/renditions/original",
+                "jcr:content/renditions/original/jcr:content"
+        );
+        builder.child("test").setChildNode("book.jpg", appNB.getNodeState());
+
+        merge(builder);
+
+        Set<PathRev> cachedPaths = store.getNodeChildrenCache().asMap().keySet();
+        for (PathRev pr : cachedPaths){
+            assertFalse(pr.getPath().contains("jcr:content/renditions"));
+        }
     }
 
     @Test
@@ -554,7 +669,7 @@ public class DocumentBundlingTest {
         builder.child("test").setChildNode("book.jpg", fileNode.getNodeState());
         merge(builder);
 
-        assertTrue(hasNodeProperty("/test/book.jpg", concat("jcr:content", DocumentBundlor.META_PROP_NODE)));
+        assertTrue(hasNodeProperty("/test/book.jpg", concat("jcr:content", DocumentBundlor.META_PROP_BUNDLING_PATH)));
 
         //Delete the bundled node structure
         builder = store.getRoot().builder();
@@ -577,8 +692,8 @@ public class DocumentBundlingTest {
         merge(builder);
 
         //New pattern should be effective
-        assertTrue(hasNodeProperty("/test/book.jpg", concat("metadata", DocumentBundlor.META_PROP_NODE)));
-        assertFalse(hasNodeProperty("/test/book.jpg", concat("comments", DocumentBundlor.META_PROP_NODE)));
+        assertTrue(hasNodeProperty("/test/book.jpg", concat("metadata", DocumentBundlor.META_PROP_BUNDLING_PATH)));
+        assertFalse(hasNodeProperty("/test/book.jpg", concat("comments", DocumentBundlor.META_PROP_BUNDLING_PATH)));
     }
 
     @Test
@@ -589,7 +704,7 @@ public class DocumentBundlingTest {
         builder.child("test").setChildNode("book.jpg", fileNode.getNodeState());
         merge(builder);
 
-        assertTrue(hasNodeProperty("/test/book.jpg", concat("jcr:content", DocumentBundlor.META_PROP_NODE)));
+        assertTrue(hasNodeProperty("/test/book.jpg", concat("jcr:content", DocumentBundlor.META_PROP_BUNDLING_PATH)));
 
         //Delete the bundled node structure
         builder = store.getRoot().builder();
@@ -613,11 +728,10 @@ public class DocumentBundlingTest {
 
         //New pattern should be effective
         assertNotNull(getNodeDocument("/test/book.jpg"));
-        assertFalse(hasNodeProperty("/test/book.jpg", concat("metadata", DocumentBundlor.META_PROP_NODE)));
-        assertFalse(hasNodeProperty("/test/book.jpg", concat("comments", DocumentBundlor.META_PROP_NODE)));
+        assertFalse(hasNodeProperty("/test/book.jpg", concat("metadata", DocumentBundlor.META_PROP_BUNDLING_PATH)));
+        assertFalse(hasNodeProperty("/test/book.jpg", concat("comments", DocumentBundlor.META_PROP_BUNDLING_PATH)));
     }
 
-    @Ignore("OAK-5070")
     @Test
     public void journalDiffAndBundling() throws Exception{
         NodeBuilder builder = store.getRoot().builder();
@@ -650,6 +764,37 @@ public class DocumentBundlingTest {
         assertTrue("No change reported for /test/book.jpg/jcr:content", addedPropertyNames.contains("fooContent"));
     }
 
+    @Test
+    public void bundledNodeAndDiffFew() throws Exception{
+        store.dispose();
+        disableJournalUse();
+        store = builderProvider
+                .newBuilder()
+                .setDocumentStore(ds)
+                .memoryCacheSize(0)
+                .getNodeStore();
+
+        NodeBuilder builder = store.getRoot().builder();
+        NodeBuilder fileNode = newNode("nt:file");
+        fileNode.child("jcr:content").setProperty("jcr:data", "foo");
+        builder.child("test").setChildNode("book.jpg", fileNode.getNodeState());
+        merge(builder);
+
+        //Make some modifications under the bundled node
+        //This would cause an entry for bundled node in Commit modified set
+        builder = store.getRoot().builder();
+        childBuilder(builder, "/test/book.jpg/jcr:content").setProperty("foo", "bar");
+
+        TestNodeObserver o = new TestNodeObserver("test");
+        store.addObserver(o);
+        merge(builder);
+        assertEquals(1, o.changed.size());
+    }
+
+    private static void disableJournalUse() {
+        System.setProperty(SYS_PROP_DISABLE_JOURNAL, "true");
+    }
+
     private void createTestNode(String path, NodeState state) throws CommitFailedException {
         String parentPath = PathUtils.getParentPath(path);
         NodeBuilder builder = store.getRoot().builder();
@@ -675,12 +820,9 @@ public class DocumentBundlingTest {
         return store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
     }
 
-    private static DocumentNodeState asDocumentState(NodeState state){
-        if (state instanceof DocumentNodeState){
-            return (DocumentNodeState) state;
-        }
-        fail("Not of type AbstractDoucmentNodeState");
-        return null;
+    private static String getBundlingPath(NodeState contentNode) {
+        PropertyState ps = contentNode.getProperty(DocumentBundlor.META_PROP_BUNDLING_PATH);
+        return checkNotNull(ps).getValue(Type.STRING);
     }
 
     private static void dump(NodeState state){
@@ -691,25 +833,10 @@ public class DocumentBundlingTest {
         return copyOf(getNode(state, path).getChildNodeNames());
     }
 
-    private static NodeBuilder newNode(String typeName){
+    static NodeBuilder newNode(String typeName){
         NodeBuilder builder = EMPTY_NODE.builder();
         builder.setProperty(JCR_PRIMARYTYPE, typeName);
         return builder;
-    }
-
-    private static NodeBuilder createChild(NodeBuilder root, String ... paths){
-        for (String path : paths){
-            childBuilder(root, path);
-        }
-        return root;
-    }
-
-    private static NodeBuilder childBuilder(NodeBuilder root, String path){
-        NodeBuilder nb = root;
-        for (String nodeName : PathUtils.elements(path)){
-            nb = nb.child(nodeName);
-        }
-        return nb;
     }
 
     private static class RecordingDocumentStore extends MemoryDocumentStore {

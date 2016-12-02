@@ -45,4 +45,10 @@ public interface IndexingContext {
      * asynchronously
      */
     boolean isAsync();
+
+    /**
+     * Invoked by IndexEditor to indicate that update of index has failed
+     * @param e exception stack for failed updated
+     */
+    void indexUpdateFailed(Exception e);
 }

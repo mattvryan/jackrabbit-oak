@@ -22,8 +22,10 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.Maps.newLinkedHashMap;
+import static java.util.Arrays.fill;
 import static org.apache.jackrabbit.oak.commons.IOUtils.closeQuietly;
+import static org.apache.jackrabbit.oak.segment.CacheWeights.OBJECT_HEADER_SIZE;
+import static org.apache.jackrabbit.oak.segment.RecordNumbers.EMPTY_RECORD_NUMBERS;
 import static org.apache.jackrabbit.oak.segment.SegmentId.isDataSegmentId;
 import static org.apache.jackrabbit.oak.segment.SegmentVersion.LATEST_VERSION;
 import static org.apache.jackrabbit.oak.segment.SegmentVersion.isValid;
@@ -38,20 +40,21 @@ import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.UUID;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 
-import com.google.common.base.Charsets;
-import com.google.common.collect.AbstractIterator;
 import org.apache.commons.io.HexDump;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyStates;
 import org.apache.jackrabbit.oak.segment.RecordNumbers.Entry;
+
+import com.google.common.base.Charsets;
+import com.google.common.collect.AbstractIterator;
 
 /**
  * A list of records.
@@ -225,24 +228,29 @@ public class Segment {
      * @return An instance of {@link RecordNumbers}, never {@code null}.
      */
     private RecordNumbers readRecordNumberOffsets() {
-        Map<Integer, RecordEntry> recordNumberOffsets = newLinkedHashMap();
-
-        int position = data.position();
-
-        position += HEADER_SIZE;
-        position += getReferencedSegmentIdCount() * SEGMENT_REFERENCE_SIZE;
-
-        for (int i = 0; i < getRecordNumberCount(); i++) {
-            int recordNumber = data.getInt(position);
-            position += 4;
-            int type = data.get(position);
-            position += 1;
-            int offset = data.getInt(position);
-            position += 4;
-            recordNumberOffsets.put(recordNumber, new RecordEntry(RecordType.values()[type], offset));
+        int recordNumberCount = getRecordNumberCount();
+        if (recordNumberCount == 0) {
+            return EMPTY_RECORD_NUMBERS;
         }
 
-        return new ImmutableRecordNumbers(recordNumberOffsets);
+        int position = HEADER_SIZE + data.position()
+                + getReferencedSegmentIdCount() * SEGMENT_REFERENCE_SIZE;
+        int maxIndex = data.getInt(position + (recordNumberCount - 1) * 9);
+
+        byte[] types = new byte[maxIndex + 1];
+        int[] offsets = new int[maxIndex + 1];
+        fill(offsets, -1);
+
+        for (int i = 0; i < recordNumberCount; i++) {
+            int recordNumber = data.getInt(position);
+            position += 4;
+            types[recordNumber] = data.get(position);
+            position += 1;
+            offsets[recordNumber] = data.getInt(position);
+            position += 4;
+        }
+
+        return new ImmutableRecordNumbers(offsets, types);
     }
 
     private SegmentReferences readReferencedSegments() {
@@ -709,4 +717,28 @@ public class Segment {
         }
     }
 
+    /**
+     * Estimate of how much memory this instance would occupy in the segment
+     * cache.
+     */
+    public int estimateMemoryUsage() {
+        int size = OBJECT_HEADER_SIZE + 76;
+        size += 56; // 7 refs x 8 bytes
+
+        if (id.isDataSegmentId()) {
+            int recordNumberCount = getRecordNumberCount();
+            size += 5 * recordNumberCount;
+
+            int referencedSegmentIdCount = getReferencedSegmentIdCount();
+            size += 8 * referencedSegmentIdCount;
+
+            size += StringUtils.estimateMemoryUsage(info);
+        }
+        if (!data.isDirect()) {
+            // seems to overreport by 100+ bytes
+            size += size();
+        }
+        size += id.estimateMemoryUsage();
+        return size;
+    }
 }

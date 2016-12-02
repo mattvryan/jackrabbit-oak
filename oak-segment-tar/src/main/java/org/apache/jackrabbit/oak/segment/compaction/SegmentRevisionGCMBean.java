@@ -64,16 +64,6 @@ public class SegmentRevisionGCMBean
     }
 
     @Override
-    public int getGainThreshold() {
-        return gcOptions.getGainThreshold();
-    }
-
-    @Override
-    public void setGainThreshold(int gainThreshold) {
-        gcOptions.setGainThreshold(gainThreshold);
-    }
-
-    @Override
     public int getRetryCount() {
         return gcOptions.getRetryCount();
     }
@@ -114,6 +104,16 @@ public class SegmentRevisionGCMBean
     }
 
     @Override
+    public boolean isEstimationDisabled() {
+        return gcOptions.isEstimationDisabled();
+    }
+
+    @Override
+    public void setEstimationDisabled(boolean disabled)  {
+        gcOptions.setEstimationDisabled(disabled);
+    }
+
+    @Override
     public void startRevisionGC() {
         fileStore.getGCRunner().run();
     }
@@ -150,7 +150,12 @@ public class SegmentRevisionGCMBean
     public String getLastError() {
         return fileStoreGCMonitor.getLastError();
     }
-
+    
+    @Override
+    public String getLastLogMessage() {
+        return fileStoreGCMonitor.getLastLogMessage();
+    }
+    
     @Nonnull
     @Override
     public String getStatus() {

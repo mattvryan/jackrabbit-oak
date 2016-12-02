@@ -152,22 +152,16 @@ public class DynamicSyncContext extends DefaultSyncContext {
      */
     private void collectPrincipalNames(@Nonnull Set<String> principalNames, @Nonnull Iterable<ExternalIdentityRef> declaredGroupIdRefs, long depth) throws ExternalIdentityException {
         for (ExternalIdentityRef ref : declaredGroupIdRefs) {
-            if (ref instanceof ExternalGroupRef && depth < 2) {
-                //in this case we can avoid calling idp.getIdentity(), saving a roundtrip
-                principalNames.add(ref.getId());
-            }
-            else {
-                ExternalIdentity extId = idp.getIdentity(ref);
-                if (extId instanceof ExternalGroup) {
-                    principalNames.add(ref.getId());
-                    // recursively apply further membership until the configured depth is reached
-                    if (depth > 1) {
-                        collectPrincipalNames(principalNames, extId.getDeclaredGroups(), depth - 1);
-                    }
+            // get group
+            ExternalIdentity extId = idp.getIdentity(ref);
+            if (extId instanceof ExternalGroup) {
+                principalNames.add(extId.getPrincipalName());
+                // recursively apply further membership until the configured depth is reached
+                if (depth > 1) {
+                    collectPrincipalNames(principalNames, extId.getDeclaredGroups(), depth - 1);
                 }
-                else {
-                    log.debug("Not an external group ({}) => ignore.", ref);
-                }
+            } else {
+                log.debug("Not an external group ({}) => ignore.", extId);
             }
         }
     }

@@ -155,7 +155,7 @@ public class SegmentCompactionIT {
     private volatile int nodeAddRatio = 40;
     private volatile int addStringRatio = 20;
     private volatile int addBinaryRatio = 0;
-    private volatile int compactionInterval = 60;
+    private volatile int compactionInterval = 2;
     private volatile boolean stopping;
     private volatile Reference rootReference;
     private volatile long fileStoreSize;
@@ -221,7 +221,7 @@ public class SegmentCompactionIT {
 
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
         SegmentGCOptions gcOptions = defaultGCOptions()
-                .setGainThreshold(0)
+                .setEstimationDisabled(true)
                 .setForceTimeout(3600);
         fileStore = fileStoreBuilder(folder.getRoot())
                 .withMemoryMapping(true)
@@ -719,6 +719,11 @@ public class SegmentCompactionIT {
         public void cleaned(long reclaimedSize, long currentSize) {
             cleaned = true;
             delegate.cleaned(reclaimedSize, currentSize);
+        }
+        
+        @Override
+        public void updateStatus(String status) {
+            delegate.updateStatus(status);
         }
 
         public boolean isCleaned() {

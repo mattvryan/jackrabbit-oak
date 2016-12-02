@@ -35,6 +35,7 @@ import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
@@ -44,6 +45,7 @@ import com.google.common.collect.Sets;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Iterables.any;
+import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Sets.filter;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.COMMIT_ROOT;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.DOC_SIZE_THRESHOLD;
@@ -66,6 +68,13 @@ class SplitOperations {
 
     private static final Logger LOG = LoggerFactory.getLogger(SplitOperations.class);
     private static final int GARBAGE_LIMIT = Integer.getInteger("oak.documentMK.garbage.limit", 1000);
+    private static final Predicate<Long> BINARY_FOR_SPLIT_THRESHOLD = new Predicate<Long>() {
+        @Override
+        public boolean apply(Long input) {
+            // only force trigger split for binaries bigger than 4k
+            return input > 4096;
+        }
+    };
     private static final DocumentStore STORE = new MemoryDocumentStore();
 
     private final NodeDocument doc;
@@ -73,7 +82,7 @@ class SplitOperations {
     private final String id;
     private final Revision headRevision;
     private final RevisionContext context;
-    private final Predicate<String> isBinaryValue;
+    private final Function<String, Long> binarySize;
     private final int numRevsThreshold;
     private Revision high;
     private Revision low;
@@ -92,11 +101,11 @@ class SplitOperations {
     private SplitOperations(@Nonnull final NodeDocument doc,
                             @Nonnull final RevisionContext context,
                             @Nonnull final RevisionVector headRev,
-                            @Nonnull final Predicate<String> isBinaryValue,
+                            @Nonnull final Function<String, Long> binarySize,
                             int numRevsThreshold) {
         this.doc = checkNotNull(doc);
         this.context = checkNotNull(context);
-        this.isBinaryValue = checkNotNull(isBinaryValue);
+        this.binarySize = checkNotNull(binarySize);
         this.path = doc.getPath();
         this.id = doc.getId();
         this.headRevision = checkNotNull(headRev).getRevision(context.getClusterId());
@@ -123,9 +132,8 @@ class SplitOperations {
      * @param context the revision context.
      * @param headRevision the head revision before the document was retrieved
      *                     from the document store.
-     * @param isBinaryValue a predicate that returns {@code true} if the given
-     *                      String value is considered a binary; {@code false}
-     *                      otherwise.
+     * @param binarySize a function that returns the binary size of the given
+     *                   JSON property value String.
      * @param numRevsThreshold only split off at least this number of revisions.
      * @return list of update operations. An empty list indicates the document
      *          does not require a split.
@@ -136,14 +144,14 @@ class SplitOperations {
     static List<UpdateOp> forDocument(@Nonnull NodeDocument doc,
                                       @Nonnull RevisionContext context,
                                       @Nonnull RevisionVector headRevision,
-                                      @Nonnull Predicate<String> isBinaryValue,
+                                      @Nonnull Function<String, Long> binarySize,
                                       int numRevsThreshold) {
         if (doc.isSplitDocument()) {
             throw new IllegalArgumentException(
                     "Not a main document: " + doc.getId());
         }
         return new SplitOperations(doc, context, headRevision,
-                isBinaryValue, numRevsThreshold).create();
+                binarySize, numRevsThreshold).create();
 
     }
 
@@ -211,7 +219,7 @@ class SplitOperations {
                 Revision r = splitMap.lastKey();
                 splitMap.remove(r);
                 splitRevs.addAll(splitMap.keySet());
-                hasBinaryToSplit |= hasBinaryProperty(splitMap.values())
+                hasBinaryToSplit |= hasBinaryPropertyForSplit(splitMap.values())
                         && nodeExistsAtHeadRevision.get();
                 mostRecentRevs.add(r);
             }
@@ -225,8 +233,8 @@ class SplitOperations {
         }
     }
 
-    private boolean hasBinaryProperty(Iterable<String> values) {
-        return doc.hasBinary() && any(values, isBinaryValue);
+    private boolean hasBinaryPropertyForSplit(Iterable<String> values) {
+        return doc.hasBinary() && any(transform(values, binarySize), BINARY_FOR_SPLIT_THRESHOLD);
     }
 
     /**
@@ -310,7 +318,6 @@ class SplitOperations {
                 String prevPath = Utils.getPreviousPathFor(path, h, entry.getKey() + 1);
                 String prevId = Utils.getIdFromPath(prevPath);
                 UpdateOp intermediate = new UpdateOp(prevId, true);
-                intermediate.set(Document.ID, prevId);
                 if (Utils.isLongPath(prevPath)) {
                     intermediate.set(NodeDocument.PATH, prevPath);
                 }
@@ -347,7 +354,6 @@ class SplitOperations {
             setPrevious(main, new Range(high, low, 0));
             String oldPath = Utils.getPreviousPathFor(path, high, 0);
             UpdateOp old = new UpdateOp(Utils.getIdFromPath(oldPath), true);
-            old.set(Document.ID, old.getId());
             if (Utils.isLongPath(oldPath)) {
                 old.set(NodeDocument.PATH, oldPath);
             }

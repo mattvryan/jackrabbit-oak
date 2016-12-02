@@ -34,6 +34,7 @@ import com.google.common.collect.ImmutableList;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.slf4j.LoggerFactory;
 
 /**
  * This {@code Filter} implementation supports filtering on paths using
@@ -75,6 +76,11 @@ public class GlobbingPathFilter implements EventFilter {
         this.patternMap = checkNotNull(patternMap);
     }
 
+    public GlobbingPathFilter(@Nonnull String pattern, Map<String, Pattern> patternMap) {
+        this(elements(pattern), checkNotNull(patternMap));
+    }
+
+    /** for testing only - use variant which passes the patternMap for productive code **/
     public GlobbingPathFilter(@Nonnull String pattern) {
         this(elements(pattern), new HashMap<String, Pattern>());
     }
@@ -146,7 +152,7 @@ public class GlobbingPathFilter implements EventFilter {
         if (wildcardMatch(name, head)) {
             return new GlobbingPathFilter(pattern.subList(1, pattern.size()), patternMap);
         } else if (STAR_STAR.equals(head)) {
-            if (pattern.size() >= 2 && pattern.get(1).equals(name)) {
+            if (pattern.size() >= 2 && wildcardMatch(name, pattern.get(1))) {
                 // ** matches empty list of elements and pattern.get(1) matches name
                 // match the rest of the pattern against the rest of the path and
                 // match the whole pattern against the rest of the path
@@ -175,10 +181,18 @@ public class GlobbingPathFilter implements EventFilter {
     private boolean includeItem(String name) {
         if (!pattern.isEmpty() && pattern.size() <= 2) {
             String head = pattern.get(0);
-            boolean headMatches = wildcardMatch(name, head) || STAR_STAR.equals(head);
-            return pattern.size() == 1
+            if (STAR_STAR.equals(head)) {
+                if (pattern.size() == 1) {
+                    return true;
+                } else {
+                    return wildcardMatch(name, pattern.get(1));
+                }
+            }
+            boolean headMatches = wildcardMatch(name, head);
+            boolean result = pattern.size() == 1
                 ? headMatches
                 : headMatches && STAR_STAR.equals(pattern.get(1));
+            return result;
         } else {
             return false;
         }

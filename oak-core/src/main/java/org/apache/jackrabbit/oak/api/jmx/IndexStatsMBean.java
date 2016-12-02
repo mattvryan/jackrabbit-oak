@@ -18,6 +18,7 @@
 package org.apache.jackrabbit.oak.api.jmx;
 
 import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.TabularData;
 
 import aQute.bnd.annotation.ProviderType;
 import org.apache.jackrabbit.oak.commons.jmx.Description;
@@ -33,6 +34,8 @@ public interface IndexStatsMBean {
     String STATUS_RUNNING = "running";
 
     String STATUS_DONE = "done";
+
+    String STATUS_FAILING = "failing";
 
     String STATUS_INTERRUPTED = "interrupted";
 
@@ -139,6 +142,7 @@ public interface IndexStatsMBean {
      *
      * @return the execution times time series
      */
+    @Deprecated
     CompositeData getExecutionTime();
 
     /**
@@ -157,6 +161,7 @@ public interface IndexStatsMBean {
     /**
      * Resets the consolidated stats.
      */
+    @Deprecated
     void resetConsolidatedExecutionStats();
 
     /**
@@ -206,5 +211,7 @@ public interface IndexStatsMBean {
      *         be reset once the job starts working again
      */
     String getLatestErrorTime();
+
+    TabularData getFailingIndexStats();
 
 }

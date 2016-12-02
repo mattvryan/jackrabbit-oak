@@ -25,7 +25,8 @@ of a given session (or set of principals) as this evaluation can be left
 to the repository.
 
 For rare cases where the application needs to understand if a given session is 
-actually allowed to perform a given action, it is recommend to use `Session.hasPermission(String, String)`.
+actually allowed to perform a given action, it is recommend to use `Session.hasPermission(String, String)`
+or `JackrabbitSession.hasPermission(String, String...)`
 
 In order to test permissions that are not reflected in the action constants
 defined on `Session` or `JackrabbitSession`, the default implementation also allows
@@ -42,12 +43,16 @@ of privileges on `AccessControlManager` are listed below.
 
 - `Session.hasPermission(String absPath, String actions)`
 - `Session.checkPermission(String absPath, String actions)`
+- `JackrabbitSession.hasPermission(String absPath, @Nonnull String... actions)`
 
 Where
 
 - `absPath` is an absolute path pointing to an existing or non-existing item (node or property)
-- `actions` defines a comma-separated string of the actions defined on `Session` and `JackrabbitSession`. 
+- `actions` defines a comma-separated string (or string array respectively) of the actions defined on `Session` and `JackrabbitSession` (see below). 
   With the default implementation also Oak internal permission names are allowed ( _Note:_ permission names != privilege names)
+  
+See section [Permissions](../permission.html#oak_permissions) for a comprehensive
+list and the mapping from actions to permissions.
 
 #### Characteristics
 

@@ -26,12 +26,12 @@ import static org.apache.jackrabbit.oak.commons.PropertiesUtil.toLong;
 import static org.apache.jackrabbit.oak.osgi.OsgiUtil.lookupConfigurationThenFramework;
 import static org.apache.jackrabbit.oak.segment.SegmentNotFoundExceptionListener.IGNORE_SNFE;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.FORCE_TIMEOUT_DEFAULT;
-import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.GAIN_THRESHOLD_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.MEMORY_THRESHOLD_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.PAUSE_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.RETAINED_GENERATIONS_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.RETRY_COUNT_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.SIZE_DELTA_ESTIMATION_DEFAULT;
+import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.DISABLE_ESTIMATION_DEFAULT;
 import static org.apache.jackrabbit.oak.segment.file.FileStoreBuilder.fileStoreBuilder;
 import static org.apache.jackrabbit.oak.spi.blob.osgi.SplitBlobStoreService.ONLY_STANDALONE_TARGET;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
@@ -180,20 +180,12 @@ public class SegmentNodeStoreService extends ProxyNodeStore
     public static final String TEMPLATE_DEDUPLICATION_CACHE_SIZE = "templateDeduplicationCache.size";
 
     @Property(
-            intValue = 8388608,
+            intValue = 1048576,
             label = "Node deduplication cache size (#items)",
             description = "Maximum number of node to keep in the deduplication cache. If the supplied" +
                     " value is not a power of 2, it will be rounded up to the next power of 2."
     )
     public static final String NODE_DEDUPLICATION_CACHE_SIZE = "nodeDeduplicationCache.size";
-
-    @Property(
-            byteValue = GAIN_THRESHOLD_DEFAULT,
-            label = "Compaction gain threshold",
-            description = "TarMK compaction gain threshold. The gain estimation prevents compaction from running " +
-                    "if the provided threshold is not met. Value represents a percentage so an input between 0 and 100 is expected."
-    )
-    public static final String COMPACTION_GAIN_THRESHOLD = "compaction.gainThreshold";
 
     @Property(
             boolValue = PAUSE_DEFAULT,
@@ -228,6 +220,13 @@ public class SegmentNodeStoreService extends ProxyNodeStore
     public static final String COMPACTION_SIZE_DELTA_ESTIMATION = "compaction.sizeDeltaEstimation";
 
     @Property(
+            boolValue = DISABLE_ESTIMATION_DEFAULT,
+            label = "Disable Compaction Estimation Phase",
+            description = "Disables compaction estimation phase, thus allowing compaction to run every time."
+    )
+    public static final String COMPACTION_DISABLE_ESTIMATION = "compaction.disableEstimation";
+
+    @Property(
             intValue = RETAINED_GENERATIONS_DEFAULT,
             label = "Compaction retained generations",
             description = "Number of segment generations to retain."
@@ -256,6 +255,13 @@ public class SegmentNodeStoreService extends ProxyNodeStore
                     "By default large binary content would be stored within segment tar files"
     )
     public static final String CUSTOM_BLOB_STORE = "customBlobStore";
+    
+    @Property(
+            label = "Backup Directory",
+            description="Directory location for storing repository backups. If not set, defaults to" +
+                    " 'segmentstore-backup' subdirectory under 'repository.home'."
+    )
+    public static final String BACKUP_DIRECTORY = "repository.backup.dir";
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -530,7 +536,8 @@ public class SegmentNodeStoreService extends ProxyNodeStore
         final long blobGcMaxAgeInSecs = toLong(property(PROP_BLOB_GC_MAX_AGE), DEFAULT_BLOB_GC_MAX_AGE);
 
         SegmentNodeStore.SegmentNodeStoreBuilder segmentNodeStoreBuilder =
-                SegmentNodeStoreBuilders.builder(store);
+                SegmentNodeStoreBuilders.builder(store)
+                .withStatisticsProvider(statisticsProvider);
         if (toBoolean(property(STANDBY), false)) {
             segmentNodeStoreBuilder.dispatchChanges(false);
         }
@@ -613,10 +620,20 @@ public class SegmentNodeStoreService extends ProxyNodeStore
         registrations.add(registerMBean(
                 whiteboard,
                 FileStoreBackupRestoreMBean.class,
-                new FileStoreBackupRestoreImpl(segmentNodeStore, store.getRevisions(), store.getReader(), getDirectory(), executor), 
+                new FileStoreBackupRestoreImpl(segmentNodeStore, store.getRevisions(), store.getReader(), getBackupDirectory(), executor), 
                 FileStoreBackupRestoreMBean.TYPE, "Segment node store backup/restore"
         ));
 
+        // Expose statistics about the SegmentNodeStore
+        
+        registrations.add(registerMBean(
+                whiteboard,
+                SegmentNodeStoreStatsMBean.class,
+                segmentNodeStore.getStats(),
+                SegmentNodeStoreStatsMBean.TYPE,
+                "SegmentNodeStore statistics"
+        ));
+        
         log.info("SegmentNodeStore initialized");
 
         // Register a factory service to expose the FileStore
@@ -632,14 +649,20 @@ public class SegmentNodeStoreService extends ProxyNodeStore
         int forceTimeout = toInteger(property(COMPACTION_FORCE_TIMEOUT), FORCE_TIMEOUT_DEFAULT);
         int retainedGenerations = toInteger(property(RETAINED_GENERATIONS), RETAINED_GENERATIONS_DEFAULT);
 
-        byte gainThreshold = getGainThreshold();
         long sizeDeltaEstimation = toLong(property(COMPACTION_SIZE_DELTA_ESTIMATION), SIZE_DELTA_ESTIMATION_DEFAULT);
         int memoryThreshold = toInteger(property(MEMORY_THRESHOLD), MEMORY_THRESHOLD_DEFAULT);
+        boolean disableEstimation = toBoolean(property(COMPACTION_DISABLE_ESTIMATION), DISABLE_ESTIMATION_DEFAULT);
 
-        return new SegmentGCOptions(pauseCompaction, gainThreshold, retryCount, forceTimeout)
+        if (property("compaction.gainThreshold") != null) {
+            log.warn("Deprecated property compaction.gainThreshold was detected. In order to configure compaction please use the new property "
+                    + "compaction.sizeDeltaEstimation. For turning off estimation, the new property compaction.disableEstimation should be used.");
+        }
+
+        return new SegmentGCOptions(pauseCompaction, retryCount, forceTimeout)
                 .setRetainedGenerations(retainedGenerations)
                 .setGcSizeDeltaEstimation(sizeDeltaEstimation)
-                .setMemoryThreshold(memoryThreshold);
+                .setMemoryThreshold(memoryThreshold)
+                .setEstimationDisabled(disableEstimation);
     }
 
     private void unregisterNodeStore() {
@@ -670,6 +693,16 @@ public class SegmentNodeStoreService extends ProxyNodeStore
 
     private File getDirectory() {
         return new File(getBaseDirectory(), "segmentstore");
+    }
+    
+    private File getBackupDirectory() {
+        String backupDirectory = property(BACKUP_DIRECTORY);
+        
+        if (backupDirectory != null) {
+            return new File(backupDirectory);
+        }
+        
+        return new File(getBaseDirectory(), "segmentstore-backup");
     }
 
     private String getMode() {
@@ -730,16 +763,6 @@ public class SegmentNodeStoreService extends ProxyNodeStore
 
     private int getMaxFileSize() {
         return Integer.parseInt(getMaxFileSizeProperty());
-    }
-
-    private byte getGainThreshold() {
-        String gt = property(COMPACTION_GAIN_THRESHOLD);
-
-        if (gt == null) {
-            return GAIN_THRESHOLD_DEFAULT;
-        }
-
-        return Byte.valueOf(gt);
     }
 
     private String property(String name) {

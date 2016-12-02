@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import javax.annotation.Nonnull;
+
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 
@@ -83,7 +85,7 @@ public class JournalTest extends AbstractJournalTest {
         }
         
         @Override
-        public void contentChanged(NodeState root, CommitInfo info) {
+        public void contentChanged(@Nonnull NodeState root,@Nonnull CommitInfo info) {
             synchronized(incomingRootStates1) {
                 incomingRootStates1.add((DocumentNodeState) root);
                 incomingRootStates1.notifyAll();
@@ -186,15 +188,15 @@ public class JournalTest extends AbstractJournalTest {
         JournalGarbageCollector gc = new JournalGarbageCollector(ns1);
         // first clean up
         Thread.sleep(100); // OAK-2979 : wait 100ms before doing the cleanup
-        gc.gc(1, TimeUnit.MILLISECONDS, 100);
+        gc.gc(1, TimeUnit.MILLISECONDS);
         Thread.sleep(100); // sleep just quickly
-        assertEquals(0, gc.gc(1, TimeUnit.DAYS, 100));
-        assertEquals(0, gc.gc(6, TimeUnit.HOURS, 100));
-        assertEquals(0, gc.gc(1, TimeUnit.HOURS, 100));
-        assertEquals(0, gc.gc(10, TimeUnit.MINUTES, 100));
-        assertEquals(0, gc.gc(1, TimeUnit.MINUTES, 100));
-        assertEquals(0, gc.gc(1, TimeUnit.SECONDS, 100));
-        assertEquals(0, gc.gc(1, TimeUnit.MILLISECONDS, 100));
+        assertEquals(0, gc.gc(1, TimeUnit.DAYS));
+        assertEquals(0, gc.gc(6, TimeUnit.HOURS));
+        assertEquals(0, gc.gc(1, TimeUnit.HOURS));
+        assertEquals(0, gc.gc(10, TimeUnit.MINUTES));
+        assertEquals(0, gc.gc(1, TimeUnit.MINUTES));
+        assertEquals(0, gc.gc(1, TimeUnit.SECONDS));
+        assertEquals(0, gc.gc(1, TimeUnit.MILLISECONDS));
         
         // create some entries that can be deleted thereupon
         mk1.commit("/", "+\"regular1\": {}", null, null);
@@ -202,16 +204,16 @@ public class JournalTest extends AbstractJournalTest {
         mk1.commit("/", "+\"regular3\": {}", null, null);
         mk1.commit("/regular2", "+\"regular4\": {}", null, null);
         Thread.sleep(100); // sleep 100millis
-        assertEquals(0, gc.gc(5, TimeUnit.SECONDS, 100));
-        assertEquals(0, gc.gc(1, TimeUnit.MILLISECONDS, 100));
+        assertEquals(0, gc.gc(5, TimeUnit.SECONDS));
+        assertEquals(0, gc.gc(1, TimeUnit.MILLISECONDS));
         ns1.runBackgroundOperations();
         mk1.commit("/", "+\"regular5\": {}", null, null);
         ns1.runBackgroundOperations();
         mk1.commit("/", "+\"regular6\": {}", null, null);
         ns1.runBackgroundOperations();
         Thread.sleep(100); // sleep 100millis
-        assertEquals(0, gc.gc(5, TimeUnit.SECONDS, 100));
-        assertEquals(3, gc.gc(1, TimeUnit.MILLISECONDS, 100));
+        assertEquals(0, gc.gc(5, TimeUnit.SECONDS));
+        assertEquals(3, gc.gc(1, TimeUnit.MILLISECONDS));
     }
     
     @Test

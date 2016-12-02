@@ -85,6 +85,7 @@ import org.apache.jackrabbit.oak.spi.blob.AbstractBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
+import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.slf4j.Logger;
@@ -125,12 +126,6 @@ public class DocumentMK {
      */
     static final boolean FAST_DIFF = Boolean.parseBoolean(
             System.getProperty("oak.documentMK.fastDiff", "true"));
-
-    /**
-     * The guava cache concurrency level.
-     */
-    static final int CACHE_CONCURRENCY = Integer.getInteger(
-            "oak.documentMK.cacheConcurrency", 16);
 
     /**
      * The node store.
@@ -287,7 +282,7 @@ public class DocumentMK {
             isBranch = baseRev != null && baseRev.isBranch();
             parseJsonDiff(commit, jsonDiff, rootPath);
             commit.apply();
-            rev = nodeStore.done(commit, isBranch, null);
+            rev = nodeStore.done(commit, isBranch, CommitInfo.EMPTY);
             success = true;
         } catch (DocumentStoreException e) {
             throw new DocumentStoreException(e);
@@ -314,7 +309,7 @@ public class DocumentMK {
             throw new DocumentStoreException("Not a branch: " + branchRevisionId);
         }
         try {
-            return nodeStore.merge(revision, null).toString();
+            return nodeStore.merge(revision, CommitInfo.EMPTY).toString();
         } catch (DocumentStoreException e) {
             throw new DocumentStoreException(e);
         } catch (CommitFailedException e) {
@@ -539,11 +534,11 @@ public class DocumentMK {
      * A builder for a DocumentMK instance.
      */
     public static class Builder {
-        private static final long DEFAULT_MEMORY_CACHE_SIZE = 256 * 1024 * 1024;
-        public static final int DEFAULT_NODE_CACHE_PERCENTAGE = 25;
+        public static final long DEFAULT_MEMORY_CACHE_SIZE = 256 * 1024 * 1024;
+        public static final int DEFAULT_NODE_CACHE_PERCENTAGE = 35;
         public static final int DEFAULT_PREV_DOC_CACHE_PERCENTAGE = 4;
-        public static final int DEFAULT_CHILDREN_CACHE_PERCENTAGE = 10;
-        public static final int DEFAULT_DIFF_CACHE_PERCENTAGE = 5;
+        public static final int DEFAULT_CHILDREN_CACHE_PERCENTAGE = 15;
+        public static final int DEFAULT_DIFF_CACHE_PERCENTAGE = 30;
         public static final int DEFAULT_CACHE_SEGMENT_COUNT = 16;
         public static final int DEFAULT_CACHE_STACK_MOVE_DISTANCE = 16;
         private DocumentNodeStore nodeStore;
@@ -1220,7 +1215,7 @@ public class DocumentMK {
                         build();
             }
             return CacheBuilder.newBuilder().
-                    concurrencyLevel(CACHE_CONCURRENCY).
+                    concurrencyLevel(cacheSegmentCount).
                     weigher(weigher).
                     maximumWeight(maxWeight).
                     recordStats().

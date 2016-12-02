@@ -128,7 +128,7 @@ be nested. Note however, that the principal set defined with a given `CugPolicy`
 is not inherited to the nested policies applied in the subtree.
 
 _Note:_ For performance reasons it is recommended to limited the usage of `CugPolicy`s
-to a couple of subtrees in the repository.
+to a single or a couple of subtrees in the repository.
  
 ##### Management by Principal
 
@@ -178,6 +178,10 @@ access in the restricted area:
       
     [rep:CugPolicy] > rep:Policy
       - rep:principalNames (STRING) multiple protected mandatory IGNORE
+      
+_Note:_ the multivalued `rep:principalNames` property reflects the fact 
+that CUGs are intended to be used for small principal sets, preferably 
+`java.security.acl.Group` principals. 
 
 <a name="validation"/>
 ### Validation
@@ -212,6 +216,12 @@ supports the following configuration parameters:
 | `PARAM_RANKING`             | int            | 200      | Ranking within the composite authorization setup.            |
 | | | | |
 
+_Note:_ depending on other the authorization models deployed in the composite 
+setup, the number of CUGs used in a given deployment as well as other 
+factors such as predominant read vs. read-write, the performance of overall 
+permission evaluation may benefit from changing the default ranking of the 
+CUG authorization model.
+
 #### Excluding Principals
 
 The CUG authorization setup can be further customized by configuring the 
@@ -232,6 +242,10 @@ specific needs (see [below](#pluggability)).
 
 The following section describes how to deploy the CUG authorization model into
 an Oak repository and how to customize the `CugExclude` extension point.
+
+_Note:_ the reverse steps can be used to completely disable the CUG 
+authorization model in case it is not needed for a given repository 
+installation but shipped by a vendor such as e.g. Adobe AEM 6.3.
 
 #### Deploy CugConfiguration
 

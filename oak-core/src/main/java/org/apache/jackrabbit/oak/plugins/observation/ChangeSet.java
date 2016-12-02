@@ -23,6 +23,13 @@ import java.util.Set;
 import javax.annotation.CheckForNull;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
+
+import org.apache.jackrabbit.oak.commons.PathUtils;
+import org.apache.jackrabbit.oak.commons.json.JsopBuilder;
+import org.apache.jackrabbit.oak.commons.json.JsopReader;
+import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
+import org.apache.jackrabbit.oak.commons.json.JsopWriter;
 
 /**
  * A ChangeSet is a collection of items that have been changed as part of a
@@ -53,27 +60,47 @@ import com.google.common.collect.ImmutableSet;
  * Naming: note that path, node name and node types all refer to the *parent* of
  * a change. While properties naturally are leafs.
  */
-public class ChangeSet {
+public final class ChangeSet {
 
     private final int maxPathDepth;
     private final Set<String> parentPaths;
     private final Set<String> parentNodeNames;
     private final Set<String> parentNodeTypes;
     private final Set<String> propertyNames;
+    private final Set<String> allNodeTypes;
+    private final boolean hitsMaxPathDepth;
 
     ChangeSet(int maxPathDepth, Set<String> parentPaths, Set<String> parentNodeNames, Set<String> parentNodeTypes,
-            Set<String> propertyNames) {
+            Set<String> propertyNames, Set<String> allNodeTypes) {
         this.maxPathDepth = maxPathDepth;
         this.parentPaths = parentPaths == null ? null : ImmutableSet.copyOf(parentPaths);
         this.parentNodeNames = parentNodeNames == null ? null : ImmutableSet.copyOf(parentNodeNames);
         this.parentNodeTypes = parentNodeTypes == null ? null : ImmutableSet.copyOf(parentNodeTypes);
         this.propertyNames = propertyNames == null ? null : ImmutableSet.copyOf(propertyNames);
+        this.allNodeTypes = allNodeTypes == null ? null : ImmutableSet.copyOf(allNodeTypes);
+        
+        boolean hitsMaxPathDepth = false;
+        if (parentPaths != null) {
+            for (String aPath : parentPaths) {
+                if (PathUtils.getDepth(aPath) >= maxPathDepth) {
+                    hitsMaxPathDepth = true;
+                    break;
+                }
+            }
+        }
+        this.hitsMaxPathDepth = hitsMaxPathDepth;
     }
 
     @Override
     public String toString() {
         return "ChangeSet{paths[maxDepth:" + maxPathDepth + "]=" + parentPaths + ", propertyNames=" + propertyNames
-                + ", nodeNames=" + parentNodeNames + ", nodeTypes=" + parentNodeTypes + "}";
+                + ", parentNodeNames=" + parentNodeNames + ", parentNodeTypes=" + parentNodeTypes 
+                + ", allNodeTypes=" + allNodeTypes + ", any overflow: " + anyOverflow()
+                + ", hits max path depth: " + hitsMaxPathDepth + "}";
+    }
+
+    public boolean doesHitMaxPathDepth() {
+        return hitsMaxPathDepth;
     }
 
     @CheckForNull
@@ -100,4 +127,117 @@ public class ChangeSet {
         return maxPathDepth;
     }
 
+    @CheckForNull
+    public Set<String> getAllNodeTypes() {
+        return allNodeTypes;
+    }
+    
+    public boolean anyOverflow() {
+        return getAllNodeTypes() == null || 
+                getParentNodeNames() == null ||
+                getParentNodeTypes() == null ||
+                getParentPaths() == null ||
+                getPropertyNames() == null;
+    }
+
+    //~---------------------------------------------------< equals/hashcode >
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        ChangeSet changeSet = (ChangeSet) o;
+
+        if (maxPathDepth != changeSet.maxPathDepth) return false;
+        if (parentPaths != null ? !parentPaths.equals(changeSet.parentPaths) : changeSet.parentPaths != null)
+            return false;
+        if (parentNodeNames != null ? !parentNodeNames.equals(changeSet.parentNodeNames) : changeSet.parentNodeNames != null)
+            return false;
+        if (parentNodeTypes != null ? !parentNodeTypes.equals(changeSet.parentNodeTypes) : changeSet.parentNodeTypes != null)
+            return false;
+        if (propertyNames != null ? !propertyNames.equals(changeSet.propertyNames) : changeSet.propertyNames != null)
+            return false;
+        return allNodeTypes != null ? allNodeTypes.equals(changeSet.allNodeTypes) : changeSet.allNodeTypes == null;
+    }
+
+    @Override
+    public int hashCode() {
+        return 0;
+    }
+
+    //~----------------------------------------------------< json support >
+
+    public String asString(){
+        JsopWriter json = new JsopBuilder();
+        json.object();
+        json.key("maxPathDepth").value(maxPathDepth);
+        addToJson(json, "parentPaths", parentPaths);
+        addToJson(json, "parentNodeNames", parentNodeNames);
+        addToJson(json, "parentNodeTypes", parentNodeTypes);
+        addToJson(json, "propertyNames", propertyNames);
+        addToJson(json, "allNodeTypes", allNodeTypes);
+        json.endObject();
+        return json.toString();
+    }
+
+    public static ChangeSet fromString(String json) {
+        JsopReader reader = new JsopTokenizer(json);
+        int maxPathDepth = 0;
+        Set<String> parentPaths = null;
+        Set<String> parentNodeNames = null;
+        Set<String> parentNodeTypes = null;
+        Set<String> propertyNames = null;
+        Set<String> allNodeTypes = null;
+
+        reader.read('{');
+        if (!reader.matches('}')) {
+            do {
+                String name = reader.readString();
+                reader.read(':');
+                if ("maxPathDepth".equals(name)){
+                    maxPathDepth = Integer.parseInt(reader.read(JsopReader.NUMBER));
+                } else {
+                    Set<String> data = readArrayAsSet(reader);
+                    if ("parentPaths".equals(name)){
+                        parentPaths = data;
+                    } else if ("parentNodeNames".equals(name)){
+                        parentNodeNames = data;
+                    } else if ("parentNodeTypes".equals(name)){
+                        parentNodeTypes = data;
+                    } else if ("propertyNames".equals(name)){
+                        propertyNames = data;
+                    } else if ("allNodeTypes".equals(name)){
+                        allNodeTypes = data;
+                    }
+                }
+            } while (reader.matches(','));
+            reader.read('}');
+        }
+        reader.read(JsopReader.END);
+        return new ChangeSet(maxPathDepth, parentPaths, parentNodeNames, parentNodeTypes, propertyNames, allNodeTypes);
+    }
+
+    private static Set<String> readArrayAsSet(JsopReader reader) {
+        Set<String> values = Sets.newHashSet();
+        reader.read('[');
+        for (boolean first = true; !reader.matches(']'); first = false) {
+            if (!first) {
+                reader.read(',');
+            }
+            values.add(reader.readString());
+        }
+        return values;
+    }
+
+    private static void addToJson(JsopWriter json, String name, Set<String> values){
+        if (values == null){
+            return;
+        }
+        json.key(name).array();
+        for (String v : values){
+            json.value(v);
+        }
+        json.endArray();
+    }
 }

@@ -25,6 +25,7 @@ import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.REINDEX_PRO
 import static org.apache.jackrabbit.oak.plugins.index.IndexUtils.createIndexDefinition;
 import static org.apache.jackrabbit.oak.plugins.index.property.PropertyIndexEditorProvider.TYPE;
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.hasItem;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -34,6 +35,7 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -41,6 +43,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,31 +55,42 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.management.openmbean.CompositeData;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.api.jmx.IndexStatsMBean;
+import org.apache.jackrabbit.oak.commons.PathUtils;
+import org.apache.jackrabbit.oak.commons.concurrent.ExecutorCloser;
 import org.apache.jackrabbit.oak.commons.junit.LogCustomizer;
 import org.apache.jackrabbit.oak.plugins.index.AsyncIndexUpdate.AsyncIndexStats;
 import org.apache.jackrabbit.oak.plugins.index.AsyncIndexUpdate.IndexTaskSpliter;
+import org.apache.jackrabbit.oak.plugins.index.TrackingCorruptIndexHandler.CorruptIndexInfo;
 import org.apache.jackrabbit.oak.plugins.index.property.PropertyIndexEditorProvider;
 import org.apache.jackrabbit.oak.plugins.index.property.PropertyIndexLookup;
 import org.apache.jackrabbit.oak.plugins.memory.MemoryNodeStore;
+import org.apache.jackrabbit.oak.plugins.metric.MetricStatisticsProvider;
 import org.apache.jackrabbit.oak.query.index.FilterImpl;
+import org.apache.jackrabbit.oak.spi.commit.CommitContext;
 import org.apache.jackrabbit.oak.spi.commit.CommitHook;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
+import org.apache.jackrabbit.oak.spi.commit.DefaultValidator;
 import org.apache.jackrabbit.oak.spi.commit.Editor;
 import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
+import org.apache.jackrabbit.oak.spi.commit.Validator;
+import org.apache.jackrabbit.oak.spi.commit.ValidatorProvider;
 import org.apache.jackrabbit.oak.spi.query.PropertyValues;
 import org.apache.jackrabbit.oak.spi.state.ConflictAnnotatingRebaseDiff;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.spi.state.NodeStateUtils;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.spi.state.ProxyNodeStore;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.apache.jackrabbit.util.ISO8601;
+import org.junit.After;
 import org.junit.Test;
 
 import ch.qos.logback.classic.Level;
@@ -85,6 +100,15 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 public class AsyncIndexUpdateTest {
+    private ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private MetricStatisticsProvider statsProvider =
+            new MetricStatisticsProvider(ManagementFactory.getPlatformMBeanServer(),executor);
+
+    @After
+    public void shutDown(){
+        statsProvider.close();
+        new ExecutorCloser(executor).close();
+    }
 
     // TODO test index config deletes
 
@@ -360,7 +384,7 @@ public class AsyncIndexUpdateTest {
             @Nonnull
             @Override
             public NodeState merge(@Nonnull NodeBuilder builder,
-                    @Nonnull CommitHook commitHook, @Nullable CommitInfo info)
+                    @Nonnull CommitHook commitHook, @Nonnull CommitInfo info)
                     throws CommitFailedException {
                 Semaphore s = locks.get(Thread.currentThread());
                 if (s != null) {
@@ -812,6 +836,51 @@ public class AsyncIndexUpdateTest {
                         .getString("asyncMissing"));
     }
 
+    @Test
+    public void testReindexMissingProvider_NonRoot() throws Exception {
+        MemoryNodeStore store = new MemoryNodeStore();
+        IndexEditorProvider provider = new PropertyIndexEditorProvider();
+
+        NodeBuilder builder = store.getRoot().builder();
+        createIndexDefinition(builder.child("subNodeIndex").child(INDEX_DEFINITIONS_NAME),
+                "rootIndex2", true, false, ImmutableSet.of("foo"), null)
+                .setProperty(ASYNC_PROPERTY_NAME, "asyncMissing");
+
+        builder.child("subNodeIndex").child("testRoot").setProperty("foo", "abc");
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        AsyncIndexUpdate async = new AsyncIndexUpdate("asyncMissing", store,  provider);
+        //first run, creates a checkpoint and a ref to it as the last indexed state
+        async.run();
+        assertFalse(async.isFailing());
+
+        assertTrue("Expecting one checkpoint",
+                store.listCheckpoints().size() == 1);
+        String firstCp = store.listCheckpoints().iterator().next();
+        assertEquals(firstCp, store.getRoot().getChildNode(ASYNC).getString("asyncMissing"));
+
+        builder = store.getRoot().builder();
+        builder.child("subNodeIndex").child("testRoot2").setProperty("foo", "abc");
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        // second run, simulate an index going away
+        provider = CompositeIndexEditorProvider.compose(new ArrayList<IndexEditorProvider>());
+        async = new AsyncIndexUpdate("asyncMissing", store, provider);
+        async.run();
+        assertTrue(async.isFailing());
+        // don't set reindex=true but skip the update
+        NodeState rootIndex2 = NodeStateUtils.getNode(store.getRoot(), "/subNodeIndex/oak:index/rootIndex2");
+        assertTrue(rootIndex2.exists());
+
+        PropertyState reindex2 = rootIndex2.getProperty(REINDEX_PROPERTY_NAME);
+        assertTrue(reindex2 == null || !reindex2.getValue(Type.BOOLEAN));
+
+        assertTrue("Expecting one checkpoint",store.listCheckpoints().size() == 1);
+        String secondCp = store.listCheckpoints().iterator().next();
+        assertTrue("Store should not create a new checkpoint",  secondCp.equals(firstCp));
+        assertEquals(firstCp, store.getRoot().getChildNode(ASYNC).getString("asyncMissing"));
+    }
+
     private static class FaultyIndexEditorProvder implements
             IndexEditorProvider {
 
@@ -1027,17 +1096,18 @@ public class AsyncIndexUpdateTest {
         // merge it back in
         store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
 
-        AsyncIndexUpdate async = new AsyncIndexUpdate("async", store, provider);
+        AsyncIndexUpdate async = new AsyncIndexUpdate("async", store, provider, statsProvider, false);
         runOneCycle(async);
-        assertEquals(1, lastExecutionStats(async.getIndexStats().getExecutionCount()));
+        assertEquals(1, async.getIndexStats().getExecutionStats().getExecutionCounter().getCount());
 
         //Run a cycle so that change of reindex flag gets indexed
         runOneCycle(async);
-        assertEquals(1, lastExecutionStats(async.getIndexStats().getExecutionCount()));
+        assertEquals(2, async.getIndexStats().getExecutionStats().getExecutionCounter().getCount());
 
+        long indexedNodeCount = async.getIndexStats().getExecutionStats().getIndexedNodeCount().getCount();
         //Now run so that it results in an empty cycle
         runOneCycle(async);
-        assertEquals(1, lastExecutionStats(async.getIndexStats().getExecutionCount()));
+        assertEquals(indexedNodeCount, async.getIndexStats().getExecutionStats().getIndexedNodeCount().getCount());
 
         //Do some updates and counter should increase
         builder = store.getRoot().builder();
@@ -1045,7 +1115,7 @@ public class AsyncIndexUpdateTest {
         store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
 
         runOneCycle(async);
-        assertEquals(1, lastExecutionStats(async.getIndexStats().getExecutionCount()));
+        assertEquals(4, async.getIndexStats().getExecutionStats().getExecutionCounter().getCount());
 
         //Do some updates but disable checkpoints. Counter should not increase
         builder = store.getRoot().builder();
@@ -1066,7 +1136,6 @@ public class AsyncIndexUpdateTest {
 
     private static void runOneCycle(AsyncIndexUpdate async){
         async.run();
-        async.getIndexStats().run();
     }
 
     @Test
@@ -1532,6 +1601,233 @@ public class AsyncIndexUpdateTest {
         async.close();
     }
 
+    @Test
+    public void commitContext() throws Exception{
+        MemoryNodeStore store = new MemoryNodeStore();
+        IndexEditorProvider provider = new PropertyIndexEditorProvider();
 
+        NodeBuilder builder = store.getRoot().builder();
+        createIndexDefinition(builder.child(INDEX_DEFINITIONS_NAME),
+                "rootIndex", true, false, ImmutableSet.of("foo"), null)
+                .setProperty(ASYNC_PROPERTY_NAME, "async");
+        builder.child("testRoot").setProperty("foo", "abc");
+
+        // merge it back in
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        AsyncIndexUpdate async = new AsyncIndexUpdate("async", store, provider);
+        CommitInfoCollector infoCollector = new CommitInfoCollector();
+        store.addObserver(infoCollector);
+
+        async.run();
+
+        assertFalse(infoCollector.infos.isEmpty());
+        assertNotNull(infoCollector.infos.get(0).getInfo().get(CommitContext.NAME));
+    }
+
+    @Test
+    public void validatorProviderInvocation() throws Exception{
+        MemoryNodeStore store = new MemoryNodeStore();
+        IndexEditorProvider provider = new PropertyIndexEditorProvider();
+
+        NodeBuilder builder = store.getRoot().builder();
+        createIndexDefinition(builder.child(INDEX_DEFINITIONS_NAME),
+                "rootIndex", true, false, ImmutableSet.of("foo"), null)
+                .setProperty(ASYNC_PROPERTY_NAME, "async");
+        builder.child("testRoot").setProperty("foo", "abc");
+
+        // merge it back in
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        AsyncIndexUpdate async = new AsyncIndexUpdate("async", store, provider);
+        CollectingValidatorProvider v = new CollectingValidatorProvider();
+
+        async.setValidatorProviders(ImmutableList.<ValidatorProvider>of(v));
+        async.run();
+
+        assertFalse(v.visitedPaths.isEmpty());
+        assertThat(v.visitedPaths, hasItem("/:async"));
+        assertThat(v.visitedPaths, hasItem("/oak:index/rootIndex"));
+
+    }
+
+    @Test
+    public void longTimeFailingIndexMarkedAsCorrupt() throws Exception{
+        MemoryNodeStore store = new MemoryNodeStore();
+
+        NodeBuilder builder = store.getRoot().builder();
+        createIndexDefinition(builder.child(INDEX_DEFINITIONS_NAME),
+                "fooIndex", true, false, ImmutableSet.of("foo"), null)
+                .setProperty(ASYNC_PROPERTY_NAME, "async");
+        createIndexDefinition(builder.child(INDEX_DEFINITIONS_NAME),
+                "barIndex", true, false, ImmutableSet.of("bar"), null)
+                .setProperty(ASYNC_PROPERTY_NAME, "async");
+        builder.child("testRoot1").setProperty("foo", "abc");
+        builder.child("testRoot2").setProperty("bar", "abc");
+
+        // merge it back in
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        TestIndexEditorProvider provider = new TestIndexEditorProvider();
+
+        Clock clock = new Clock.Virtual();
+        AsyncIndexUpdate async = new AsyncIndexUpdate("async", store, provider);
+        async.getCorruptIndexHandler().setClock(clock);
+        async.run();
+
+        //1. Basic sanity check. Indexing works
+        PropertyIndexLookup lookup = new PropertyIndexLookup(store.getRoot());
+        assertEquals(ImmutableSet.of("testRoot1"), find(lookup, "foo", "abc"));
+        assertEquals(ImmutableSet.of("testRoot2"), find(lookup, "bar", "abc"));
+
+        //2. Add some new content
+        builder = store.getRoot().builder();
+        builder.child("testRoot3").setProperty("foo", "xyz");
+        builder.child("testRoot4").setProperty("bar", "xyz");
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        //3. Now fail the indexing for 'bar'
+        provider.enableFailureMode("/oak:index/barIndex");
+
+        async.run();
+        assertTrue(async.getIndexStats().isFailing());
+        //barIndex is failing but not yet considered corrupted
+        assertTrue(async.getCorruptIndexHandler().getFailingIndexData("async").containsKey("/oak:index/barIndex"));
+        assertFalse(async.getCorruptIndexHandler().getCorruptIndexData("async").containsKey("/oak:index/barIndex"));
+
+        CorruptIndexInfo barIndexInfo = async.getCorruptIndexHandler().getFailingIndexData("async").get("/oak:index/barIndex");
+
+        //fooIndex is fine
+        assertFalse(async.getCorruptIndexHandler().getFailingIndexData("async").containsKey("/oak:index/fooIndex"));
+
+        //lookup should also fail as indexing failed
+        lookup = new PropertyIndexLookup(store.getRoot());
+        assertTrue(find(lookup, "foo", "xyz").isEmpty());
+        assertTrue(find(lookup, "bar", "xyz").isEmpty());
+
+        //4.Now move the clock forward and let the failing index marked as corrupt
+        clock.waitUntil(clock.getTime() + async.getCorruptIndexHandler().getCorruptIntervalMillis() + 1);
+
+        //5. Let async run again
+        async.run();
+
+        //Indexing would be considered as failing
+        assertTrue(async.getIndexStats().isFailing());
+        assertEquals(IndexStatsMBean.STATUS_FAILING, async.getIndexStats().getStatus());
+
+        //barIndex should be considered corrupt now
+        assertTrue(async.getCorruptIndexHandler().getCorruptIndexData("async").containsKey("/oak:index/barIndex"));
+
+        lookup = new PropertyIndexLookup(store.getRoot());
+
+        //fooIndex should now report updated result. barIndex would fail
+        assertEquals(ImmutableSet.of("testRoot3"), find(lookup, "foo", "xyz"));
+        assertTrue(find(lookup, "bar", "xyz").isEmpty());
+        assertEquals(1, barIndexInfo.getSkippedCount());
+
+        //6. Index some stuff
+        builder = store.getRoot().builder();
+        builder.child("testRoot5").setProperty("foo", "pqr");
+        builder.child("testRoot6").setProperty("bar", "pqr");
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        async.run();
+        assertTrue(async.getIndexStats().isFailing());
+
+        //barIndex should be skipped
+        assertEquals(2, barIndexInfo.getSkippedCount());
+
+        //7. Lets reindex barIndex and ensure index is not misbehaving
+        provider.disableFailureMode();
+
+        builder = store.getRoot().builder();
+        builder.child("oak:index").child("barIndex").setProperty("reindex", true);
+        store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        async.run();
+
+        //now barIndex should not be part of failing index
+        assertFalse(async.getCorruptIndexHandler().getFailingIndexData("async").containsKey("/oak:index/barIndex"));
+    }
+
+    private static class TestIndexEditorProvider extends PropertyIndexEditorProvider {
+        private String indexPathToFail;
+        @Override
+        public Editor getIndexEditor(@Nonnull String type, @Nonnull NodeBuilder definition, @Nonnull NodeState root,
+                                     @Nonnull IndexUpdateCallback callback) {
+            IndexingContext context = ((ContextAwareCallback)callback).getIndexingContext();
+            if (indexPathToFail != null && indexPathToFail.equals(context.getIndexPath())){
+                RuntimeException e = new RuntimeException();
+                context.indexUpdateFailed(e);
+                throw e;
+            }
+            return super.getIndexEditor(type, definition, root, callback);
+        }
+
+        public void enableFailureMode(String indexPathToFail){
+            this.indexPathToFail = indexPathToFail;
+        }
+
+        public void disableFailureMode(){
+            indexPathToFail = null;
+        }
+    }
+
+    private static class CollectingValidatorProvider extends ValidatorProvider {
+        final Set<String> visitedPaths = Sets.newHashSet();
+
+        @Override
+        protected Validator getRootValidator(NodeState before, NodeState after, CommitInfo info) {
+            return new CollectingValidator("/");
+        }
+
+        public void reset(){
+            visitedPaths.clear();
+        }
+
+        private class CollectingValidator extends DefaultValidator {
+            private final String path;
+
+            public CollectingValidator(String path){
+                this.path = path;
+            }
+
+            @Override
+            public void enter(NodeState before, NodeState after) throws CommitFailedException {
+                visitedPaths.add(path);
+                super.enter(before, after);
+            }
+
+            @Override
+            public Validator childNodeAdded(String name, NodeState after) throws CommitFailedException {
+                return new CollectingValidator(PathUtils.concat(path, name));
+            }
+
+            @Override
+            public Validator childNodeChanged(String name, NodeState before, NodeState after) throws CommitFailedException {
+                return new CollectingValidator(PathUtils.concat(path, name));
+            }
+
+            @Override
+            public Validator childNodeDeleted(String name, NodeState before) throws CommitFailedException {
+                return new CollectingValidator(PathUtils.concat(path, name));
+            }
+        }
+    }
+
+    static class CommitInfoCollector implements Observer {
+        List<CommitInfo> infos = Lists.newArrayList();
+
+        @Override
+        public void contentChanged(@Nonnull NodeState root, @Nonnull CommitInfo info) {
+            if (info != CommitInfo.EMPTY_EXTERNAL){
+                infos.add(info);
+            }
+        }
+
+        void reset(){
+            infos.clear();
+        }
+    }
 
 }

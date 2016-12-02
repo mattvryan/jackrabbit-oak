@@ -417,6 +417,7 @@ public class PersistentCache implements Broadcaster.Listener {
             break;
         case LOCAL_DIFF:
             wrap = cacheLocalDiff;
+            async = asyncDiffCache;
             break;
         case DOC_CHILDREN:
             wrap = cacheDocChildren;
@@ -493,7 +494,7 @@ public class PersistentCache implements Broadcaster.Listener {
         }
     }
     
-    private boolean needSwitch() {
+    boolean needSwitch() {
         long size = writeStore.getFileSize();
         if (size / 1024 / 1024 <= maxSizeMB) {
             return false;

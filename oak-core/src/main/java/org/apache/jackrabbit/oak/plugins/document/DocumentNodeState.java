@@ -343,6 +343,17 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         }
     }
 
+    public Set<String> getBundledChildNodeNames(){
+        return bundlingContext.getBundledChildNodeNames();
+    }
+
+    public boolean hasOnlyBundledChildren(){
+        if (bundlingContext.isBundled()){
+            return bundlingContext.hasOnlyBundledChildren();
+        }
+        return false;
+    }
+
     String getPropertyAsString(String propertyName) {
         return asString(properties.get(propertyName));
     }
@@ -390,7 +401,6 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     UpdateOp asOperation(@Nonnull Revision revision) {
         String id = Utils.getIdFromPath(path);
         UpdateOp op = new UpdateOp(id, true);
-        op.set(Document.ID, id);
         if (Utils.isLongPath(path)) {
             op.set(NodeDocument.PATH, path);
         }
@@ -502,7 +512,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                     @Nonnull
                     @Override
                     public NodeState getNodeState() {
-                        return input.withRootRevision(rootRevision, fromExternalChange);
+                        return input;
                     }
                 };
             }
@@ -803,7 +813,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         }
 
         public boolean hasChildNode(String relativePath){
-            String key = concat(relativePath, DocumentBundlor.META_PROP_NODE);
+            String key = concat(relativePath, DocumentBundlor.META_PROP_BUNDLING_PATH);
             return rootProperties.containsKey(key);
         }
 
@@ -815,11 +825,11 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
             return !hasNonBundledChildren;
         }
 
-        public List<String> getBundledChildNodeNames(){
+        public Set<String> getBundledChildNodeNames(){
             if (isBundled()) {
                 return BundlorUtils.getChildNodeNames(rootProperties.keySet(), matcher);
             }
-            return Collections.emptyList();
+            return Collections.emptySet();
         }
 
         private boolean hasBundledChildren(Matcher matcher){
