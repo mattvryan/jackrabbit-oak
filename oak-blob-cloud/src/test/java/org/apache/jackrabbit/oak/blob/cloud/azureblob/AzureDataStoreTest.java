@@ -73,7 +73,6 @@ public class AzureDataStoreTest {
 
     private static Properties props;
     private static byte[] testBuffer;
-    //private TestAzureDataStore ds;
     private AzureDataStore ds;
     private AzureBlobStoreBackend backend;
 
@@ -94,7 +93,6 @@ public class AzureDataStoreTest {
 
     @Before
     public void setup() throws IOException, RepositoryException {
-        //ds = new TestAzureDataStore(props);
         ds = new AzureDataStore();
         ds.setProperties(props);
         ds.setCacheSize(0);  // Turn caching off so we don't get weird test results due to caching
@@ -121,23 +119,6 @@ public class AzureDataStoreTest {
             }
         }
     }
-
-//    private void waitForUpload(final TestAzureDataStore ds) throws IOException {
-//        waitForUpload(ds, 1);
-//    }
-//
-//    private void waitForUpload(final TestAzureDataStore ds, int expectedUploads) throws IOException {
-//        int tries = 0;
-//        while (ds.getSuccessfulUploads() < expectedUploads) {
-//            try {
-//                Thread.sleep(1000);
-//            }
-//            catch (InterruptedException e) { }
-//            if (++tries > 5) {
-//                throw new IOException("Upload timed out");
-//            }
-//        }
-//    }
 
     private void validateRecord(final DataRecord record,
                                 final String contents,
@@ -210,11 +191,9 @@ public class AzureDataStoreTest {
 
     @Test
     public void testCreateAndDeleteBlobHappyPath() throws DataStoreException, IOException {
-//        ds.resetSuccessfulUploads();
         final DataRecord uploadedRecord = ds.addRecord(new ByteArrayInputStream(testBuffer));
         DataIdentifier identifier = uploadedRecord.getIdentifier();
         //DataIdentifier identifier = new DataIdentifier("a94a8fe5ccb19ba61c4c0873d391e987982fbbd3");
-//        waitForUpload(ds);
         assertTrue(backend.exists(identifier));
         assertTrue(0 != uploadedRecord.getLastModified());
         assertEquals(testBuffer.length, uploadedRecord.getLength());
@@ -228,10 +207,8 @@ public class AzureDataStoreTest {
 
     @Test
     public void testCreateAndUpdateBlobHappyPath() throws DataStoreException, IOException {
-//        ds.resetSuccessfulUploads();
         final DataRecord uploadedRecord = ds.addRecord(new ByteArrayInputStream(testBuffer));
         DataIdentifier identifier = uploadedRecord.getIdentifier();
-//        waitForUpload(ds);
         assertTrue(backend.exists(identifier));
 
         final DataRecord retrievedRecord1 = ds.getRecord(identifier);
@@ -253,10 +230,8 @@ public class AzureDataStoreTest {
 
     @Test
     public void testCreateAndReUploadBlob() throws DataStoreException, IOException {
-//        ds.resetSuccessfulUploads();
         final DataRecord createdRecord = ds.addRecord(new ByteArrayInputStream(testBuffer));
         DataIdentifier identifier1 = createdRecord.getIdentifier();
-//        waitForUpload(ds);
         assertTrue(backend.exists(identifier1));
 
         final DataRecord record1 = ds.getRecord(identifier1);
@@ -266,7 +241,6 @@ public class AzureDataStoreTest {
 
         final DataRecord updatedRecord = ds.addRecord(new ByteArrayInputStream(testBuffer));
         DataIdentifier identifier2 = updatedRecord.getIdentifier();
-//        waitForUpload(ds);
         assertTrue(backend.exists(identifier2));
 
         assertTrue(identifier1.toString().equals(identifier2.toString()));
@@ -278,14 +252,12 @@ public class AzureDataStoreTest {
 
     @Test
     public void testListBlobs() throws DataStoreException, IOException {
-//        ds.resetSuccessfulUploads();
         final Set<DataIdentifier> identifiers = Sets.newHashSet();
         final Set<String> testStrings = Sets.newHashSet("test1", "test2", "test3");
 
         for (String s : testStrings) {
             identifiers.add(ds.addRecord(new StringInputStream(s)).getIdentifier());
         }
-//        waitForUpload(ds, testStrings.size());
 
         Iterator<DataIdentifier> iter = ds.getAllIdentifiers();
         while (iter.hasNext()) {
@@ -486,9 +458,7 @@ public class AzureDataStoreTest {
     @Test
     public void testBackendGetRecord() throws IOException, DataStoreException {
         String recordData = "testData";
-//        ds.resetSuccessfulUploads();
         DataRecord record = ds.addRecord(new ByteArrayInputStream(recordData.getBytes()));
-//        waitForUpload(ds);
         DataRecord retrievedRecord = backend.getRecord(record.getIdentifier());
         validateRecord(record, recordData, retrievedRecord);
     }
@@ -523,13 +493,11 @@ public class AzureDataStoreTest {
         for (int recCount : Lists.newArrayList(0, 1, 2, 5)) {
             Map<DataIdentifier, String> addedRecords = Maps.newHashMap();
             if (0 < recCount) {
-//                ds.resetSuccessfulUploads();
                 for (int i = 0; i < recCount; i++) {
                     String data = String.format("testData%d", i);
                     DataRecord record = ds.addRecord(new ByteArrayInputStream(data.getBytes()));
                     addedRecords.put(record.getIdentifier(), data);
                 }
-//                waitForUpload(ds, recCount);
             }
 
             Iterator<DataRecord> iter = backend.getAllRecords();
@@ -555,9 +523,7 @@ public class AzureDataStoreTest {
 
     @Test
     public void testBackendGetAllRecordsAfterUpdateReturnsOne() throws DataStoreException, IOException {
-//        ds.resetSuccessfulUploads();
         DataRecord uploadedRecord = ds.addRecord(new ByteArrayInputStream("testData".getBytes()));
-//        waitForUpload(ds);
 
         assertEquals(1, countIteratorEntries(backend.getAllRecords()));
 
@@ -785,15 +751,4 @@ public class AzureDataStoreTest {
             assertTrue("prefix".equals(e.getMessage()));
         }
     }
-//
-//
-//    private static class TestAzureDataStore extends AzureDataStore {
-//        public TestAzureDataStore(final Properties properties) {
-//            this.properties = properties;
-//        }
-//
-//        private int successfulUploads = 0;
-//        public int getSuccessfulUploads() { return successfulUploads; }
-//        public void resetSuccessfulUploads() { successfulUploads = 0; }
-//    }
 }
