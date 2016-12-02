@@ -24,20 +24,21 @@ public abstract class AbstractAzureDataStoreService extends AbstractDataStoreSer
         Properties properties = new Properties();
         properties.putAll(config);
 
-        if (JR2_CACHING) {
-            SharedS3DataStore dataStore = new SharedS3DataStore();
-            dataStore.setProperties(properties);
-
-            Dictionary<String, Object> props = new Hashtable<String, Object>();
-            props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
-            props.put(DESCRIPTION, getDescription());
-
-            delegateReg = context.getBundleContext().registerService(new String[] {
-                    SharedS3DataStore.class.getName(),
-                    SharedS3DataStore.class.getName()
-            }, dataStore , props);
-            return dataStore;
-        } else {
+        // TODO: Still needed?
+//        if (JR2_CACHING) {
+//            SharedS3DataStore dataStore = new SharedS3DataStore();
+//            dataStore.setProperties(properties);
+//
+//            Dictionary<String, Object> props = new Hashtable<String, Object>();
+//            props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
+//            props.put(DESCRIPTION, getDescription());
+//
+//            delegateReg = context.getBundleContext().registerService(new String[] {
+//                    SharedS3DataStore.class.getName(),
+//                    SharedS3DataStore.class.getName()
+//            }, dataStore , props);
+//            return dataStore;
+//        } else {
             AzureDataStore dataStore = new AzureDataStore();
             dataStore.setStatisticsProvider(getStatisticsProvider());
             dataStore.setProperties(properties);
@@ -52,7 +53,7 @@ public abstract class AbstractAzureDataStoreService extends AbstractDataStoreSer
             }, dataStore , props);
 
             return dataStore;
-        }
+//        }
     }
 
     protected void deactivate() throws DataStoreException {
