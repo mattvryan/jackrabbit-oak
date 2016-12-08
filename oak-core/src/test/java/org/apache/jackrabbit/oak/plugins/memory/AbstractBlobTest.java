@@ -39,11 +39,20 @@ public class AbstractBlobTest {
         byte[] data = bytes(100);
         Blob a = new TestBlob(data, "id1", false);
         Blob b = new TestBlob(data, "id1", false);
+        // Blobs are considered equal if their identities are equal.
         assertTrue(AbstractBlob.equal(a, b));
 
-        Blob a2 = new TestBlob(data, "id1", true);
-        Blob b2 = new TestBlob(data, "id2", true);
-        assertTrue("Blobs with different id but same content should match", AbstractBlob.equal(a2, b2));
+        Blob a2 = new TestBlob(data, "id1", false);
+        Blob b2 = new TestBlob(data, "id2", false);
+        // Blobs are not considered equal if their identities are not equal.  (See OAK-5253)
+        assertFalse(AbstractBlob.equal(a2, b2));
+
+        Blob a3 = new TestBlob(data, "id1", true);
+        Blob b3 = new TestBlob(data, "id2", true);
+        // As of OAK-5253, Blobs are not considered equal if their identities are not equal,
+        // even if the content is equal.  This is an optimization based on the implementation
+        // where blob identities are a hash of the content.
+        assertFalse("Blobs with different id but same content should not match", AbstractBlob.equal(a3, b3));
     }
 
     @Test

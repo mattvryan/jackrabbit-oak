@@ -57,10 +57,15 @@ public abstract class AbstractBlob implements Blob {
         String ai = a.getContentIdentity();
         String bi = b.getContentIdentity();
 
-        //Check for identity first. If they are same then its
-        //definitely same blob. If not we need to check further.
-        if (ai != null && bi != null && ai.equals(bi)){
-            return true;
+        //Check for identity first.  If both identities exist,
+        //the blobs are equal if the identities are equal, and
+        //the blobs are not equal if the identities are not
+        //equal.
+        //This is because the identities are currently a
+        //hash of the blob content.  If this were to ever change
+        //this would also need to revert to the old mechanism.
+        if (ai != null && bi != null) {
+            return ai.equals(bi);
         }
 
         try {
