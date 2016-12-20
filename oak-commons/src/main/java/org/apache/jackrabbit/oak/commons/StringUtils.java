@@ -35,6 +35,9 @@ public class StringUtils {
      * @return the hex encoded string
      */
     public static String convertBytesToHex(byte[] value) {
+        if (null == value) {
+            throw new IllegalArgumentException();
+        }
         int len = value.length;
         char[] buff = new char[len + len];
         char[] hex = HEX;
@@ -53,6 +56,9 @@ public class StringUtils {
      * @return the byte array
      */
     public static byte[] convertHexToBytes(String s) {
+        if (null == s) {
+            throw new IllegalArgumentException();
+        }
         int len = s.length();
         if (len % 2 != 0) {
             throw new IllegalArgumentException(s);
