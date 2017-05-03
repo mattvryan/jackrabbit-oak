@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.commons;
 
+import com.google.common.collect.Lists;
 import junit.framework.TestCase;
 
 import java.io.ByteArrayInputStream;
@@ -215,6 +216,23 @@ public class IOUtilsTest extends TestCase {
         }
     }
 
+    public void testLong() throws IOException {
+        testLong(Long.MIN_VALUE);
+        testLong(Long.MAX_VALUE);
+        testLong(0x0L);
+        for (long l : Lists.newArrayList(0x01L, 0x08L)) {
+            for (long x = l; x != 0; x = (x << 4)) {
+                testLong(x);
+            }
+        }
+        long loopMax = (Long.MAX_VALUE >> 4) + 1;
+        for (long l : Lists.newArrayList(0x07L, 0x0FL)) {
+            for (long x = l; x <= loopMax; x = ((x << 4) | 0x0F)) {
+                testLong(x);
+            }
+        }
+    }
+
     private static void testVarInt(int x, int expectedLen) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         IOUtils.writeVarInt(out, x);
@@ -239,6 +257,17 @@ public class IOUtilsTest extends TestCase {
         }
         ByteArrayInputStream in = new ByteArrayInputStream(data);
         long x2 = IOUtils.readVarLong(in);
+        assertEquals(x, x2);
+        assertEquals(-1, in.read());
+    }
+
+    private static void testLong(long x) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        IOUtils.writeLong(out, x);
+        byte[] data = out.toByteArray();
+        assertTrue(data.length == 8);
+        ByteArrayInputStream in = new ByteArrayInputStream(data);
+        long x2 = IOUtils.readLong(in);
         assertEquals(x, x2);
         assertEquals(-1, in.read());
     }
