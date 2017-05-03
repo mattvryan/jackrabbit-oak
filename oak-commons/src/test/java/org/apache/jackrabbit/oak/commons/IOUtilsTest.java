@@ -215,6 +215,38 @@ public class IOUtilsTest extends TestCase {
         }
     }
 
+    public void testNextPowerOf2() {
+        assertEquals(1, IOUtils.nextPowerOf2(0));
+        assertEquals(1, IOUtils.nextPowerOf2(1));
+        assertEquals(2, IOUtils.nextPowerOf2(2));
+        assertEquals(4, IOUtils.nextPowerOf2(3));
+        assertEquals(4, IOUtils.nextPowerOf2(4));
+        assertEquals(8, IOUtils.nextPowerOf2(5));
+        assertEquals(8, IOUtils.nextPowerOf2(7));
+        assertEquals(8, IOUtils.nextPowerOf2(8));
+        assertEquals(16, IOUtils.nextPowerOf2(12)); // it is powers of 2, not evens
+        assertEquals(32, IOUtils.nextPowerOf2(21)); // random mid-range number
+
+        // Test values around the upper limit of powers of 2 in the signed int range
+        assertEquals(0x01 << (Integer.SIZE-2), IOUtils.nextPowerOf2(Integer.MAX_VALUE >> 1));
+        assertEquals(0x01 << (Integer.SIZE-2), IOUtils.nextPowerOf2((Integer.MAX_VALUE >> 1) + 1));
+        try {
+            IOUtils.nextPowerOf2((Integer.MAX_VALUE >> 1) + 2);
+            fail();
+        }
+        catch (IllegalArgumentException e) { }
+        try {
+            IOUtils.nextPowerOf2(Integer.MAX_VALUE);
+            fail();
+        }
+        catch (IllegalArgumentException e) { }
+
+        // Negative values
+        assertEquals(1, IOUtils.nextPowerOf2(-1));
+        assertEquals(1, IOUtils.nextPowerOf2(-2));
+        assertEquals(1, IOUtils.nextPowerOf2(Integer.MIN_VALUE));
+    }
+
     private static void testVarInt(int x, int expectedLen) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         IOUtils.writeVarInt(out, x);
