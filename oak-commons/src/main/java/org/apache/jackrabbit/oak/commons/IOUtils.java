@@ -286,7 +286,7 @@ public final class IOUtils {
      * range [0, 2^30].
      * @throws IllegalArgumentException if input is greater than 2^30.
      */
-    public static int nextPowerOf2(int x) throws IllegalArgumentException {
+    public static int nextPowerOf2(int x) {
         int powerOf2Max = 1 << (Integer.SIZE - 2);
         if (x > powerOf2Max) {
             throw new IllegalArgumentException(
