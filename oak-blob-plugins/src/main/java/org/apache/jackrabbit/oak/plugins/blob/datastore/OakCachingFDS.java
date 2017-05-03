@@ -18,19 +18,19 @@
  */
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
-import java.io.File;
-import java.io.IOException;
-import java.security.SecureRandom;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.core.data.CachingFDS;
 import org.apache.jackrabbit.core.data.DataStoreException;
+
+import java.io.File;
+import java.io.IOException;
+import java.security.SecureRandom;
 
 /**
  * Overrides the implementation of
  * {@link org.apache.jackrabbit.core.data.CachingDataStore#getOrCreateReferenceKey}.
  */
-public class OakCachingFDS extends CachingFDS {
+public class OakCachingFDS extends CachingFDS implements ConfigurableDataStore {
     /** The path for FS Backend **/
     private String fsBackendPath;
 
