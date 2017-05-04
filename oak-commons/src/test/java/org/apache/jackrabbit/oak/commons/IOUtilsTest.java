@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.commons;
 
+import com.google.common.collect.Lists;
 import junit.framework.TestCase;
 
 import java.io.ByteArrayInputStream;
@@ -212,6 +213,18 @@ public class IOUtilsTest extends TestCase {
             fail();
         } catch (EOFException e) {
             // expected
+        }
+    }
+
+    public void testCopyStream() throws IOException {
+        final Random r = new Random(1);
+        for (int length : Lists.newArrayList(0, 1, 1000, 4096, 4097, 1024*1024)) {
+            byte[] inData = new byte[length];
+            r.nextBytes(inData);
+            ByteArrayInputStream in = new ByteArrayInputStream(inData);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            IOUtils.copy(in, out);
+            assertEquals(inData, out.toByteArray());
         }
     }
 
