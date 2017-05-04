@@ -274,29 +274,21 @@ public final class IOUtils {
 
     /**
      * Get the value that is equal or higher than this value, and that is a
-     * power of two.  The returned value will be in the range [0, 2^30].
-     * (2^30, or 0x400000, is the maximum power of 2 in the signed integer range.)
+     * power of two.  The returned value will be in the range [0, 2^31].
      * If the input is less than zero, the result of 1 is returned (powers of
      * negative numbers are not integer values).
      *
-     * @param x the original value.  This value must be within the range
-     *          [Integer.MIN_VALUE, 2^30] or
-     *          {@link IllegalArgumentException} will the thrown.
+     * @param x the original value.
      * @return the next power of two value.  Results are always in the
-     * range [0, 2^30].
-     * @throws IllegalArgumentException if input is greater than 2^30.
+     * range [0, 2^31].
      */
-    public static int nextPowerOf2(int x) {
-        int powerOf2Max = 1 << (Integer.SIZE - 2);
-        if (x > powerOf2Max) {
-            throw new IllegalArgumentException(
-                    String.format("Value %d is higher than max integer power of 2 (%d)", x, powerOf2Max));
-        }
+    public static long nextPowerOf2(int x) {
+        long powerOf2Max = (long) Integer.MAX_VALUE + 1L;
         long i = 1;
         while (i < x && i < powerOf2Max) {
             i += i;
         }
-        return (int) i;
+        return i;
     }
 
     /**
