@@ -30,7 +30,7 @@ import java.security.SecureRandom;
  * Overrides the implementation of
  * {@link org.apache.jackrabbit.core.data.CachingDataStore#getOrCreateReferenceKey}.
  */
-public class OakCachingFDS extends CachingFDS implements ConfigurableDataStore {
+public class OakCachingFDS extends CachingFDS {
     /** The path for FS Backend **/
     private String fsBackendPath;
 

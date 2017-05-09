@@ -3,8 +3,8 @@ package org.apache.jackrabbit.oak.blob.federated;
 import com.google.common.collect.Maps;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
+import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.ConfigurableDataStore;
 
 import javax.jcr.RepositoryException;
 import java.io.InputStream;
@@ -12,21 +12,21 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
 
-public class FederatedDataStore implements ConfigurableDataStore {
+public class FederatedDataStore implements DataStore {
     protected Properties properties;
 
     public void setProperties(final Properties properties) {
         this.properties = properties;
     }
 
-    private ConfigurableDataStore defaultDS;
-    private Map<String, ConfigurableDataStore> delegateDataStores = Maps.newConcurrentMap();
+    private DataStore defaultDS;
+    private Map<String, DataStore> delegateDataStores = Maps.newConcurrentMap();
 
-    public Map<String, ConfigurableDataStore> getDelegateDataStores() {
+    public Map<String, DataStore> getDelegateDataStores() {
         return this.delegateDataStores;
     }
 
-    public FederatedDataStore(final ConfigurableDataStore defaultDS, final Map<String, ConfigurableDataStore> delegateDataStores) {
+    public FederatedDataStore(final DataStore defaultDS, final Map<String, DataStore> delegateDataStores) {
         this.defaultDS = defaultDS;
         this.delegateDataStores = delegateDataStores;
     }
@@ -70,7 +70,7 @@ public class FederatedDataStore implements ConfigurableDataStore {
     @Override
     public void init(String homeDir) throws RepositoryException {
         defaultDS.init(homeDir);
-        for (ConfigurableDataStore ds : delegateDataStores.values()) {
+        for (DataStore ds : delegateDataStores.values()) {
             ds.init(homeDir);
         }
     }
@@ -83,7 +83,7 @@ public class FederatedDataStore implements ConfigurableDataStore {
     @Override
     public void close() throws DataStoreException {
         defaultDS.close();
-        for (ConfigurableDataStore ds : delegateDataStores.values()) {
+        for (DataStore ds : delegateDataStores.values()) {
             ds.close();
         }
     }
@@ -91,7 +91,7 @@ public class FederatedDataStore implements ConfigurableDataStore {
     @Override
     public void clearInUse() {
         defaultDS.clearInUse();
-        for (ConfigurableDataStore ds : delegateDataStores.values()) {
+        for (DataStore ds : delegateDataStores.values()) {
             ds.clearInUse();
         }
     }

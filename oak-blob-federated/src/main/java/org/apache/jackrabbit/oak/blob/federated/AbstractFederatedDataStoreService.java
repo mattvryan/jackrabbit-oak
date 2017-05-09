@@ -5,13 +5,14 @@ import com.google.common.collect.Maps;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreService;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.ConfigurableDataStore;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.*;
 
 public abstract class AbstractFederatedDataStoreService extends AbstractDataStoreService {
@@ -27,16 +28,15 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
     protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
         Properties properties = new Properties();
 
-        ConfigurableDataStore defaultDelegateDS = null;
-        Map<String, ConfigurableDataStore> dataStoreDelegates = Maps.newConcurrentMap();
+        DataStore defaultDelegateDS = null;
+        Map<String, DataStore> dataStoreDelegates = Maps.newConcurrentMap();
 
         for (Map.Entry<String, Object> entry: config.entrySet()) {
             if (DATASTORE_PRIMARY.equals(entry.getKey())) {
                 defaultDelegateDS = getDelegateDataStore((String) entry.getValue());
-
             }
             else if (DATASTORE_SECONDARY.equals(entry.getKey())){
-                ConfigurableDataStore delegate = getDelegateDataStore((String) entry.getValue());
+                DataStore delegate = getDelegateDataStore((String) entry.getValue());
                 if (null != delegate) {
                     dataStoreDelegates.put((String) entry.getValue(), delegate);
                 }
@@ -64,12 +64,12 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
         return dataStore;
     }
 
-    private ConfigurableDataStore getDelegateDataStore(final String dsConfig) {
+    private DataStore getDelegateDataStore(final String dsConfig) {
         Map<String, Object> cfg = Maps.newHashMap();
         List<String> cfgPairs = Lists.newArrayList(dsConfig.split(","));
         String name = null;
         for (String s : cfgPairs) {
-            String[] parts = s.split("=");
+            String[] parts = s.split(":");
             if (parts.length != 2) continue;
             if ("name".equals(parts[0])) {
                 name = parts[1];
@@ -79,7 +79,7 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
             }
         }
         String fullClassName = null;
-        ConfigurableDataStore ds = null;
+        DataStore ds = null;
         if (null != name) {
             switch (name) {
                 case "FileDataStore":
@@ -94,16 +94,23 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
             if (null != fullClassName) {
                 try {
                     Class dataStoreClass = Class.forName(fullClassName);
-                    ds = (ConfigurableDataStore) dataStoreClass.newInstance();
-                    Properties properties = new Properties();
-                    properties.putAll(cfg);
-                    ds.setProperties(properties);
+                    ds = (DataStore) dataStoreClass.newInstance();
+                    try {
+                        Method setPropertiesMethod = dataStoreClass.getMethod("setProperties", Properties.class);
+                        Properties properties = new Properties();
+                        properties.putAll(cfg);
+                        setPropertiesMethod.invoke(ds, properties);
+                    }
+                    catch (InvocationTargetException ite) {
+                        LOG.warn("FEDERATED-DATA-STORE - Could not set properties for data store class {}", fullClassName);
+                    }
+                    catch (NoSuchMethodException nsme) { } // Don't worry about this
                 } catch (ClassNotFoundException cnfe) {
-                    LOG.warn("FEDERATED-DATA-STORE - Could not get class object for data store class");
+                    LOG.warn("FEDERATED-DATA-STORE - Could not get class object for data store class {}", fullClassName);
                 } catch (InstantiationException ie) {
-                    LOG.warn("FEDERATED-DATA-STORE - Could not instantiate data store class");
+                    LOG.warn("FEDERATED-DATA-STORE - Could not instantiate data store class {}", fullClassName);
                 } catch (IllegalAccessException iae) {
-                    LOG.warn("FEDERATED-DATA-STORE - illegal access trying to instantiate data store class");
+                    LOG.warn("FEDERATED-DATA-STORE - illegal access trying to instantiate data store class {}", fullClassName);
                 }
             }
         }
