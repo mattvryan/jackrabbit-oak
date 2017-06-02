@@ -5,8 +5,7 @@ import com.google.common.collect.Maps;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreService;
-import org.osgi.framework.Constants;
-import org.osgi.framework.ServiceRegistration;
+import org.osgi.framework.*;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +29,23 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
 
         DataStore defaultDelegateDS = null;
         Map<String, DataStore> dataStoreDelegates = Maps.newConcurrentMap();
+
+        // Parse config to get a list of all the data stores we want to use.
+        // Register a bundle listener to create data stores for any specified in config whose bundles
+        // will be activated later.
+        // Get a list of all the bundles now, and use the bundles to create any data stores pertaining
+        // to bundles that are already active.
+        // Log any data stores that didn't get set up.
+
+        context.getBundleContext().addFrameworkListener(new FrameworkListener() {
+            @Override
+            public void frameworkEvent(FrameworkEvent event) {
+                if (event.getType() == FrameworkEvent.STARTED) {
+                    List<Bundle> bundles = Lists.newArrayList(event.getBundle().getBundleContext().getBundles());
+                    LOG.error("FDSS - Number of bundles: {}", bundles.size());
+                }
+            }
+        });
 
         for (Map.Entry<String, Object> entry: config.entrySet()) {
             if (DATASTORE_PRIMARY.equals(entry.getKey())) {
@@ -62,6 +78,23 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
         }, dataStore, props);
 
         return dataStore;
+    }
+
+    private String getEventName(BundleEvent event)
+    {
+        switch(event.getType()) {
+            case BundleEvent.INSTALLED:       return "INSTALLED";
+            case BundleEvent.LAZY_ACTIVATION: return "LAZY_ACTIVATION";
+            case BundleEvent.STARTING:        return "STARTING";
+            case BundleEvent.STARTED:         return "STARTED";
+            case BundleEvent.STOPPING:        return "STOPPING";
+            case BundleEvent.STOPPED:         return "STOPPED";
+            case BundleEvent.RESOLVED:        return "RESOLVED";
+            case BundleEvent.UNRESOLVED:      return "UNRESOLVED";
+            case BundleEvent.UPDATED:         return "UPDATED";
+            case BundleEvent.UNINSTALLED:     return "UNINSTALLED";
+            default:                          return "(undefined)";
+        }
     }
 
     private DataStore getDelegateDataStore(final String dsConfig) {
