@@ -1,4 +1,4 @@
-package org.apache.jackrabbit.oak.blob.federated;
+package org.apache.jackrabbit.oak.blob.composite;
 
 import com.google.common.collect.*;
 import org.apache.jackrabbit.core.data.DataIdentifier;
@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-public class FederatedDataStore implements DataStore, BundleListener, FrameworkListener {
-    private static Logger LOG = LoggerFactory.getLogger(FederatedDataStore.class);
+public class CompositeDataStore implements DataStore, BundleListener, FrameworkListener {
+    private static Logger LOG = LoggerFactory.getLogger(CompositeDataStore.class);
     protected Properties properties;
 
     public void setProperties(final Properties properties) {
@@ -59,7 +59,7 @@ public class FederatedDataStore implements DataStore, BundleListener, FrameworkL
         }
 
         if (null == defaultDelegateDataStore) {
-            LOG.error("Configuration error - FederatedDataStore cannot determine the default delegate data store");
+            LOG.error("Configuration error - CompositeDataStore cannot determine the default delegate data store");
         }
     }
 

@@ -11,8 +11,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>groupId</groupId>
-    <artifactId>oak-blob-federated</artifactId>
-    <name>Oak Federated Blob Storage</name>
+    <artifactId>oak-blob-composite</artifactId>
+    <name>Oak Composite Blob Storage</name>
     <packaging>bundle</packaging>
 
     <build>

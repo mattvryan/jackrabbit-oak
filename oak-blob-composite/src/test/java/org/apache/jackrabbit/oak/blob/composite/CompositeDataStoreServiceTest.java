@@ -1,4 +1,4 @@
-package org.apache.jackrabbit.oak.blob.federated;
+package org.apache.jackrabbit.oak.blob.composite;
 
 import com.google.common.collect.Maps;
 import org.apache.jackrabbit.core.data.DataStore;
@@ -12,7 +12,7 @@ import java.util.Map;
 
 import static org.junit.Assert.assertTrue;
 
-public class FederatedDataStoreServiceTest {
+public class CompositeDataStoreServiceTest {
     @Rule
     public final TemporaryFolder folder = new TemporaryFolder(new File("target"));
 
@@ -21,18 +21,18 @@ public class FederatedDataStoreServiceTest {
 
     @Test
     public void testCreateDataStore() {
-        FederatedDataStoreService service = new FederatedDataStoreService();
+        CompositeDataStoreService service = new CompositeDataStoreService();
         Map<String, Object> config = Maps.newHashMap();
         DataStore ds = service.createDataStore(context.componentContext(), config);
-        assertTrue(ds instanceof FederatedDataStore);
+        assertTrue(ds instanceof CompositeDataStore);
     }
 
 //    @Test
 //    public void testCreateWithFileDataStore() {
-//        FederatedDataStoreService service = new FederatedDataStoreService();
+//        CompositeDataStoreService service = new CompositeDataStoreService();
 //        Map<String, Object> config = Maps.newHashMap();
 //        config.put("dataStoreName", "org.apache.jackrabbit.oak.plugins.blob.datastore.OakFileDataStore");
-//        FederatedDataStore ds = (FederatedDataStore) service.createDataStore(context.componentContext(), config);
-//        assertTrue(ds.getFederatedDataStores().get(0) instanceof DataStore);
+//        CompositeDataStore ds = (CompositeDataStore) service.createDataStore(context.componentContext(), config);
+//        assertTrue(ds.getCompositeDataStores().get(0) instanceof DataStore);
 //    }
 }

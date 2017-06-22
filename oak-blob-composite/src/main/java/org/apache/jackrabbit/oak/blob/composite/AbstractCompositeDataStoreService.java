@@ -1,4 +1,4 @@
-package org.apache.jackrabbit.oak.blob.federated;
+package org.apache.jackrabbit.oak.blob.composite;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -15,8 +15,8 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 
 @Component(componentAbstract = true)
-public abstract class AbstractFederatedDataStoreService extends AbstractDataStoreService {
-    private static Logger LOG = LoggerFactory.getLogger(AbstractFederatedDataStoreService.class);
+public abstract class AbstractCompositeDataStoreService extends AbstractDataStoreService {
+    private static Logger LOG = LoggerFactory.getLogger(AbstractCompositeDataStoreService.class);
 
     private static final String DESCRIPTION = "oak.datastore.description";
     private static final String DATASTORE_PRIMARY = "datastore.primary";
@@ -28,7 +28,7 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
     protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
         Properties properties = new Properties();
 
-        FederatedDataStore dataStore = new FederatedDataStore();
+        CompositeDataStore dataStore = new CompositeDataStore();
 
         // Register a bundle listener to create data stores for any specified in config whose bundles
         // will be activated later.
@@ -67,7 +67,7 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
 
         delegateReg = context.getBundleContext().registerService(new String[] {
                 DataStore.class.getName(),
-                FederatedDataStore.class.getName()
+                CompositeDataStore.class.getName()
         }, dataStore, props);
 
         return dataStore;
@@ -95,6 +95,6 @@ public abstract class AbstractFederatedDataStoreService extends AbstractDataStor
 
     @Override
     protected String[] getDescription() {
-        return new String[] {"type=FederatedBlob"};
+        return new String[] {"type=CompositeBlob"};
     }
 }
