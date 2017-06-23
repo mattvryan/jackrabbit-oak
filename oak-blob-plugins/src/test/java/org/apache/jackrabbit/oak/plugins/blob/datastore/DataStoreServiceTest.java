@@ -19,28 +19,10 @@
 
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
-import static org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreService
-    .JR2_CACHING_PROP;
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
-import java.io.File;
-import java.lang.reflect.Field;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-
-import javax.jcr.RepositoryException;
-
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.io.FileUtils;
-import org.apache.jackrabbit.core.data.Backend;
-import org.apache.jackrabbit.core.data.CachingFDS;
-import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.core.data.*;
 import org.apache.jackrabbit.core.data.FSBackend;
-import org.apache.jackrabbit.core.data.FileDataStore;
 import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
@@ -51,6 +33,16 @@ import org.apache.sling.testing.mock.osgi.junit.OsgiContext;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
+import javax.jcr.RepositoryException;
+import java.io.File;
+import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+
+import static org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreService.JR2_CACHING_PROP;
+import static org.junit.Assert.*;
 
 public class DataStoreServiceTest {
     @Rule

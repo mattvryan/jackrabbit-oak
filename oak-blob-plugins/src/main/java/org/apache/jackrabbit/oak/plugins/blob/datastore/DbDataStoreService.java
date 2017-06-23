@@ -19,8 +19,6 @@
 
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
-import java.util.Map;
-
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.ConfigurationPolicy;
 import org.apache.felix.scr.annotations.Reference;
@@ -28,6 +26,9 @@ import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.db.DbDataStore;
 import org.apache.jackrabbit.core.util.db.ConnectionFactory;
 import org.osgi.service.component.ComponentContext;
+
+import javax.jcr.RepositoryException;
+import java.util.Map;
 
 @Component(policy = ConfigurationPolicy.REQUIRE, name = DbDataStoreService.NAME)
 public class DbDataStoreService extends AbstractDataStoreService{
@@ -37,10 +38,20 @@ public class DbDataStoreService extends AbstractDataStoreService{
     private ConnectionFactory connectionFactory;
 
     @Override
-    protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
-        DbDataStore dataStore = new DbDataStore();
+    protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) throws RepositoryException {
+        DbDataStore dataStore = (DbDataStore) getDataStoreFactory().createDataStore(context,
+                config,
+                null,
+                null,
+                getStatisticsProvider(),
+                false);
         dataStore.setConnectionFactory(connectionFactory);
         return dataStore;
+    }
+
+    @Override
+    protected DataStoreFactory getDataStoreFactory() {
+        return new DbDataStoreFactory();
     }
 }
 

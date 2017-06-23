@@ -19,12 +19,6 @@
 
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
-import java.util.Dictionary;
-import java.util.Hashtable;
-import java.util.Map;
-
-import javax.jcr.RepositoryException;
-
 import com.google.common.collect.Maps;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Reference;
@@ -33,10 +27,10 @@ import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.osgi.OsgiWhiteboard;
-import org.apache.jackrabbit.oak.spi.blob.stats.BlobStoreStatsMBean;
 import org.apache.jackrabbit.oak.plugins.blob.BlobStoreStats;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
+import org.apache.jackrabbit.oak.spi.blob.stats.BlobStoreStatsMBean;
 import org.apache.jackrabbit.oak.spi.whiteboard.CompositeRegistration;
 import org.apache.jackrabbit.oak.spi.whiteboard.Registration;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
@@ -47,6 +41,11 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.jcr.RepositoryException;
+import java.util.Dictionary;
+import java.util.Hashtable;
+import java.util.Map;
 
 import static org.apache.jackrabbit.oak.spi.blob.osgi.SplitBlobStoreService.PROP_SPLIT_BLOBSTORE;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
@@ -117,7 +116,8 @@ public abstract class AbstractDataStoreService {
         dataStore.close();
     }
 
-    protected abstract DataStore createDataStore(ComponentContext context, Map<String, Object> config);
+    protected abstract DataStore createDataStore(ComponentContext context, Map<String, Object> config) throws RepositoryException;
+    protected abstract DataStoreFactory getDataStoreFactory();
 
     protected StatisticsProvider getStatisticsProvider(){
         return statisticsProvider;
