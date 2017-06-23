@@ -21,41 +21,50 @@ package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
-import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreService;
-import org.osgi.framework.Constants;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreFactory;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreServiceRegistrar;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 
-import java.util.Dictionary;
-import java.util.Hashtable;
+import javax.jcr.RepositoryException;
 import java.util.Map;
-import java.util.Properties;
 
 public abstract class AbstractAzureDataStoreService extends AbstractDataStoreService {
-    private static final String DESCRIPTION = "oak.datastore.description";
-
     private ServiceRegistration delegateReg;
 
     @Override
-    protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
-        Properties properties = new Properties();
-        properties.putAll(config);
+    protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) throws RepositoryException {
+        DataStoreServiceRegistrar registrar = new DataStoreServiceRegistrar(context.getBundleContext());
+        DataStore dataStore = getDataStoreFactory().createDataStore(context,
+                config,
+                getDescription(),
+                registrar,
+                getStatisticsProvider(),
+                JR2_CACHING);
 
-        AzureDataStore dataStore = new AzureDataStore();
-        dataStore.setStatisticsProvider(getStatisticsProvider());
-        dataStore.setProperties(properties);
-
-        Dictionary<String, Object> props = new Hashtable<String, Object>();
-        props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
-        props.put(DESCRIPTION, getDescription());
-
-        delegateReg = context.getBundleContext().registerService(new String[] {
-                AbstractSharedCachingDataStore.class.getName(),
-                AbstractSharedCachingDataStore.class.getName()
-        }, dataStore , props);
+//        Properties properties = new Properties();
+//        properties.putAll(config);
+//
+//        AzureDataStore dataStore = new AzureDataStore();
+//        dataStore.setStatisticsProvider(getStatisticsProvider());
+//        dataStore.setProperties(properties);
+//
+//        Dictionary<String, Object> props = new Hashtable<String, Object>();
+//        props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
+//        props.put(DESCRIPTION, getDescription());
+//
+//        delegateReg = context.getBundleContext().registerService(new String[] {
+//                AbstractSharedCachingDataStore.class.getName(),
+//                AbstractSharedCachingDataStore.class.getName()
+//        }, dataStore , props);
 
         return dataStore;
+    }
+
+    @Override
+    protected DataStoreFactory getDataStoreFactory() {
+        return new AzureDataStoreFactory();
     }
 
     protected void deactivate() throws DataStoreException {
