@@ -32,16 +32,12 @@ import java.util.Map;
 public class FileDataStoreService extends AbstractDataStoreService {
     public static final String NAME = "org.apache.jackrabbit.oak.plugins.blob.datastore.FileDataStore";
 
-    //private static final String DESCRIPTION = "oak.datastore.description";
-
     public static final String CACHE_PATH = "cachePath";
     public static final String CACHE_SIZE = "cacheSize";
     public static final String FS_BACKEND_PATH = "fsBackendPath";
     public static final String PATH = "path";
 
     private ServiceRegistration delegateReg;
-
-    //private Logger log = LoggerFactory.getLogger(getClass());
 
     @Override
     protected DataStoreFactory getDataStoreFactory() {
@@ -63,61 +59,7 @@ public class FileDataStoreService extends AbstractDataStoreService {
         }
 
         return dataStore;
-//
-//
-//
-//        long cacheSize = PropertiesUtil.toLong(config.get(CACHE_SIZE), 0L);
-//        // return CachingFDS when cacheSize > 0
-//        if (cacheSize > 0) {
-//            String fsBackendPath = PropertiesUtil.toString(config.get(PATH), null);
-//            Preconditions.checkNotNull(fsBackendPath, "Cannot create " +
-//                    "FileDataStoreService with caching. [{path}] property not configured.");
-//
-//            config.remove(PATH);
-//            config.remove(CACHE_SIZE);
-//            config.put(FS_BACKEND_PATH, fsBackendPath);
-//            config.put("cacheSize", cacheSize);
-//            String cachePath = PropertiesUtil.toString(config.get(CACHE_PATH), null);
-//            if (cachePath != null) {
-//                config.remove(CACHE_PATH);
-//                config.put(PATH, cachePath);
-//            }
-//            Properties properties = new Properties();
-//            properties.putAll(config);
-//            log.info("Initializing with properties " + properties);
-//
-//            if (JR2_CACHING) {
-//                OakCachingFDS dataStore = new OakCachingFDS();
-//                dataStore.setFsBackendPath(fsBackendPath);
-//
-//                // Disabling asyncUpload by default
-//                dataStore.setAsyncUploadLimit(
-//                        PropertiesUtil.toInteger(config.get("asyncUploadLimit"), 0));
-//                dataStore.setProperties(properties);
-//                return dataStore;
-//            }
-//            return getCachingDataStore(properties, context);
-//        } else {
-//            log.info("OakFileDataStore initialized");
-//            return new OakFileDataStore();
-//        }
     }
-
-//    private DataStore getCachingDataStore(Properties props, ComponentContext context) {
-//        CachingFileDataStore dataStore = new CachingFileDataStore();
-//        dataStore.setStagingSplitPercentage(
-//                PropertiesUtil.toInteger(props.get("stagingSplitPercentage"), 0));
-//        dataStore.setProperties(props);
-//        Dictionary<String, Object> config = new Hashtable<String, Object>();
-//        config.put(Constants.SERVICE_PID, dataStore.getClass().getName());
-//        config.put(DESCRIPTION, getDescription());
-//
-//        delegateReg = context.getBundleContext().registerService(new String[] {
-//                AbstractSharedCachingDataStore.class.getName(),
-//                AbstractSharedCachingDataStore.class.getName()
-//        }, dataStore , config);
-//        return dataStore;
-//    }
 
     @Override
     protected String[] getDescription() {

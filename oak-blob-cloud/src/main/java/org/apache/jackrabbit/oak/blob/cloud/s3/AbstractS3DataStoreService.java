@@ -33,8 +33,6 @@ import java.util.Map;
 
 @Component(componentAbstract = true)
 public abstract class AbstractS3DataStoreService extends AbstractDataStoreService {
-    //private static final String DESCRIPTION = "oak.datastore.description";
-
     private ServiceRegistration delegateReg;
 
     @Override
@@ -52,40 +50,6 @@ public abstract class AbstractS3DataStoreService extends AbstractDataStoreServic
         }
 
         return dataStore;
-
-
-//        Properties properties = new Properties();
-//        properties.putAll(config);
-//
-//        if (JR2_CACHING) {
-//            SharedS3DataStore dataStore = new SharedS3DataStore();
-//            dataStore.setProperties(properties);
-//
-//            Dictionary<String, Object> props = new Hashtable<String, Object>();
-//            props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
-//            props.put(DESCRIPTION, getDescription());
-//
-//            delegateReg = context.getBundleContext().registerService(new String[] {
-//                    SharedS3DataStore.class.getName(),
-//                    SharedS3DataStore.class.getName()
-//            }, dataStore , props);
-//            return dataStore;
-//        } else {
-//            S3DataStore dataStore = new S3DataStore();
-//            dataStore.setStatisticsProvider(getStatisticsProvider());
-//            dataStore.setProperties(properties);
-//
-//            Dictionary<String, Object> props = new Hashtable<String, Object>();
-//            props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
-//            props.put(DESCRIPTION, getDescription());
-//
-//            delegateReg = context.getBundleContext().registerService(new String[] {
-//                    AbstractSharedCachingDataStore.class.getName(),
-//                    AbstractSharedCachingDataStore.class.getName()
-//            }, dataStore , props);
-//
-//            return dataStore;
-//        }
     }
 
     @Override

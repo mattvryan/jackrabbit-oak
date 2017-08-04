@@ -43,22 +43,6 @@ public abstract class AbstractAzureDataStoreService extends AbstractDataStoreSer
                 getStatisticsProvider(),
                 JR2_CACHING);
 
-//        Properties properties = new Properties();
-//        properties.putAll(config);
-//
-//        AzureDataStore dataStore = new AzureDataStore();
-//        dataStore.setStatisticsProvider(getStatisticsProvider());
-//        dataStore.setProperties(properties);
-//
-//        Dictionary<String, Object> props = new Hashtable<String, Object>();
-//        props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
-//        props.put(DESCRIPTION, getDescription());
-//
-//        delegateReg = context.getBundleContext().registerService(new String[] {
-//                AbstractSharedCachingDataStore.class.getName(),
-//                AbstractSharedCachingDataStore.class.getName()
-//        }, dataStore , props);
-
         return dataStore;
     }
 
