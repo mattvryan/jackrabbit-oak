@@ -48,7 +48,6 @@ import java.util.Map;
 import java.util.Random;
 
 import com.google.common.base.Charsets;
-import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableMap;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
@@ -76,7 +75,7 @@ public class RecordTest {
 
     private FileStore store;
 
-    private DefaultSegmentWriter writer;
+    private SegmentWriter writer;
 
     private final Random random = new Random(0xcafefaceL);
 
@@ -176,8 +175,8 @@ public class RecordTest {
         checkRandomStreamRecord(0x80);
         checkRandomStreamRecord(0x4079);
         checkRandomStreamRecord(0x4080);
-        checkRandomStreamRecord(DefaultSegmentWriter.BLOCK_SIZE);
-        checkRandomStreamRecord(DefaultSegmentWriter.BLOCK_SIZE + 1);
+        checkRandomStreamRecord(SegmentStream.BLOCK_SIZE);
+        checkRandomStreamRecord(SegmentStream.BLOCK_SIZE + 1);
         checkRandomStreamRecord(Segment.MAX_SEGMENT_SIZE);
         checkRandomStreamRecord(Segment.MAX_SEGMENT_SIZE + 1);
         checkRandomStreamRecord(Segment.MAX_SEGMENT_SIZE * 2);
@@ -444,13 +443,6 @@ public class RecordTest {
         builder.setProperty("jcr:mixinTypes", singletonList("foo"), STRINGS);
         NodeState state = new SegmentNodeState(store.getReader(), writer, store.getBlobStore(), writer.writeNode(builder.getNodeState()));
         assertNotNull(state.getProperty("jcr:mixinTypes"));
-    }
-
-    @Test
-    public void testCancel() throws IOException {
-        NodeBuilder builder = EMPTY_NODE.builder();
-        RecordId id = writer.writeNode(builder.getNodeState(), Suppliers.ofInstance(true));
-        assertNull(id);
     }
 
 }

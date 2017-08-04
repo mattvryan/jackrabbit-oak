@@ -56,9 +56,10 @@ import org.apache.jackrabbit.oak.plugins.index.AsyncIndexInfoService;
 import org.apache.jackrabbit.oak.plugins.index.IndexEditorProvider;
 import org.apache.jackrabbit.oak.plugins.index.IndexInfoProvider;
 import org.apache.jackrabbit.oak.plugins.index.IndexPathService;
-import org.apache.jackrabbit.oak.plugins.index.aggregate.NodeAggregator;
 import org.apache.jackrabbit.oak.plugins.index.fulltext.PreExtractedTextProvider;
+import org.apache.jackrabbit.oak.plugins.index.importer.IndexImporterProvider;
 import org.apache.jackrabbit.oak.plugins.index.lucene.directory.ActiveDeletedBlobCollectorFactory;
+import org.apache.jackrabbit.oak.plugins.index.lucene.directory.LuceneIndexImporter;
 import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.DocumentQueue;
 import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.ExternalObserverBuilder;
 import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.LocalIndexObserver;
@@ -72,6 +73,7 @@ import org.apache.jackrabbit.oak.spi.commit.BackgroundObserverMBean;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
 import org.apache.jackrabbit.oak.spi.mount.MountInfoProvider;
+import org.apache.jackrabbit.oak.spi.query.QueryIndex;
 import org.apache.jackrabbit.oak.spi.query.QueryIndexProvider;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.spi.whiteboard.Registration;
@@ -91,6 +93,7 @@ import org.slf4j.LoggerFactory;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptyMap;
 import static org.apache.commons.io.FileUtils.ONE_MB;
+import static org.apache.jackrabbit.oak.spi.blob.osgi.SplitBlobStoreService.ONLY_STANDALONE_TARGET;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.scheduleWithFixedDelay;
 
@@ -110,7 +113,7 @@ public class LuceneIndexProviderService {
             policyOption = ReferencePolicyOption.GREEDY,
             policy = ReferencePolicy.DYNAMIC
     )
-    private NodeAggregator nodeAggregator;
+    private QueryIndex.NodeAggregator nodeAggregator;
 
     private static final boolean PROP_DISABLED_DEFAULT = false;
 
@@ -286,9 +289,11 @@ public class LuceneIndexProviderService {
     @Reference
     private AsyncIndexInfoService asyncIndexInfoService;
 
-    @Reference(cardinality = ReferenceCardinality.OPTIONAL_UNARY,
-        policyOption = ReferencePolicyOption.GREEDY,
-        policy = ReferencePolicy.DYNAMIC
+    @Reference(
+            cardinality = ReferenceCardinality.OPTIONAL_UNARY,
+            policy = ReferencePolicy.STATIC,
+            policyOption = ReferencePolicyOption.GREEDY,
+            target = ONLY_STANDALONE_TARGET
     )
     private GarbageCollectableBlobStore blobStore;
 
@@ -345,6 +350,7 @@ public class LuceneIndexProviderService {
         registerLocalIndexObserver(bundleContext, tracker, config);
         registerIndexEditor(bundleContext, tracker, config);
         registerIndexInfoProvider(bundleContext);
+        registerIndexImporterProvider(bundleContext);
 
         oakRegs.add(registerMBean(whiteboard,
                 LuceneIndexMBean.class,
@@ -692,20 +698,14 @@ public class LuceneIndexProviderService {
         oakRegs.add(whiteboard.register(GCMonitor.class, gcMonitor, emptyMap()));
     }
 
-    private void registerBlobStore(GarbageCollectableBlobStore blobStore) {
-        if (editorProvider != null){
-            if (blobStore != null){
-                log.info("Registering blobStore {} with editorProvider. ", blobStore);
-            } else {
-                log.info("Unregistering blobStore");
-            }
-            editorProvider.setBlobStore(blobStore);
-        }
-    }
-
     private void registerIndexInfoProvider(BundleContext bundleContext) {
         IndexInfoProvider infoProvider = new LuceneIndexInfoProvider(nodeStore, asyncIndexInfoService, getIndexCheckDir());
         regs.add(bundleContext.registerService(IndexInfoProvider.class.getName(), infoProvider, null));
+    }
+
+    private void registerIndexImporterProvider(BundleContext bundleContext) {
+        LuceneIndexImporter importer = new LuceneIndexImporter(blobStore);
+        regs.add(bundleContext.registerService(IndexImporterProvider.class.getName(), importer, null));
     }
 
     private void initializeActiveBlobCollector(Whiteboard whiteboard, Map<String, ?> config) {
@@ -745,12 +745,12 @@ public class LuceneIndexProviderService {
         return timestamp;
     }
 
-    protected void bindNodeAggregator(NodeAggregator aggregator) {
+    protected void bindNodeAggregator(QueryIndex.NodeAggregator aggregator) {
         this.nodeAggregator = aggregator;
         initialize();
     }
 
-    protected void unbindNodeAggregator(NodeAggregator aggregator) {
+    protected void unbindNodeAggregator(QueryIndex.NodeAggregator aggregator) {
         this.nodeAggregator = null;
         initialize();
     }
@@ -763,15 +763,5 @@ public class LuceneIndexProviderService {
     protected void unbindExtractedTextProvider(PreExtractedTextProvider preExtractedTextProvider){
         this.extractedTextProvider = null;
         registerExtractedTextProvider(null);
-    }
-
-    protected void bindBlobStore(GarbageCollectableBlobStore blobStore) {
-        this.blobStore = blobStore;
-        registerBlobStore(blobStore);
-    }
-
-    protected void unbindBlobStore(GarbageCollectableBlobStore blobStore) {
-        this.blobStore = null;
-        registerBlobStore(blobStore);
     }
 }

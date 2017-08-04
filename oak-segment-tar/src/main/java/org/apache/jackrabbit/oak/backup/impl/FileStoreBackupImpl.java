@@ -31,10 +31,12 @@ import com.google.common.base.Suppliers;
 import org.apache.jackrabbit.oak.backup.FileStoreBackup;
 import org.apache.jackrabbit.oak.segment.Compactor;
 import org.apache.jackrabbit.oak.segment.DefaultSegmentWriter;
+import org.apache.jackrabbit.oak.segment.file.tar.GCGeneration;
 import org.apache.jackrabbit.oak.segment.Revisions;
 import org.apache.jackrabbit.oak.segment.SegmentBufferWriter;
 import org.apache.jackrabbit.oak.segment.SegmentNodeState;
 import org.apache.jackrabbit.oak.segment.SegmentReader;
+import org.apache.jackrabbit.oak.segment.SegmentWriter;
 import org.apache.jackrabbit.oak.segment.WriterCacheManager;
 import org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
@@ -66,14 +68,14 @@ public class FileStoreBackupImpl implements FileStoreBackup {
         SegmentNodeState current = reader.readHeadState(revisions);
 
         try {
-            int gen = current.getRecordId().getSegmentId().getGcGeneration();
+            GCGeneration gen = current.getRecordId().getSegmentId().getGcGeneration();
             SegmentBufferWriter bufferWriter = new SegmentBufferWriter(
                     backup.getSegmentIdProvider(),
                     backup.getReader(),
                     "b",
                     gen
             );
-            DefaultSegmentWriter writer = new DefaultSegmentWriter(
+            SegmentWriter writer = new DefaultSegmentWriter(
                     backup,
                     backup.getReader(),
                     backup.getSegmentIdProvider(),

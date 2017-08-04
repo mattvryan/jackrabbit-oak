@@ -46,7 +46,7 @@ import static org.apache.jackrabbit.oak.api.Type.STRING;
 import static org.apache.jackrabbit.oak.segment.MapEntry.newModifiedMapEntry;
 import static org.apache.jackrabbit.oak.segment.MapRecord.BUCKETS_PER_LEVEL;
 import static org.apache.jackrabbit.oak.segment.RecordWriters.newNodeStateWriter;
-import static org.apache.jackrabbit.oak.segment.WriterCacheManager.Operation.COMPACT;
+import static org.apache.jackrabbit.oak.segment.SegmentNodeState.getStableId;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -63,15 +63,13 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.jcr.PropertyType;
 
-import com.google.common.base.Supplier;
-import com.google.common.base.Suppliers;
 import com.google.common.io.Closeables;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.plugins.memory.ModifiedNodeState;
 import org.apache.jackrabbit.oak.segment.WriteOperationHandler.WriteOperation;
-import org.apache.jackrabbit.oak.segment.file.GCNodeWriteMonitor;
+import org.apache.jackrabbit.oak.segment.file.tar.GCGeneration;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.DefaultNodeStateDiff;
@@ -80,16 +78,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A {@code SegmentWriter} converts nodes, properties, values, etc. to records
- * and persists them with the help of a {@link WriteOperationHandler}. All
- * public methods of this class are thread safe if and only if the {@link
- * WriteOperationHandler} passed to the constructor is thread safe.
+ * Converts nodes, properties, values, etc. to records and persists them with
+ * the help of a {@link WriteOperationHandler}. All public methods of this class
+ * are thread safe if and only if the {@link WriteOperationHandler} passed to
+ * the constructor is thread safe.
  */
 public class DefaultSegmentWriter implements SegmentWriter {
 
-    private static final Logger LOG = LoggerFactory.getLogger(org.apache.jackrabbit.oak.segment.DefaultSegmentWriter.class);
-
-    static final int BLOCK_SIZE = 1 << 12; // 4kB
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultSegmentWriter.class);
 
     @Nonnull
     private final WriterCacheManager cacheManager;
@@ -108,9 +104,6 @@ public class DefaultSegmentWriter implements SegmentWriter {
 
     @Nonnull
     private final WriteOperationHandler writeOperationHandler;
-
-    @Nonnull
-    private GCNodeWriteMonitor compactionMonitor = GCNodeWriteMonitor.EMPTY;
 
     /**
      * Create a new instance of a {@code SegmentWriter}. Note the thread safety
@@ -243,33 +236,17 @@ public class DefaultSegmentWriter implements SegmentWriter {
 
     @Override
     @Nonnull
-    public RecordId writeNode(@Nonnull final NodeState state) throws IOException {
+    public RecordId writeNode(
+            @Nonnull final NodeState state,
+            @Nullable final ByteBuffer stableIdBytes)
+    throws IOException {
         return writeOperationHandler.execute(new SegmentWriteOperation() {
-
             @Nonnull
             @Override
             public RecordId execute(@Nonnull SegmentBufferWriter writer) throws IOException {
-                return with(writer).writeNode(state);
+                return with(writer).writeNode(state, stableIdBytes);
             }
         });
-    }
-
-    @Override
-    @CheckForNull
-    public RecordId writeNode(@Nonnull final NodeState state, @Nonnull Supplier<Boolean> cancel)
-            throws IOException {
-        try {
-            return writeOperationHandler.execute(new SegmentWriteOperation(cancel) {
-
-                @Nonnull
-                @Override
-                public RecordId execute(@Nonnull SegmentBufferWriter writer) throws IOException {
-                    return with(writer, true).writeNode(state);
-                }
-            });
-        } catch (SegmentWriteOperation.CancelledWriteException ignore) {
-            return null;
-        }
     }
 
     /**
@@ -279,21 +256,6 @@ public class DefaultSegmentWriter implements SegmentWriter {
      * <em>not thread safe</em>.
      */
     private abstract class SegmentWriteOperation implements WriteOperation {
-
-        /**
-         * This exception is used internally to signal cancellation of a
-         * (recursive) write node operation.
-         */
-        private class CancelledWriteException extends IOException {
-
-            public CancelledWriteException() {
-                super("Cancelled write operation");
-            }
-        }
-
-        @Nonnull
-        private final Supplier<Boolean> cancel;
-
         private SegmentBufferWriter writer;
 
         private Cache<String, RecordId> stringCache;
@@ -302,32 +264,20 @@ public class DefaultSegmentWriter implements SegmentWriter {
 
         private Cache<String, RecordId> nodeCache;
 
-        protected SegmentWriteOperation(@Nonnull Supplier<Boolean> cancel) {
-            this.cancel = cancel;
-        }
-
-        protected SegmentWriteOperation() {
-            this(Suppliers.ofInstance(false));
-        }
-
         @Nonnull
         @Override
         public abstract RecordId execute(@Nonnull SegmentBufferWriter writer) throws IOException;
 
         @Nonnull
-        SegmentWriteOperation with(@Nonnull SegmentBufferWriter writer, boolean compacting) {
+        SegmentWriteOperation with(@Nonnull SegmentBufferWriter writer) {
             checkState(this.writer == null);
             this.writer = writer;
-            int generation = writer.getGeneration();
-            this.stringCache = cacheManager.getStringCache(generation, COMPACT);
-            this.templateCache = cacheManager.getTemplateCache(generation, COMPACT);
-            this.nodeCache = cacheManager.getNodeCache(generation, COMPACT);
+            // FIXME OAK-6519: Properly handle tail compactions in deduplication caches
+            int generation = writer.getGeneration().getFull();
+            this.stringCache = cacheManager.getStringCache(generation);
+            this.templateCache = cacheManager.getTemplateCache(generation);
+            this.nodeCache = cacheManager.getNodeCache(generation);
             return this;
-        }
-
-        @Nonnull
-        SegmentWriteOperation with(@Nonnull SegmentBufferWriter writer) {
-            return with(writer, false);
         }
 
         private RecordId writeMap(@Nullable MapRecord base,
@@ -574,13 +524,13 @@ public class DefaultSegmentWriter implements SegmentWriter {
 
             int pos = 0;
             List<RecordId> blockIds = newArrayListWithExpectedSize(
-                    data.length / BLOCK_SIZE + 1);
+                    data.length / SegmentStream.BLOCK_SIZE + 1);
 
             // write as many full bulk segments as possible
             while (pos + Segment.MAX_SEGMENT_SIZE <= data.length) {
                 SegmentId bulkId = idProvider.newBulkSegmentId();
                 store.writeSegment(bulkId, data, pos, Segment.MAX_SEGMENT_SIZE);
-                for (int i = 0; i < Segment.MAX_SEGMENT_SIZE; i += BLOCK_SIZE) {
+                for (int i = 0; i < Segment.MAX_SEGMENT_SIZE; i += SegmentStream.BLOCK_SIZE) {
                     blockIds.add(new RecordId(bulkId, i));
                 }
                 pos += Segment.MAX_SEGMENT_SIZE;
@@ -588,7 +538,7 @@ public class DefaultSegmentWriter implements SegmentWriter {
 
             // inline the remaining data as block records
             while (pos < data.length) {
-                int len = min(BLOCK_SIZE, data.length - pos);
+                int len = min(SegmentStream.BLOCK_SIZE, data.length - pos);
                 blockIds.add(writeBlock(data, pos, len));
                 pos += len;
             }
@@ -710,7 +660,7 @@ public class DefaultSegmentWriter implements SegmentWriter {
             n += read(stream, data, n, Segment.MAX_SEGMENT_SIZE - n);
             long length = n;
             List<RecordId> blockIds =
-                    newArrayListWithExpectedSize(2 * n / BLOCK_SIZE);
+                    newArrayListWithExpectedSize(2 * n / SegmentStream.BLOCK_SIZE);
 
             // Write the data to bulk segments and collect the list of block ids
             while (n != 0) {
@@ -718,7 +668,7 @@ public class DefaultSegmentWriter implements SegmentWriter {
                 LOG.debug("Writing bulk segment {} ({} bytes)", bulkId, n);
                 store.writeSegment(bulkId, data, 0, n);
 
-                for (int i = 0; i < n; i += BLOCK_SIZE) {
+                for (int i = 0; i < n; i += SegmentStream.BLOCK_SIZE) {
                     blockIds.add(new RecordId(bulkId, data.length - n + i));
                 }
 
@@ -842,36 +792,35 @@ public class DefaultSegmentWriter implements SegmentWriter {
             return tid;
         }
 
-        private RecordId writeNode(@Nonnull NodeState state) throws IOException {
-            if (cancel.get()) {
-                // Poor man's Either Monad
-                throw new CancelledWriteException();
-            }
-
+        private RecordId writeNode(@Nonnull NodeState state, @Nullable ByteBuffer stableIdBytes)
+        throws IOException {
             RecordId compactedId = deduplicateNode(state);
 
             if (compactedId != null) {
                 return compactedId;
             }
 
-            RecordId recordId = writeNodeUncached(state);
-            if (state instanceof SegmentNodeState) {
+            if (state instanceof SegmentNodeState && stableIdBytes == null) {
+                stableIdBytes = ((SegmentNodeState) state).getStableIdBytes();
+            }
+            RecordId recordId = writeNodeUncached(state, stableIdBytes);
+
+            if (stableIdBytes != null) {
                 // This node state has been rewritten because it is from an older
                 // generation (e.g. due to compaction). Put it into the cache for
                 // deduplication of hard links to it (e.g. checkpoints).
-                SegmentNodeState sns = (SegmentNodeState) state;
-                nodeCache.put(sns.getStableId(), recordId, cost(sns));
-                compactionMonitor.compacted();
+                nodeCache.put(getStableId(stableIdBytes), recordId, cost(state));
             }
             return recordId;
         }
 
-        private byte cost(SegmentNodeState node) {
+        private byte cost(NodeState node) {
             long childCount = node.getChildNodeCount(Long.MAX_VALUE);
             return (byte) (Byte.MIN_VALUE + 64 - numberOfLeadingZeros(childCount));
         }
 
-        private RecordId writeNodeUncached(@Nonnull NodeState state) throws IOException {
+        private RecordId writeNodeUncached(@Nonnull NodeState state, @Nullable ByteBuffer stableIdBytes)
+        throws IOException {
             ModifiedNodeState after = null;
 
             if (state instanceof ModifiedNodeState) {
@@ -917,12 +866,12 @@ public class DefaultSegmentWriter implements SegmentWriter {
                     for (ChildNodeEntry entry : state.getChildNodeEntries()) {
                         childNodes.put(
                                 entry.getName(),
-                                writeNode(entry.getNodeState()));
+                                writeNode(entry.getNodeState(), null));
                     }
                 }
                 ids.add(writeMap(base, childNodes));
             } else if (childName != Template.ZERO_CHILD_NODES) {
-                ids.add(writeNode(state.getChildNode(template.getChildName())));
+                ids.add(writeNode(state.getChildNode(template.getChildName()), null));
             }
 
             List<RecordId> pIds = newArrayList();
@@ -975,11 +924,11 @@ public class DefaultSegmentWriter implements SegmentWriter {
             }
 
             RecordId stableId = null;
-            if (state instanceof SegmentNodeState) {
-                ByteBuffer bid = ((SegmentNodeState) state).getStableIdBytes();
-                byte[] id = new byte[RecordId.SERIALIZED_RECORD_ID_BYTES];
-                bid.get(id);
-                stableId = writeBlock(id, 0, id.length);
+            if (stableIdBytes != null) {
+                ByteBuffer buffer = stableIdBytes.duplicate();
+                byte[] bytes = new byte[buffer.remaining()];
+                buffer.get(bytes);
+                stableId = writeBlock(bytes, 0, bytes.length);
             }
             return newNodeStateWriter(stableId, ids).write(writer, store);
         }
@@ -993,6 +942,7 @@ public class DefaultSegmentWriter implements SegmentWriter {
          * @param node The node states to de-duplicate.
          * @return the id of the de-duplicated node or {@code null} if none.
          */
+        @CheckForNull
         private RecordId deduplicateNode(@Nonnull NodeState node) {
             if (!(node instanceof SegmentNodeState)) {
                 // De-duplication only for persisted node states
@@ -1039,9 +989,9 @@ public class DefaultSegmentWriter implements SegmentWriter {
 
         private boolean isOldGeneration(RecordId id) {
             try {
-                int thatGen = id.getSegmentId().getGcGeneration();
-                int thisGen = writer.getGeneration();
-                return thatGen < thisGen;
+                GCGeneration thatGen = id.getSegmentId().getGcGeneration();
+                GCGeneration thisGen = writer.getGeneration();
+                return thatGen.compareFull(thisGen) < 0 || thatGen.compareTail(thisGen) < 0;
             } catch (SegmentNotFoundException snfe) {
                 // This SNFE means a defer compacted node state is too far
                 // in the past. It has been gc'ed already and cannot be
@@ -1070,7 +1020,7 @@ public class DefaultSegmentWriter implements SegmentWriter {
             @Override
             public boolean childNodeAdded(String name, NodeState after) {
                 try {
-                    childNodes.put(name, writeNode(after));
+                    childNodes.put(name, writeNode(after, null));
                 } catch (IOException e) {
                     exception = e;
                     return false;
@@ -1083,7 +1033,7 @@ public class DefaultSegmentWriter implements SegmentWriter {
                     String name, NodeState before, NodeState after
             ) {
                 try {
-                    childNodes.put(name, writeNode(after));
+                    childNodes.put(name, writeNode(after, null));
                 } catch (IOException e) {
                     exception = e;
                     return false;
@@ -1097,10 +1047,6 @@ public class DefaultSegmentWriter implements SegmentWriter {
                 return true;
             }
         }
-    }
-
-    public void setCompactionMonitor(@Nonnull GCNodeWriteMonitor compactionMonitor) {
-        this.compactionMonitor = compactionMonitor;
     }
 
 }

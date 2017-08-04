@@ -32,10 +32,6 @@
     <plugins>
       <plugin>
         <groupId>org.apache.felix</groupId>
-        <artifactId>maven-scr-plugin</artifactId>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
         <configuration>
           <instructions>
@@ -45,6 +41,23 @@
             </Export-Package>
           </instructions>
         </configuration>
+        <executions>
+          <execution>
+            <id>baseline</id>
+            <goals>
+              <goal>baseline</goal>
+            </goals>
+            <phase>pre-integration-test</phase>
+            <configuration>
+              <!--
+                This is required as classes present in this module
+                were part of oak-core. This should be removed
+                post 1.8 release
+              -->
+              <comparisonArtifactId>oak-core</comparisonArtifactId>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
@@ -63,7 +76,7 @@
     </dependency>
     <dependency>
       <groupId>biz.aQute.bnd</groupId>
-      <artifactId>bndlib</artifactId>
+      <artifactId>biz.aQute.bndlib</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>

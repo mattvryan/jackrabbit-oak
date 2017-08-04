@@ -25,11 +25,12 @@ import static com.google.common.base.Preconditions.checkState;
 import static java.util.Arrays.fill;
 import static org.apache.jackrabbit.oak.commons.IOUtils.closeQuietly;
 import static org.apache.jackrabbit.oak.segment.CacheWeights.OBJECT_HEADER_SIZE;
-import static org.apache.jackrabbit.oak.segment.DefaultSegmentWriter.BLOCK_SIZE;
 import static org.apache.jackrabbit.oak.segment.RecordNumbers.EMPTY_RECORD_NUMBERS;
 import static org.apache.jackrabbit.oak.segment.SegmentId.isDataSegmentId;
+import static org.apache.jackrabbit.oak.segment.SegmentStream.BLOCK_SIZE;
 import static org.apache.jackrabbit.oak.segment.SegmentVersion.LATEST_VERSION;
 import static org.apache.jackrabbit.oak.segment.SegmentVersion.isValid;
+import static org.apache.jackrabbit.oak.segment.file.tar.GCGeneration.newGCGeneration;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -54,6 +55,7 @@ import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyStates;
 import org.apache.jackrabbit.oak.segment.RecordNumbers.Entry;
+import org.apache.jackrabbit.oak.segment.file.tar.GCGeneration;
 
 /**
  * A list of records.
@@ -86,26 +88,15 @@ public class Segment {
     static final int RECORD_ID_BYTES = 2 + 4;
 
     /**
-     * The limit on segment references within one segment. Since record
-     * identifiers use one byte to indicate the referenced segment, a single
-     * segment can hold references to up to 255 segments plus itself.
-     */
-    static final int SEGMENT_REFERENCE_LIMIT = (1 << 8) - 1; // 255
-
-    /**
      * The number of bytes (or bits of address space) to use for the
      * alignment boundary of segment records.
      */
     static final int RECORD_ALIGN_BITS = 2; // align at the four-byte boundary
 
     /**
-     * Maximum segment size. Record identifiers are stored as three-byte
-     * sequences with the first byte indicating the segment and the next
-     * two the offset within that segment. Since all records are aligned
-     * at four-byte boundaries, the two bytes can address up to 256kB of
-     * record data.
+     * Maximum segment size
      */
-    static final int MAX_SEGMENT_SIZE = 1 << (16 + RECORD_ALIGN_BITS); // 256kB
+    static final int MAX_SEGMENT_SIZE = 1 << 18; // 256kB
 
     /**
      * The size limit for small values. The variable length of small values
@@ -132,7 +123,9 @@ public class Segment {
      */
     static final int BLOB_ID_SMALL_LIMIT = 1 << 12;
 
-    static final int GC_GENERATION_OFFSET = 10;
+    static final int GC_TAIL_GENERATION_OFFSET = 4;
+
+    static final int GC_FULL_GENERATION_OFFSET = 10;
 
     static final int REFERENCED_SEGMENT_ID_COUNT_OFFSET = 14;
 
@@ -382,10 +375,15 @@ public class Segment {
      * @param segmentId    the id of the segment
      * @return  the gc generation of this segment or 0 if this is bulk segment.
      */
-    public static int getGcGeneration(ByteBuffer data, UUID segmentId) {
-        return isDataSegmentId(segmentId.getLeastSignificantBits())
-            ? data.getInt(GC_GENERATION_OFFSET)
-            : 0;
+    @Nonnull
+    public static GCGeneration getGcGeneration(ByteBuffer data, UUID segmentId) {
+        if (isDataSegmentId(segmentId.getLeastSignificantBits())) {
+            int full = data.getInt(GC_FULL_GENERATION_OFFSET);
+            int tail = data.getInt(GC_TAIL_GENERATION_OFFSET);
+            return newGCGeneration(full, tail & 0x7fffffff, tail < 0);
+        } else {
+            return GCGeneration.NULL;
+        }
     }
 
     /**
@@ -393,7 +391,8 @@ public class Segment {
      * generations (i.e. stay at 0).
      * @return  the gc generation of this segment or 0 if this is bulk segment.
      */
-    public int getGcGeneration() {
+    @Nonnull
+    public GCGeneration getGcGeneration() {
         return getGcGeneration(data, id.asUUID());
     }
 
@@ -628,7 +627,7 @@ public class Segment {
             writer.format("Segment %s (%d bytes)%n", id, length);
             String segmentInfo = getSegmentInfo();
             if (segmentInfo != null) {
-                writer.format("Info: %s, Generation: %d%n", segmentInfo, getGcGeneration());
+                writer.format("Info: %s, Generation: %s%n", segmentInfo, getGcGeneration());
             }
             if (id.isDataSegmentId()) {
                 writer.println("--------------------------------------------------------------------------");

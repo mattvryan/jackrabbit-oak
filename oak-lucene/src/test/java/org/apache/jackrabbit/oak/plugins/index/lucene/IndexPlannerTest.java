@@ -37,10 +37,12 @@ import static org.apache.jackrabbit.oak.plugins.index.lucene.util.LuceneIndexHel
 import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.EMPTY_NODE;
 import static org.apache.jackrabbit.oak.plugins.memory.PropertyStates.createProperty;
 import static org.apache.jackrabbit.oak.InitialContent.INITIAL_CONTENT;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -57,6 +59,7 @@ import org.apache.jackrabbit.oak.plugins.index.IndexConstants;
 import org.apache.jackrabbit.oak.plugins.index.lucene.reader.DefaultIndexReader;
 import org.apache.jackrabbit.oak.plugins.index.lucene.reader.LuceneIndexReader;
 import org.apache.jackrabbit.oak.plugins.index.lucene.reader.LuceneIndexReaderFactory;
+import org.apache.jackrabbit.oak.plugins.index.lucene.util.IndexDefinitionBuilder;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyValues;
 import org.apache.jackrabbit.oak.query.NodeStateNodeTypeInfoProvider;
 import org.apache.jackrabbit.oak.query.ast.NodeTypeInfo;
@@ -81,6 +84,7 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
+import org.junit.After;
 import org.junit.Test;
 
 import com.google.common.collect.ImmutableList;
@@ -89,6 +93,11 @@ public class IndexPlannerTest {
     private NodeState root = INITIAL_CONTENT;
 
     private NodeBuilder builder = root.builder();
+
+    @After
+    public void cleanup(){
+        IndexPlanner.setUseActualEntryCount(true);
+    }
 
     @Test
     public void planForSortField() throws Exception{
@@ -310,6 +319,7 @@ public class IndexPlannerTest {
         NodeBuilder defn = newLucenePropertyIndexDefinition(builder, "test", of("foo"), "async");
         long numofDocs = IndexDefinition.DEFAULT_ENTRY_COUNT + 1000;
 
+        IndexPlanner.setUseActualEntryCount(false);
         IndexDefinition idxDefn = new IndexDefinition(root, defn.getNodeState(), "/foo");
         IndexNode node = createIndexNode(idxDefn, numofDocs);
         FilterImpl filter = createFilter("nt:base");
@@ -341,6 +351,38 @@ public class IndexPlannerTest {
         assertEquals(3.0, plan.getCostPerExecution(), 0);
         assertEquals(2.0, plan.getCostPerEntry(), 0);
         assertNotNull(plan);
+    }
+
+    @Test
+    public void propertyIndexCostActualOverriddenByEntryCount() throws Exception{
+        NodeBuilder defn = newLucenePropertyIndexDefinition(builder, "test", of("foo"), "async");
+        long entryCount = IndexDefinition.DEFAULT_ENTRY_COUNT - 100;
+        defn.setProperty(IndexConstants.ENTRY_COUNT_PROPERTY_NAME, entryCount);
+
+        long numofDocs = IndexDefinition.DEFAULT_ENTRY_COUNT + 100;
+
+        IndexNode node = createIndexNode(new IndexDefinition(root, defn.getNodeState(), "/foo"), numofDocs);
+        FilterImpl filter = createFilter("nt:base");
+        filter.restrictProperty("foo", Operator.EQUAL, PropertyValues.newString("bar"));
+        IndexPlanner planner = new IndexPlanner(node, "/foo", filter, Collections.<OrderEntry>emptyList());
+        QueryIndex.IndexPlan plan = planner.getPlan();
+
+        assertEquals(entryCount, plan.getEstimatedEntryCount());
+    }
+
+    @Test
+    public void propertyIndexCostActualByDefault() throws Exception{
+        NodeBuilder defn = newLucenePropertyIndexDefinition(builder, "test", of("foo"), "async");
+
+        long numofDocs = IndexDefinition.DEFAULT_ENTRY_COUNT + 100;
+
+        IndexNode node = createIndexNode(new IndexDefinition(root, defn.getNodeState(), "/foo"), numofDocs);
+        FilterImpl filter = createFilter("nt:base");
+        filter.restrictProperty("foo", Operator.EQUAL, PropertyValues.newString("bar"));
+        IndexPlanner planner = new IndexPlanner(node, "/foo", filter, Collections.<OrderEntry>emptyList());
+        QueryIndex.IndexPlan plan = planner.getPlan();
+
+        assertEquals(numofDocs, plan.getEstimatedEntryCount());
     }
 
     @Test
@@ -471,6 +513,43 @@ public class IndexPlannerTest {
         QueryIndex.IndexPlan plan = planner.getPlan();
         assertNull(plan);
     }
+
+    @Test
+    public void indexedButZeroWeightProps() throws Exception{
+        IndexDefinitionBuilder defnb = new IndexDefinitionBuilder();
+        defnb.indexRule("nt:base").property("foo").propertyIndex().weight(0);
+        defnb.indexRule("nt:base").property("bar").propertyIndex();
+
+        IndexDefinition defn = new IndexDefinition(root, defnb.build(), "/foo");
+        IndexNode node = createIndexNode(defn);
+
+        FilterImpl filter = createFilter("nt:base");
+        filter.restrictProperty("foo", Operator.EQUAL, PropertyValues.newString("a"));
+        IndexPlanner planner = new IndexPlanner(node, "/foo", filter, Collections.<OrderEntry>emptyList());
+        //Even though foo is indexed it would not be considered for a query involving just foo
+        assertNull(planner.getPlan());
+
+        filter = createFilter("nt:base");
+        filter.restrictProperty("bar", Operator.EQUAL, PropertyValues.newString("a"));
+        planner = new IndexPlanner(node, "/foo", filter, Collections.<OrderEntry>emptyList());
+        QueryIndex.IndexPlan plan1 = planner.getPlan();
+        assertNotNull(plan1);
+
+        filter = createFilter("nt:base");
+        filter.restrictProperty("foo", Operator.EQUAL, PropertyValues.newString("a"));
+        filter.restrictProperty("bar", Operator.EQUAL, PropertyValues.newString("a"));
+        planner = new IndexPlanner(node, "/foo", filter, Collections.<OrderEntry>emptyList());
+        QueryIndex.IndexPlan plan2 = planner.getPlan();
+        assertNotNull(plan2);
+
+        //For plan2 as 2 props are indexed its costPerEntry should be less than plan1 which
+        //indexes only one prop
+        assertThat(plan2.getCostPerEntry(), lessThan(plan1.getCostPerEntry()));
+
+        assertTrue(pr(plan2).hasProperty("foo"));
+        assertTrue(pr(plan2).hasProperty("bar"));
+    }
+
 
     //------ Suggestion/spellcheck plan tests
     @Test
@@ -768,11 +847,11 @@ public class IndexPlannerTest {
     //------ END - Suggestion/spellcheck plan tests
 
     private IndexNode createIndexNode(IndexDefinition defn, long numOfDocs) throws IOException {
-        return new IndexNode("foo", defn, new TestReaderFactory(createSampleDirectory(numOfDocs)).createReaders(defn, EMPTY_NODE, "foo"), null);
+        return new IndexNodeManager("foo", defn, new TestReaderFactory(createSampleDirectory(numOfDocs)).createReaders(defn, EMPTY_NODE, "foo"), null).acquire();
     }
 
     private IndexNode createIndexNode(IndexDefinition defn) throws IOException {
-        return new IndexNode("foo", defn, new TestReaderFactory(createSampleDirectory()).createReaders(defn, EMPTY_NODE, "foo"), null);
+        return new IndexNodeManager("foo", defn, new TestReaderFactory(createSampleDirectory()).createReaders(defn, EMPTY_NODE, "foo"), null).acquire();
     }
 
     private FilterImpl createFilter(String nodeTypeName) {

@@ -55,6 +55,7 @@
               org.apache.jackrabbit.oak.plugins.index.fulltext,
               org.apache.jackrabbit.oak.plugins.index.aggregate,
               org.apache.jackrabbit.oak.plugins.index.counter,
+              org.apache.jackrabbit.oak.plugins.index.importer,
               org.apache.jackrabbit.oak.plugins.index.nodetype,
               org.apache.jackrabbit.oak.plugins.index.property,
               org.apache.jackrabbit.oak.plugins.index.property.jmx,
@@ -102,10 +103,6 @@
         </configuration>
       </plugin>
       <plugin>
-        <groupId>org.apache.felix</groupId>
-        <artifactId>maven-scr-plugin</artifactId>
-      </plugin>
-      <plugin>
         <artifactId>maven-failsafe-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
@@ -141,7 +138,7 @@
     </dependency>
     <dependency>
       <groupId>biz.aQute.bnd</groupId>
-      <artifactId>bndlib</artifactId>
+      <artifactId>biz.aQute.bndlib</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>

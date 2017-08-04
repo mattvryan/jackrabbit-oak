@@ -25,7 +25,7 @@ import com.mongodb.DB;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.jackrabbit.oak.plugins.document.mongo.MongoDocumentStore;
-import org.apache.jackrabbit.oak.plugins.document.mongo.MongoDocumentStoreHelper;
+import org.apache.jackrabbit.oak.plugins.document.mongo.MongoDocumentStoreTestHelper;
 import org.apache.jackrabbit.oak.plugins.document.spi.JournalPropertyService;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
@@ -39,6 +39,7 @@ import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -146,8 +147,29 @@ public class DocumentNodeStoreServiceTest {
         MockOsgi.activate(service, context.bundleContext(), config);
         DocumentNodeStore store = context.getService(DocumentNodeStore.class);
         MongoDocumentStore mds = getMongoDocumentStore(store);
-        DB db = MongoDocumentStoreHelper.getDB(mds);
+        DB db = MongoDocumentStoreTestHelper.getDB(mds);
         assertTrue(db.getMongo().getMongoOptions().isSocketKeepAlive());
+    }
+
+    @Test
+    public void nonContinuousRGCDefault() throws Exception {
+        Map<String, Object> config = newConfig(repoHome);
+        MockOsgi.activate(service, context.bundleContext(), config);
+        for (Runnable r : context.getServices(Runnable.class, null)) {
+            assertNotEquals(r.getClass(), DocumentNodeStoreService.RevisionGCJob.class);
+        }
+    }
+
+    @Test
+    public void continuousRGC() throws Exception {
+        Map<String, Object> config = newConfig(repoHome);
+        config.put(DocumentNodeStoreService.PROP_VER_GC_CONTINUOUS, true);
+        MockOsgi.activate(service, context.bundleContext(), config);
+        boolean jobScheduled = false;
+        for (Runnable r : context.getServices(Runnable.class, null)) {
+            jobScheduled |= r.getClass().equals(DocumentNodeStoreService.RevisionGCJob.class);
+        }
+        assertTrue(jobScheduled);
     }
 
     private static MongoDocumentStore getMongoDocumentStore(DocumentNodeStore s) {

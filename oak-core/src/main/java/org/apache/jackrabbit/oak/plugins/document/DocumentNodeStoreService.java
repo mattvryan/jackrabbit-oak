@@ -19,6 +19,7 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Lists.newArrayList;
 import static org.apache.jackrabbit.oak.commons.IOUtils.closeQuietly;
 import static org.apache.jackrabbit.oak.commons.PropertiesUtil.toBoolean;
 import static org.apache.jackrabbit.oak.commons.PropertiesUtil.toInteger;
@@ -31,6 +32,7 @@ import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.Builder.DEFA
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.Builder.DEFAULT_MEMORY_CACHE_SIZE;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.Builder.DEFAULT_NODE_CACHE_PERCENTAGE;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.Builder.DEFAULT_PREV_DOC_CACHE_PERCENTAGE;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.MODIFIED_IN_SECS_RESOLUTION;
 import static org.apache.jackrabbit.oak.spi.blob.osgi.SplitBlobStoreService.ONLY_STANDALONE_TARGET;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
 
@@ -89,7 +91,10 @@ import org.apache.jackrabbit.oak.spi.blob.BlobStoreWrapper;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.stats.BlobStoreStatsMBean;
 import org.apache.jackrabbit.oak.spi.commit.BackgroundObserverMBean;
+import org.apache.jackrabbit.oak.spi.gc.DelegatingGCMonitor;
+import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitorTracker;
+import org.apache.jackrabbit.oak.spi.gc.LoggingGCMonitor;
 import org.apache.jackrabbit.oak.spi.state.Clusterable;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.spi.state.NodeStoreProvider;
@@ -132,6 +137,7 @@ public class DocumentNodeStoreService {
     private static final boolean DEFAULT_SO_KEEP_ALIVE = false;
     private static final String DEFAULT_PERSISTENT_CACHE = "cache,binary=0";
     private static final String DEFAULT_JOURNAL_CACHE = "diff-cache";
+    private static final boolean DEFAULT_CONTINUOUS_RGC = false;
     private static final String PREFIX = "oak.documentstore.";
     private static final String DESCRIPTION = "oak.nodestore.description";
 
@@ -257,7 +263,7 @@ public class DocumentNodeStoreService {
     )
     private static final String PROP_JOURNAL_GC_INTERVAL_MILLIS = "journalGCInterval";
     
-    private static final long DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS = 6*60*60*1000; // default is 6hours
+    static final long DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS = 24*60*60*1000; // default is 24hours
     @Property(longValue = DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS,
             label = "Maximum Age of Journal Entries (millis)",
             description = "Long value indicating max age (in milliseconds) that "
@@ -336,6 +342,11 @@ public class DocumentNodeStoreService {
                     "considered for GC. This also applies how older revision of live document are GC."
     )
     public static final String PROP_VER_GC_MAX_AGE = "versionGcMaxAgeInSecs";
+
+    @Property (boolValue = DEFAULT_CONTINUOUS_RGC,
+            label = "Continuous Version GC Mode",
+            description = "Run Version GC continuously as a background task.")
+    public static final String PROP_VER_GC_CONTINUOUS = "versionGCContinuous";
 
     public static final String PROP_REV_RECOVERY_INTERVAL = "lastRevRecoveryJobIntervalInSecs";
 
@@ -469,6 +480,7 @@ public class DocumentNodeStoreService {
         boolean bundlingDisabled = toBoolean(prop(PROP_BUNDLING_DISABLED), DEFAULT_BUNDLING_DISABLED);
         boolean prefetchExternalChanges = toBoolean(prop(PROP_PREFETCH_EXTERNAL_CHANGES), false);
         int updateLimit = toInteger(prop(PROP_UPDATE_LIMIT), DocumentMK.UPDATE_LIMIT);
+        long journalGCMaxAge = toLong(context.getProperties().get(PROP_JOURNAL_GC_MAX_AGE_MILLIS), DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS);
         DocumentMK.Builder mkBuilder =
                 new DocumentMK.Builder().
                 setStatisticsProvider(statisticsProvider).
@@ -505,7 +517,8 @@ public class DocumentNodeStoreService {
                     }
                 }).
                 setPrefetchExternalChanges(prefetchExternalChanges).
-                setUpdateLimit(updateLimit);
+                setUpdateLimit(updateLimit).
+                setJournalGCMaxAge(journalGCMaxAge);
 
         if (!Strings.isNullOrEmpty(persistentCache)) {
             mkBuilder.setPersistentCache(persistentCache);
@@ -575,7 +588,16 @@ public class DocumentNodeStoreService {
         final GCMonitorTracker gcMonitor = new GCMonitorTracker();
         gcMonitor.start(whiteboard);
         closer.register(asCloseable(gcMonitor));
-        mkBuilder.setGCMonitor(gcMonitor);
+        Logger vgcLogger = LoggerFactory.getLogger(VersionGarbageCollector.class);
+        GCMonitor loggingGCMonitor;
+        if (isContinuousRevisionGC()) {
+            // log less chatty with continuous RevisionGC
+            loggingGCMonitor = new QuietGCMonitor(vgcLogger);
+        } else {
+            loggingGCMonitor = new LoggingGCMonitor(vgcLogger);
+        }
+        mkBuilder.setGCMonitor(new DelegatingGCMonitor(
+                newArrayList(gcMonitor, loggingGCMonitor)));
 
         nodeStore = mkBuilder.getNodeStore();
 
@@ -617,6 +639,7 @@ public class DocumentNodeStoreService {
         registerJMXBeans(nodeStore, mkBuilder);
         registerLastRevRecoveryJob(nodeStore);
         registerJournalGC(nodeStore);
+        registerVersionGCJob(nodeStore);
 
         if (!isNodeStoreProvider()) {
             observerTracker = new ObserverTracker(nodeStore);
@@ -671,6 +694,10 @@ public class DocumentNodeStoreService {
 
     private boolean isNodeStoreProvider() {
         return prop(PROP_ROLE) != null;
+    }
+
+    private boolean isContinuousRevisionGC() {
+        return toBoolean(prop(PROP_VER_GC_CONTINUOUS), DEFAULT_CONTINUOUS_RGC);
     }
 
     private void registerNodeStoreProvider(final NodeStore ns) {
@@ -901,16 +928,7 @@ public class DocumentNodeStoreService {
                     BlobGCMBean.TYPE, "Document node store blob garbage collection"));
         }
 
-        Runnable startGC = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    store.getVersionGarbageCollector().gc(versionGcMaxAgeInSecs, TimeUnit.SECONDS);
-                } catch (IOException e) {
-                    log.warn("Error occurred while executing the Version Garbage Collector", e);
-                }
-            }
-        };
+        Runnable startGC = new RevisionGCJob(store, versionGcMaxAgeInSecs, log);
         Runnable cancelGC = new Runnable() {
             @Override
             public void run() {
@@ -926,6 +944,11 @@ public class DocumentNodeStoreService {
         RevisionGC revisionGC = new RevisionGC(startGC, cancelGC, status, executor);
         addRegistration(registerMBean(whiteboard, RevisionGCMBean.class, revisionGC,
                 RevisionGCMBean.TYPE, "Document node store revision garbage collection"));
+
+        addRegistration(registerMBean(whiteboard, RevisionGCStatsMBean.class,
+                store.getVersionGarbageCollector().getRevisionGCStats(),
+                RevisionGCStatsMBean.TYPE,
+                "Document node store revision garbage collection statistics"));
 
         BlobStoreStats blobStoreStats = mkBuilder.getBlobStoreStats();
         if (!customBlobStore && blobStoreStats != null) {
@@ -962,20 +985,26 @@ public class DocumentNodeStoreService {
     private void registerJournalGC(final DocumentNodeStore nodeStore) {
         long journalGCInterval = toLong(context.getProperties().get(PROP_JOURNAL_GC_INTERVAL_MILLIS),
                 DEFAULT_JOURNAL_GC_INTERVAL_MILLIS);
-        final long journalGCMaxAge = toLong(context.getProperties().get(PROP_JOURNAL_GC_MAX_AGE_MILLIS),
-                DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS);
 
         Runnable journalGCJob = new Runnable() {
-
             @Override
             public void run() {
-                nodeStore.getJournalGarbageCollector().gc(journalGCMaxAge, TimeUnit.MILLISECONDS);
+                nodeStore.getJournalGarbageCollector().gc();
             }
 
         };
         addRegistration(WhiteboardUtils.scheduleWithFixedDelay(whiteboard,
                 journalGCJob, TimeUnit.MILLISECONDS.toSeconds(journalGCInterval),
                 true/*runOnSingleClusterNode*/, true /*use dedicated pool*/));
+    }
+
+    private void registerVersionGCJob(final DocumentNodeStore nodeStore) {
+        if (isContinuousRevisionGC()) {
+            final long versionGcMaxAgeInSecs = toLong(prop(PROP_VER_GC_MAX_AGE), DEFAULT_VER_GC_MAX_AGE);
+            addRegistration(WhiteboardUtils.scheduleWithFixedDelay(whiteboard,
+                    new RevisionGCJob(nodeStore, versionGcMaxAgeInSecs, log),
+                    MODIFIED_IN_SECS_RESOLUTION, true, true));
+        }
     }
 
     private String prop(String propName) {
@@ -1040,5 +1069,30 @@ public class DocumentNodeStoreService {
                 t.stop();
             }
         };
+    }
+
+    static final class RevisionGCJob implements Runnable {
+
+        private final DocumentNodeStore nodeStore;
+        private final long versionGcMaxAgeInSecs;
+        private final Logger log;
+
+        RevisionGCJob(DocumentNodeStore ns,
+                      long versionGcMaxAgeInSecs,
+                      Logger log) {
+            this.nodeStore = ns;
+            this.versionGcMaxAgeInSecs = versionGcMaxAgeInSecs;
+            this.log = log;
+        }
+
+        @Override
+        public void run() {
+            VersionGarbageCollector gc = nodeStore.getVersionGarbageCollector();
+            try {
+                gc.gc(versionGcMaxAgeInSecs, TimeUnit.SECONDS);
+            } catch (IOException e) {
+                log.warn("Error occurred while executing the Version Garbage Collector", e);
+            }
+        }
     }
 }

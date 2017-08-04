@@ -24,7 +24,9 @@ import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Lists.reverse;
 import static java.util.Collections.singletonList;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.jackrabbit.oak.api.CommitFailedException.OAK;
 import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
@@ -69,6 +71,7 @@ import javax.management.NotCompliantMBeanException;
 
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
+import com.google.common.base.Strings;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.cache.Cache;
@@ -566,8 +569,10 @@ public final class DocumentNodeStore
         this.asyncDelay = builder.getAsyncDelay();
         this.versionGarbageCollector = new VersionGarbageCollector(
                 this, builder.createVersionGCSupport());
+        this.versionGarbageCollector.setStatisticsProvider(builder.getStatisticsProvider());
         this.versionGarbageCollector.setGCMonitor(builder.getGCMonitor());
-        this.journalGarbageCollector = new JournalGarbageCollector(this);
+        this.journalGarbageCollector = new JournalGarbageCollector(
+                this, builder.getJournalGCMaxAge());
         this.referencedBlobs =
                 builder.createReferencedBlobs(this);
         this.lastRevSeeker = builder.createMissingLastRevSeeker();
@@ -933,8 +938,14 @@ public final class DocumentNodeStore
             }
         } else {
             // branch commit
-            c.applyToCache(c.getBaseRevision(), isBranch);
-            return c.getBaseRevision().update(c.getRevision().asBranchRevision());
+            try {
+                c.applyToCache(c.getBaseRevision(), isBranch);
+                return c.getBaseRevision().update(c.getRevision().asBranchRevision());
+            } finally {
+                if (isDisableBranches()) {
+                    backgroundOperationLock.readLock().unlock();
+                }
+            }
         }
     }
 
@@ -949,9 +960,15 @@ public final class DocumentNodeStore
                 backgroundOperationLock.readLock().unlock();
             }
         } else {
-            Branch b = branches.getBranch(c.getBaseRevision());
-            if (b != null) {
-                b.removeCommit(c.getRevision().asBranchRevision());
+            try {
+                Branch b = branches.getBranch(c.getBaseRevision());
+                if (b != null) {
+                    b.removeCommit(c.getRevision().asBranchRevision());
+                }
+            } finally {
+                if (isDisableBranches()) {
+                    backgroundOperationLock.readLock().unlock();
+                }
             }
         }
     }
@@ -1679,6 +1696,10 @@ public final class DocumentNodeStore
             UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
             NodeDocument.setModified(op, commit.getRevision());
             if (b != null) {
+                // check the branch age and fail the commit
+                // if the first branch commit is too old
+                checkBranchAge(b);
+
                 commit.addBranchCommits(b);
                 Iterator<Revision> mergeCommits = commit.getMergeRevisions().iterator();
                 for (Revision rev : b.getCommits()) {
@@ -2610,7 +2631,14 @@ public final class DocumentNodeStore
 
         checkOpen();
         Commit c = new Commit(this, newRevision(), base);
-        if (!isDisableBranches()) {
+        if (isDisableBranches()) {
+            // Regular branch commits do not need to acquire the background
+            // operation lock because the head is not updated and no pending
+            // lastRev updates are done on trunk. When branches are disabled,
+            // a branch commit becomes a pseudo trunk commit and the lock
+            // must be acquired.
+            backgroundOperationLock.readLock().lock();
+        } else {
             Revision rev = c.getRevision().asBranchRevision();
             // remember branch commit
             Branch b = getBranches().getBranch(base);
@@ -2689,23 +2717,37 @@ public final class DocumentNodeStore
         final long start = debug ? now() : 0;
         long getChildrenDoneIn = start;
 
-        String diff;
-        String diffAlgo;
-        RevisionVector fromRev = from.getLastRevision();
-        RevisionVector toRev = to.getLastRevision();
+        String diff = null;
+        String diffAlgo = null;
+        RevisionVector fromRev = null;
+        RevisionVector toRev = null;
         long minTimestamp = Utils.getMinTimestampForDiff(
                 from.getRootRevision(), to.getRootRevision(),
                 getMinExternalRevisions());
+        long minJournalTimestamp = newRevision().getTimestamp() -
+                journalGarbageCollector.getMaxRevisionAgeMillis() / 2;
 
         // use journal if possible
         Revision tailRev = journalGarbageCollector.getTailRevision();
         if (!disableJournalDiff
-                && tailRev.getTimestamp() < minTimestamp) {
-            diffAlgo = "diffJournalChildren";
-            fromRev = from.getRootRevision();
-            toRev = to.getRootRevision();
-            diff = new JournalDiffLoader(from, to, this).call();
-        } else {
+                && tailRev.getTimestamp() < minTimestamp
+                && minJournalTimestamp < minTimestamp) {
+            try {
+                diff = new JournalDiffLoader(from, to, this).call();
+                diffAlgo = "diffJournalChildren";
+                fromRev = from.getRootRevision();
+                toRev = to.getRootRevision();
+            } catch (RuntimeException e) {
+                LOG.warn("diffJournalChildren failed with " +
+                        e.getClass().getSimpleName() +
+                        ", falling back to classic diff", e);
+            }
+        }
+        if (diff == null) {
+            // fall back to classic diff
+            fromRev = from.getLastRevision();
+            toRev = to.getLastRevision();
+
             JsopWriter w = new JsopStream();
             boolean continueDiff = bundledDocDiffer.diff(from, to, w);
 
@@ -2888,6 +2930,22 @@ public final class DocumentNodeStore
 
     private static long now(){
         return System.currentTimeMillis();
+    }
+
+    private void checkBranchAge(Branch b) throws CommitFailedException {
+        // check if initial branch commit is too old to merge
+        long journalMaxAge = journalGarbageCollector.getMaxRevisionAgeMillis();
+        long branchMaxAge = journalMaxAge / 2;
+        long created = b.getCommits().first().getTimestamp();
+        long branchAge = newRevision().getTimestamp() - created;
+        if (branchAge > branchMaxAge) {
+            String msg = "Long running commit detected. Branch was created " +
+                    Utils.timestampToString(created) + ". Consider breaking " +
+                    "the commit down into smaller pieces or increasing the " +
+                    "'journalGCMaxAge' currently set to " + journalMaxAge +
+                    " ms (" + MILLISECONDS.toMinutes(journalMaxAge) + " min).";
+            throw new CommitFailedException(OAK, 200, msg);
+        }
     }
 
     /**
@@ -3151,6 +3209,52 @@ public final class DocumentNodeStore
     @Override
     public String getInstanceId() {
         return String.valueOf(getClusterId());
+    }
+    
+    @Override
+    public String getVisibilityToken() {
+        final DocumentNodeState theRoot = root;
+        if (theRoot == null) {
+            // unlikely but for paranoia reasons...
+            return "";
+        }
+        return theRoot.getRootRevision().asString();
+    }
+    
+    private boolean isVisible(RevisionVector rv) {
+        // do not synchronize, take a local copy instead
+        final DocumentNodeState localRoot = root;
+        if (localRoot == null) {
+            // unlikely but for paranoia reasons...
+            return false;
+        }
+        return Utils.isGreaterOrEquals(localRoot.getRootRevision(), rv);
+    }
+    
+    @Override
+    public boolean isVisible(@Nonnull String visibilityToken, long maxWaitMillis) throws InterruptedException {
+        if (Strings.isNullOrEmpty(visibilityToken)) {
+            // we've asked for @Nonnull..
+            // hence throwing an exception
+            throw new IllegalArgumentException("visibilityToken must not be null or empty");
+        }
+        // 'fromString' would throw a RuntimeException if it can't parse 
+        // that would be re thrown automatically
+        final RevisionVector visibilityTokenRv = RevisionVector.fromString(visibilityToken);
+
+        if (isVisible(visibilityTokenRv)) {
+            // the simple case
+            return true;
+        }
+        
+        // otherwise wait until the visibility token's revisions all become visible
+        // (or maxWaitMillis has passed)
+        commitQueue.suspendUntilAll(Sets.newHashSet(visibilityTokenRv), maxWaitMillis);
+        
+        // if we got interrupted above would throw InterruptedException
+        // otherwise, we don't know why suspendUntilAll returned, so
+        // check the final isVisible state and return it
+        return isVisible(visibilityTokenRv);
     }
 
     public DocumentNodeStoreStatsCollector getStatsCollector() {

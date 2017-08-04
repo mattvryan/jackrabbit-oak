@@ -40,13 +40,16 @@ import com.google.common.base.Predicate;
 import org.apache.jackrabbit.oak.segment.CacheWeights.NodeCacheWeigher;
 import org.apache.jackrabbit.oak.segment.CacheWeights.StringCacheWeigher;
 import org.apache.jackrabbit.oak.segment.CacheWeights.TemplateCacheWeigher;
+import org.apache.jackrabbit.oak.segment.file.tar.GCGeneration;
 import org.apache.jackrabbit.oak.segment.RecordCache;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundExceptionListener;
 import org.apache.jackrabbit.oak.segment.WriterCacheManager;
-import org.apache.jackrabbit.oak.segment.compaction.LoggingGCMonitor;
 import org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions;
+import org.apache.jackrabbit.oak.segment.file.tar.IOMonitor;
+import org.apache.jackrabbit.oak.segment.file.tar.IOMonitorAdapter;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
+import org.apache.jackrabbit.oak.spi.gc.LoggingGCMonitor;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -96,17 +99,19 @@ public class FileStoreBuilder {
     @Nonnull
     private final GCListener gcListener = new GCListener(){
         @Override
-        public void compactionSucceeded(int newGeneration) {
+        public void compactionSucceeded(@Nonnull GCGeneration newGeneration) {
             compacted();
             if (cacheManager != null) {
-                cacheManager.evictOldGeneration(newGeneration);
+                // FIXME OAK-6519: Properly handle tail compactions in deduplication caches
+                cacheManager.evictOldGeneration(newGeneration.getFull());
             }
         }
 
         @Override
-        public void compactionFailed(int failedGeneration) {
+        public void compactionFailed(@Nonnull GCGeneration failedGeneration) {
             if (cacheManager != null) {
-                cacheManager.evictGeneration(failedGeneration);
+                // FIXME OAK-6519: Properly handle tail compactions in deduplication caches
+                cacheManager.evictGeneration(failedGeneration.getFull());
             }
         }
     };
@@ -432,7 +437,7 @@ public class FileStoreBuilder {
     public WriterCacheManager getCacheManager() {
         if (cacheManager == null) {
             cacheManager = new EvictingWriteCacheManager(stringDeduplicationCacheSize,
-                    templateDeduplicationCacheSize, nodeDeduplicationCacheSize, statsProvider);
+                    templateDeduplicationCacheSize, nodeDeduplicationCacheSize);
         }
         return cacheManager;
     }
@@ -463,12 +468,10 @@ public class FileStoreBuilder {
         public EvictingWriteCacheManager(
                 int stringCacheSize,
                 int templateCacheSize,
-                int nodeCacheSize,
-                @Nonnull StatisticsProvider statisticsProvider) {
+                int nodeCacheSize) {
             super(RecordCache.factory(stringCacheSize, new StringCacheWeigher()),
                 RecordCache.factory(templateCacheSize, new TemplateCacheWeigher()),
-                PriorityCache.factory(nodeCacheSize, new NodeCacheWeigher()),
-                statisticsProvider);
+                PriorityCache.factory(nodeCacheSize, new NodeCacheWeigher()));
         }
 
         void evictOldGeneration(final int newGeneration) {

@@ -19,6 +19,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static java.util.Collections.emptyList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.jackrabbit.oak.api.CommitFailedException.CONSTRAINT;
+import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.SETTINGS;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.MODIFIED_IN_SECS;
@@ -27,12 +28,16 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.NUM_REVS_T
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.PREV_SPLIT_FACTOR;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.getModifiedInSecs;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.isCommitted;
+import static org.hamcrest.CoreMatchers.everyItem;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -56,10 +61,14 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -3133,6 +3142,329 @@ public class DocumentNodeStoreTest {
         clock.waitUntil(clock.getTime() + TimeUnit.MINUTES.toMillis(5));
         ns.runBackgroundOperations();
         assertEquals(head, ns.getHeadRevision());
+    }
+
+    // OAK-6392
+    @Test
+    public void disabledBranchesWithBackgroundWrite() throws Exception {
+        final Thread current = Thread.currentThread();
+        final Set<Integer> updates = Sets.newHashSet();
+        DocumentStore store = new MemoryDocumentStore() {
+            @Override
+            public <T extends Document> List<T> createOrUpdate(Collection<T> collection,
+                                                               List<UpdateOp> updateOps) {
+                if (Thread.currentThread() != current) {
+                    updates.add(updateOps.size());
+                }
+                return super.createOrUpdate(collection, updateOps);
+            }
+        };
+        final DocumentNodeStore ns = builderProvider.newBuilder().disableBranches()
+                .setDocumentStore(store).setUpdateLimit(20).setAsyncDelay(0)
+                .getNodeStore();
+        NodeBuilder builder = ns.getRoot().builder();
+        for (int i = 0; i < 30; i++) {
+            builder.child("node-" + i).child("test");
+        }
+        merge(ns, builder);
+        ns.runBackgroundOperations();
+        final AtomicBoolean running = new AtomicBoolean(true);
+        Thread bgThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (running.get()) {
+                    ns.runBackgroundOperations();
+                    try {
+                        Thread.sleep(1);
+                    } catch (InterruptedException e) {
+                        // ignore
+                    }
+                }
+            }
+        });
+        bgThread.start();
+
+        for (int j = 0; j < 20; j++) {
+            builder = ns.getRoot().builder();
+            for (int i = 0; i < 30; i++) {
+                builder.child("node-" + i).child("test").setProperty("p", j);
+            }
+            merge(ns, builder);
+        }
+        running.set(false);
+        bgThread.join();
+        // background thread must always update _lastRev from an entire
+        // branch commit and never partially
+        assertThat(updates, everyItem(is(30)));
+        assertEquals(1, updates.size());
+    }
+    
+    // OAK-6276
+    @Test
+    public void visibilityToken() throws Exception {
+        DocumentStore docStore = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder()
+                .setDocumentStore(docStore).setAsyncDelay(0)
+                .setClusterId(1).getNodeStore();
+        ns1.getRoot();
+        ns1.runBackgroundOperations();
+        DocumentNodeStore ns2 = builderProvider.newBuilder()
+                .setDocumentStore(docStore).setAsyncDelay(0)
+                .setClusterId(2).getNodeStore();
+        ns2.getRoot();
+        
+        String vt1 = ns1.getVisibilityToken();
+        String vt2 = ns2.getVisibilityToken();
+        
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns1.isVisible(vt1, 1));
+        assertTrue(ns1.isVisible(vt1, 100000000));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertTrue(ns2.isVisible(vt2, 1));
+        assertTrue(ns2.isVisible(vt2, 100000000));
+
+        assertFalse(ns1.isVisible(vt2, -1));
+        assertFalse(ns1.isVisible(vt2, 1));
+        assertTrue(ns2.isVisible(vt1, -1));
+        ns2.runBackgroundOperations();
+        ns1.runBackgroundOperations();
+        assertTrue(ns1.isVisible(vt2, -1));
+        assertTrue(ns2.isVisible(vt1, -1));
+        
+        vt1 = ns1.getVisibilityToken();
+        vt2 = ns2.getVisibilityToken();
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertTrue(ns1.isVisible(vt2, -1));
+        assertTrue(ns2.isVisible(vt1, -1));
+        assertTrue(ns1.isVisible(vt1, 100000000));
+        assertTrue(ns2.isVisible(vt2, 100000000));
+        assertTrue(ns1.isVisible(vt2, 100000000));
+        assertTrue(ns2.isVisible(vt1, 100000000));
+        
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.setProperty("p1", "1");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        NodeBuilder b2 = ns2.getRoot().builder();
+        b2.setProperty("p2", "2");
+        ns2.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertTrue(ns1.isVisible(vt2, -1));
+        assertTrue(ns2.isVisible(vt1, -1));
+        
+        vt1 = ns1.getVisibilityToken();
+        vt2 = ns2.getVisibilityToken();
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertFalse(ns1.isVisible(vt2, -1));
+        assertFalse(ns2.isVisible(vt1, -1));
+        assertFalse(ns1.isVisible(vt2, 1));
+        assertFalse(ns2.isVisible(vt1, 1));
+
+        ns1.runBackgroundOperations();
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertFalse(ns1.isVisible(vt2, -1));
+        assertFalse(ns2.isVisible(vt1, -1));
+        assertFalse(ns1.isVisible(vt2, 1));
+        assertFalse(ns2.isVisible(vt1, 1));
+
+        ns2.runBackgroundOperations();
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertFalse(ns1.isVisible(vt2, -1));
+        assertFalse(ns1.isVisible(vt2, 1));
+        assertTrue(ns2.isVisible(vt1, -1));
+
+        ns1.runBackgroundOperations();
+        assertTrue(ns1.isVisible(vt1, -1));
+        assertTrue(ns2.isVisible(vt2, -1));
+        assertTrue(ns1.isVisible(vt2, -1));
+        assertTrue(ns2.isVisible(vt1, -1));
+        
+        vt1 = ns1.getVisibilityToken();
+        vt2 = ns2.getVisibilityToken();
+        assertTrue(ns1.isVisible(vt2, -1));
+        assertTrue(ns2.isVisible(vt1, -1));
+
+        b1 = ns1.getRoot().builder();
+        b1.setProperty("p1", "1b");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        vt1 = ns1.getVisibilityToken();
+        assertFalse(ns2.isVisible(vt1, -1));
+        final String finalVt1 = vt1;
+        Future<Void> asyncResult = Executors.newFixedThreadPool(1).submit(new Callable<Void>() {
+            @Override
+            public Void call() throws Exception {
+                assertTrue(ns2.isVisible(finalVt1, 10000));
+                return null;
+            }
+        });
+        try{
+            asyncResult.get(500, TimeUnit.MILLISECONDS);
+            fail("should have thrown a timeout exception");
+        } catch(TimeoutException te) {
+            // ok
+        }
+        ns1.runBackgroundOperations();
+        try{
+            asyncResult.get(500, TimeUnit.MILLISECONDS);
+            fail("should have thrown a timeout exception");
+        } catch(TimeoutException te) {
+            // ok
+        }
+        ns2.runBackgroundOperations();
+        asyncResult.get(6000, TimeUnit.MILLISECONDS);
+    }
+
+    // OAK-5602
+    @Test
+    public void longRunningTx() throws Exception {
+        Clock clock = new Clock.Virtual();
+        clock.waitUntil(System.currentTimeMillis());
+        Revision.setClock(clock);
+        MemoryDocumentStore docStore = new MemoryDocumentStore();
+        DocumentNodeStore ns = builderProvider.newBuilder()
+                .setDocumentStore(docStore).setUpdateLimit(100)
+                .setJournalGCMaxAge(TimeUnit.HOURS.toMillis(6))
+                .setBundlingDisabled(true)
+                .setAsyncDelay(0).clock(clock).getNodeStore();
+        NodeBuilder builder = ns.getRoot().builder();
+        builder.child("test");
+        merge(ns, builder);
+
+        builder = ns.getRoot().builder();
+        NodeBuilder test = builder.child("test");
+        String firstChildId = Utils.getIdFromPath("/test/child-0");
+        for (int i = 0; ; i++) {
+            NodeBuilder child = test.child("child-" + i);
+            for (int j = 0; j < 10; j++) {
+                child.setProperty("p-" + j, "value");
+            }
+            if (docStore.find(NODES, firstChildId) != null) {
+                // branch was created
+                break;
+            }
+        }
+        // simulate a long running commit taking 2 hours
+        clock.waitUntil(clock.getTime() + TimeUnit.HOURS.toMillis(2));
+
+        // some other commit that moves the head revision forward
+        NodeBuilder builder2 = ns.getRoot().builder();
+        builder2.child("foo");
+        merge(ns, builder2);
+
+        NodeState before = ns.getRoot().getChildNode("test");
+
+        // merge the long running tx
+        merge(ns, builder);
+
+        // five hours later the branch commit can be collected by the journal GC
+        clock.waitUntil(clock.getTime() + TimeUnit.HOURS.toMillis(5));
+        // journal gc cleans up entries older than 6 hours
+        ns.getJournalGarbageCollector().gc();
+
+        // now the node state diff mechanism must not use the journal
+        // because the required journal entry with the branch commit
+        // is incomplete. the journal entry for the merge commit is still
+        // present, but the referenced branch commit has been GCed.
+        NodeState after = ns.getRoot().getChildNode("test");
+        after.compareAgainstBaseState(before, new DefaultNodeStateDiff());
+    }
+
+    @Test
+    public void failLongRunningTx() throws Exception {
+        Clock clock = new Clock.Virtual();
+        clock.waitUntil(System.currentTimeMillis());
+        Revision.setClock(clock);
+        MemoryDocumentStore docStore = new MemoryDocumentStore();
+        DocumentNodeStore ns = builderProvider.newBuilder()
+                .setDocumentStore(docStore).setUpdateLimit(100)
+                .setJournalGCMaxAge(TimeUnit.HOURS.toMillis(6))
+                .setAsyncDelay(0).clock(clock).getNodeStore();
+
+        NodeBuilder builder = ns.getRoot().builder();
+        NodeBuilder test = builder.child("test");
+        String testId = Utils.getIdFromPath("/test");
+        for (int i = 0; ; i++) {
+            NodeBuilder child = test.child("child-" + i);
+            for (int j = 0; j < 10; j++) {
+                child.setProperty("p-" + j, "value");
+            }
+            if (docStore.find(NODES, testId) != null) {
+                // branch was created
+                break;
+            }
+        }
+        // simulate a long running commit taking 4 hours
+        clock.waitUntil(clock.getTime() + TimeUnit.HOURS.toMillis(4));
+
+        // long running tx must fail when it takes more than
+        // half the journal max age
+        try {
+            merge(ns, builder);
+            fail("CommitFailedException expected");
+        } catch (CommitFailedException e) {
+            assertEquals(200, e.getCode());
+        }
+    }
+
+    // OAK-6495
+    @Test
+    public void diffWithBrokenJournal() throws Exception {
+        Clock clock = new Clock.Virtual();
+        clock.waitUntil(System.currentTimeMillis());
+        Revision.setClock(clock);
+        MemoryDocumentStore docStore = new MemoryDocumentStore();
+        DocumentNodeStore ns = builderProvider.newBuilder()
+                .setDocumentStore(docStore).setUpdateLimit(100)
+                .setJournalGCMaxAge(TimeUnit.HOURS.toMillis(6))
+                .setBundlingDisabled(true)
+                .setAsyncDelay(0).clock(clock).getNodeStore();
+
+        NodeBuilder builder = ns.getRoot().builder();
+        builder.child("test");
+        merge(ns, builder);
+
+        NodeState before = ns.getRoot().getChildNode("test");
+
+        builder = ns.getRoot().builder();
+        NodeBuilder test = builder.child("test");
+        String firstChildId = Utils.getIdFromPath("/test/child-0");
+        for (int i = 0; ; i++) {
+            NodeBuilder child = test.child("child-" + i);
+            for (int j = 0; j < 10; j++) {
+                child.setProperty("p-" + j, "value");
+            }
+            if (docStore.find(NODES, firstChildId) != null) {
+                // branch was created
+                break;
+            }
+        }
+        merge(ns, builder);
+        ns.runBackgroundOperations();
+
+        Revision head = ns.getHeadRevision().getRevision(ns.getClusterId());
+        assertNotNull(head);
+
+        JournalEntry entry = ns.getDocumentStore().find(JOURNAL, JournalEntry.asId(head));
+        assertNotNull(entry);
+
+        // must reference at least one branch commit
+        assertThat(Iterables.size(entry.getBranchCommits()), greaterThan(0));
+        // now remove them
+        for (JournalEntry bc : entry.getBranchCommits()) {
+            docStore.remove(JOURNAL, bc.getId());
+        }
+
+        // compare must still succeed even when branch commits
+        // are missing in the journal
+        NodeState after = ns.getRoot().getChildNode("test");
+        after.compareAgainstBaseState(before, new DefaultNodeStateDiff());
     }
 
     private static class WriteCountingStore extends MemoryDocumentStore {

@@ -18,6 +18,9 @@
  */
 package org.apache.jackrabbit.oak.segment.file;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Maps.newLinkedHashMap;
 import static com.google.common.collect.Sets.newHashSet;
 import static java.lang.Integer.getInteger;
 import static java.lang.String.format;
@@ -27,8 +30,12 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.jackrabbit.oak.commons.IOUtils.humanReadableByteCount;
+import static org.apache.jackrabbit.oak.commons.PathUtils.elements;
+import static org.apache.jackrabbit.oak.commons.PathUtils.getName;
+import static org.apache.jackrabbit.oak.commons.PathUtils.getParentPath;
 import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.EMPTY_NODE;
-import static org.apache.jackrabbit.oak.segment.SegmentWriterBuilder.segmentWriterBuilder;
+import static org.apache.jackrabbit.oak.segment.DefaultSegmentWriterBuilder.defaultSegmentWriterBuilder;
+import static org.apache.jackrabbit.oak.segment.SegmentId.isDataSegmentId;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCStatus.CLEANUP;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCStatus.COMPACTION;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCStatus.COMPACTION_FORCE_COMPACT;
@@ -44,7 +51,10 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -52,6 +62,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
@@ -64,21 +75,26 @@ import com.google.common.base.Stopwatch;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.io.Closer;
-import org.apache.jackrabbit.oak.plugins.blob.ReferenceCollector;
-import org.apache.jackrabbit.oak.segment.Compactor;
-import org.apache.jackrabbit.oak.segment.DefaultSegmentWriter;
+import org.apache.jackrabbit.oak.segment.OnlineCompactor;
 import org.apache.jackrabbit.oak.segment.RecordId;
 import org.apache.jackrabbit.oak.segment.Segment;
 import org.apache.jackrabbit.oak.segment.SegmentId;
+import org.apache.jackrabbit.oak.segment.SegmentNodeBuilder;
 import org.apache.jackrabbit.oak.segment.SegmentNodeState;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundException;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundExceptionListener;
+import org.apache.jackrabbit.oak.segment.SegmentWriter;
 import org.apache.jackrabbit.oak.segment.WriterCacheManager;
 import org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions;
 import org.apache.jackrabbit.oak.segment.file.GCJournal.GCJournalEntry;
-import org.apache.jackrabbit.oak.segment.file.TarFiles.CleanupResult;
+import org.apache.jackrabbit.oak.segment.file.tar.CleanupContext;
+import org.apache.jackrabbit.oak.segment.file.tar.GCGeneration;
+import org.apache.jackrabbit.oak.segment.file.tar.TarFiles;
+import org.apache.jackrabbit.oak.segment.file.tar.TarFiles.CleanupResult;
+import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,7 +107,7 @@ public class FileStore extends AbstractFileStore {
 
     /**
      * Minimal interval in milli seconds between subsequent garbage collection cycles.
-     * Garbage collection invoked via {@link #gc()} will be skipped unless at least
+     * Garbage collection invoked via {@link #fullGC()} will be skipped unless at least
      * the specified time has passed since its last successful invocation.
      */
     private static final long GC_BACKOFF = getInteger("oak.gc.backoff", 10*3600*1000);
@@ -106,7 +122,7 @@ public class FileStore extends AbstractFileStore {
     private static final AtomicLong GC_COUNT = new AtomicLong(0);
 
     @Nonnull
-    private final DefaultSegmentWriter segmentWriter;
+    private final SegmentWriter segmentWriter;
 
     @Nonnull
     private final GarbageCollector garbageCollector;
@@ -153,20 +169,7 @@ public class FileStore extends AbstractFileStore {
     @Nonnull
     private final SegmentNotFoundExceptionListener snfeListener;
 
-    private final Supplier<Set<UUID>> referencesSupplier = new Supplier<Set<UUID>>() {
-
-        @Override
-        public Set<UUID> get() {
-            Set<UUID> references = newHashSet();
-            for (SegmentId id : tracker.getReferencedSegmentIds()) {
-                if (id.isBulkSegmentId()) {
-                    references.add(id.asUUID());
-                }
-            }
-            return references;
-        }
-
-    };
+    private volatile GCType gcType = GCType.FULL;
 
     FileStore(final FileStoreBuilder builder) throws InvalidFileStoreVersionException, IOException {
         super(builder);
@@ -179,26 +182,20 @@ public class FileStore extends AbstractFileStore {
                     + " is in use by another store.", ex);
         }
 
-        this.segmentWriter = segmentWriterBuilder("sys")
-                .withGeneration(new Supplier<Integer>() {
-                    @Override
-                    public Integer get() {
-                        return getGcGeneration();
-                    }
-                })
+        this.segmentWriter = defaultSegmentWriterBuilder("sys")
+                .withGeneration(() -> getGcGeneration().nonTail())
                 .withWriterPool()
-                .with(builder.getCacheManager())
+                .with(builder.getCacheManager()
+                        .withAccessTracking("WRITE", builder.getStatsProvider()))
                 .build(this);
         this.garbageCollector = new GarbageCollector(
-                builder.getGcOptions(), builder.getGcListener(), new GCJournal(directory), builder.getCacheManager());
+                builder.getGcOptions(),
+                builder.getGcListener(),
+                new GCJournal(directory),
+                builder.getCacheManager(),
+                builder.getStatsProvider());
 
-        Manifest manifest = Manifest.empty();
-
-        if (notEmptyDirectory(directory)) {
-            manifest = checkManifest(openManifest());
-        }
-
-        saveManifest(manifest);
+        newManifestChecker(directory).checkAndUpdateManifest();
 
         this.stats = new FileStoreStats(builder.getStatsProvider(), this, 0);
         this.tarFiles = TarFiles.builder()
@@ -206,7 +203,7 @@ public class FileStore extends AbstractFileStore {
                 .withMemoryMapping(memoryMapping)
                 .withTarRecovery(recovery)
                 .withIOMonitor(ioMonitor)
-                .withFileStoreStats(stats)
+                .withFileStoreMonitor(stats)
                 .withMaxFileSize(builder.getMaxFileSize() * MB)
                 .build();
         this.stats.init(this.tarFiles.size());
@@ -257,18 +254,13 @@ public class FileStore extends AbstractFileStore {
         return this;
     }
 
-    private void saveManifest(Manifest manifest) throws IOException {
-        manifest.setStoreVersion(CURRENT_STORE_VERSION);
-        manifest.save(getManifestFile());
-    }
-
     @Nonnull
     private Supplier<RecordId> initialNode() {
         return new Supplier<RecordId>() {
             @Override
             public RecordId get() {
                 try {
-                    DefaultSegmentWriter writer = segmentWriterBuilder("init").build(FileStore.this);
+                    SegmentWriter writer = defaultSegmentWriterBuilder("init").build(FileStore.this);
                     NodeBuilder builder = EMPTY_NODE.builder();
                     builder.setChildNode("root", EMPTY_NODE);
                     SegmentNodeState node = new SegmentNodeState(segmentReader, writer, getBlobStore(), writer.writeNode(builder.getNodeState()));
@@ -283,8 +275,17 @@ public class FileStore extends AbstractFileStore {
         };
     }
 
-    private int getGcGeneration() {
+    @Nonnull
+    private GCGeneration getGcGeneration() {
         return revisions.getHead().getSegmentId().getGcGeneration();
+    }
+
+    public void setGcType(GCType gcType) {
+        this.gcType = checkNotNull(gcType);
+    }
+
+    public GCType getGcType() {
+        return gcType;
     }
 
     /**
@@ -295,7 +296,16 @@ public class FileStore extends AbstractFileStore {
             @Override
             public void run() {
                 try {
-                    gc();
+                    switch (gcType) {
+                        case FULL:
+                            fullGC();
+                            break;
+                        case TAIL:
+                            tailGC();
+                            break;
+                        default:
+                            throw new IllegalStateException("Invalid GC type");
+                    }
                 } catch (IOException e) {
                     log.error("Error running revision garbage collection", e);
                 }
@@ -334,11 +344,17 @@ public class FileStore extends AbstractFileStore {
     }
 
     /**
-     * Run garbage collection: estimation, compaction, cleanup
-     * @throws IOException
+     * Run full garbage collection: estimation, compaction, cleanup.
      */
-    public void gc() throws IOException {
-        garbageCollector.run();
+    public void fullGC() throws IOException {
+        garbageCollector.runFull();
+    }
+
+    /**
+     * Run tail garbage collection.
+     */
+    public void tailGC() throws IOException {
+        garbageCollector.runTail();
     }
 
     /**
@@ -355,8 +371,12 @@ public class FileStore extends AbstractFileStore {
      * reference to them).
      * @return {@code true} on success, {@code false} otherwise.
      */
-    public boolean compact() {
-        return garbageCollector.compact().isSuccess();
+    public boolean compactFull() {
+        return garbageCollector.compactFull().isSuccess();
+    }
+
+    public boolean compactTail() {
+        return garbageCollector.compactTail().isSuccess();
     }
 
     /**
@@ -384,7 +404,7 @@ public class FileStore extends AbstractFileStore {
      * running.
      * @param collector  reference collector called back for each blob reference found
      */
-    public void collectBlobReferences(ReferenceCollector collector) throws IOException {
+    public void collectBlobReferences(Consumer<String> collector) throws IOException {
         garbageCollector.collectBlobReferences(collector);
     }
 
@@ -398,7 +418,7 @@ public class FileStore extends AbstractFileStore {
 
     @Override
     @Nonnull
-    public DefaultSegmentWriter getWriter() {
+    public SegmentWriter getWriter() {
         return segmentWriter;
     }
 
@@ -473,7 +493,7 @@ public class FileStore extends AbstractFileStore {
         // access some internal information stored in the segment and to store
         // in an in-memory cache for later use.
 
-        int generation = 0;
+        GCGeneration generation = GCGeneration.NULL;
         Set<UUID> references = null;
         Set<String> binaryReferences = null;
 
@@ -548,24 +568,40 @@ public class FileStore extends AbstractFileStore {
         @Nonnull
         private final GCNodeWriteMonitor compactionMonitor;
 
+        @Nonnull
+        private final StatisticsProvider statisticsProvider;
+
         private volatile boolean cancelled;
 
-        /** Timestamp of the last time {@link #gc()} was successfully invoked. 0 if never. */
+        /**
+         * Timestamp of the last time {@link #fullGC()} or {@link #tailGC()} was
+         * successfully invoked. 0 if never.
+         */
         private long lastSuccessfullGC;
 
         GarbageCollector(
                 @Nonnull SegmentGCOptions gcOptions,
                 @Nonnull GCListener gcListener,
                 @Nonnull GCJournal gcJournal,
-                @Nonnull WriterCacheManager cacheManager) {
+                @Nonnull WriterCacheManager cacheManager,
+                @Nonnull StatisticsProvider statisticsProvider) {
             this.gcOptions = gcOptions;
             this.gcListener = gcListener;
             this.gcJournal = gcJournal;
             this.cacheManager = cacheManager;
             this.compactionMonitor = gcOptions.getGCNodeWriteMonitor();
+            this.statisticsProvider = statisticsProvider;
         }
 
-        synchronized void run() throws IOException {
+        synchronized void runFull() throws IOException {
+            run(this::compactFull);
+        }
+
+        synchronized void runTail() throws IOException {
+            run(this::compactTail);
+        }
+
+        private void run(Supplier<CompactionResult> compact) throws IOException {
             try {
                 gcListener.info("TarMK GC #{}: started", GC_COUNT.incrementAndGet());
 
@@ -612,7 +648,7 @@ public class FileStore extends AbstractFileStore {
     
                 if (sufficientEstimatedGain) {
                     if (!gcOptions.isPaused()) {
-                        CompactionResult compactionResult = compact();
+                        CompactionResult compactionResult = compact.get();
                         if (compactionResult.isSuccess()) {
                             lastSuccessfullGC = System.currentTimeMillis();
                         } else {
@@ -642,20 +678,44 @@ public class FileStore extends AbstractFileStore {
         }
 
         @Nonnull
-        private CompactionResult compactionAborted(int generation) {
+        private CompactionResult compactionAborted(@Nonnull GCGeneration generation) {
             gcListener.compactionFailed(generation);
             return CompactionResult.aborted(getGcGeneration(), generation);
         }
 
         @Nonnull
-        private CompactionResult compactionSucceeded(int generation, @Nonnull RecordId compactedRootId) {
+        private CompactionResult compactionSucceeded(@Nonnull GCGeneration generation, @Nonnull RecordId compactedRootId) {
             gcListener.compactionSucceeded(generation);
             return CompactionResult.succeeded(generation, gcOptions, compactedRootId);
         }
 
-        @Nonnull
-        synchronized CompactionResult compact() {
-            final int newGeneration = getGcGeneration() + 1;
+        @CheckForNull
+        private SegmentNodeState getBase() {
+            String root = gcJournal.read().getRoot();
+            RecordId rootId = RecordId.fromString(tracker, root);
+            if (RecordId.NULL.equals(rootId)) {
+                return null;
+            }
+            // FIXME OAK-6520: Improve tail compactions resilience when base state cannot be determined
+            return segmentReader.readNode(rootId);
+        }
+
+        synchronized CompactionResult compactFull() {
+            gcListener.info("TarMK GC #{}: running full compaction", GC_COUNT);
+            return compact(null, getGcGeneration().nextFull());
+        }
+
+        synchronized CompactionResult compactTail() {
+            gcListener.info("TarMK GC #{}: running tail compaction", GC_COUNT);
+            SegmentNodeState base = getBase();
+            if (base != null) {
+                return compact(base, getGcGeneration().nextTail());
+            }
+            gcListener.info("TarMK GC #{}: no base state available, running full compaction instead", GC_COUNT);
+            return compact(null, getGcGeneration().nextFull());
+        }
+
+        private CompactionResult compact(SegmentNodeState base, GCGeneration newGeneration) {
             try {
                 Stopwatch watch = Stopwatch.createStarted();
                 gcListener.info("TarMK GC #{}: compaction started, gc options={}", GC_COUNT, gcOptions);
@@ -667,14 +727,16 @@ public class FileStore extends AbstractFileStore {
 
                 SegmentNodeState before = getHead();
                 CancelCompactionSupplier cancel = new CancelCompactionSupplier(FileStore.this);
-                DefaultSegmentWriter writer = segmentWriterBuilder("c")
-                        .with(cacheManager)
+                SegmentWriter writer = defaultSegmentWriterBuilder("c")
+                        .with(cacheManager
+                                .withAccessTracking("COMPACT", statisticsProvider))
                         .withGeneration(newGeneration)
                         .withoutWriterPool()
                         .build(FileStore.this);
-                writer.setCompactionMonitor(compactionMonitor);
+                OnlineCompactor compactor = new OnlineCompactor(
+                        segmentReader, writer, getBlobStore(), cancel, compactionMonitor::onNode);
 
-                SegmentNodeState after = compact(before, writer, cancel);
+                SegmentNodeState after = compact(base, before, compactor, writer);
                 if (after == null) {
                     gcListener.warn("TarMK GC #{}: compaction cancelled: {}.", GC_COUNT, cancel);
                     return compactionAborted(newGeneration);
@@ -698,7 +760,7 @@ public class FileStore extends AbstractFileStore {
                     Stopwatch cycleWatch = Stopwatch.createStarted();
                     
                     SegmentNodeState head = getHead();
-                    after = compact(head, writer, cancel);
+                    after = compact(after, head, compactor, writer);
                     if (after == null) {
                         gcListener.warn("TarMK GC #{}: compaction cancelled: {}.", GC_COUNT, cancel);
                         return compactionAborted(newGeneration);
@@ -723,7 +785,7 @@ public class FileStore extends AbstractFileStore {
                         
                         cycles++;
                         cancel.timeOutAfter(forceTimeout, SECONDS);
-                        after = forceCompact(writer, cancel);
+                        after = forceCompact(after, compactor, writer);
                         success = after != null;
                         if (success) {
                             gcListener.info("TarMK GC #{}: compaction succeeded to force compact remaining commits " +
@@ -763,32 +825,130 @@ public class FileStore extends AbstractFileStore {
             }
         }
 
-        private SegmentNodeState compact(NodeState head, DefaultSegmentWriter writer, Supplier<Boolean> cancel)
+        /**
+         * Compact {@code uncompacted} on top of an optional {@code base}.
+         * @param base         the base state to compact onto or {@code null} for an empty state.
+         * @param uncompacted  the uncompacted state to compact
+         * @param compactor    the compactor for creating the new generation of the
+         *                     uncompacted state.
+         * @param writer       the segment writer used by {@code compactor} for writing to the
+         *                     new generation.
+         * @return  compacted clone of {@code uncompacted} or null if cancelled.
+         * @throws IOException
+         */
+        @CheckForNull
+        private SegmentNodeState compact(
+                @Nullable SegmentNodeState base,
+                @Nonnull SegmentNodeState uncompacted,
+                @Nonnull OnlineCompactor compactor,
+                @Nonnull SegmentWriter writer)
         throws IOException {
-            if (gcOptions.isOffline()) {
-                return new Compactor(segmentReader, writer, getBlobStore(), cancel, gcOptions)
-                        .compact(EMPTY_NODE, head, EMPTY_NODE);
-            } else {
-                RecordId id = writer.writeNode(head, cancel);
-                if (id == null) {
-                    return null;
-                }
-                return new SegmentNodeState(segmentReader, writer, getBlobStore(), id);
+            // Collect a chronologically ordered list of roots for the base and the uncompacted
+            // state. This list consists of all checkpoints followed by the root.
+            LinkedHashMap<String, NodeState> baseRoots = collectRoots(base);
+            LinkedHashMap<String, NodeState> uncompactedRoots = collectRoots(uncompacted);
+
+            // Compact the list of uncompacted roots to a list of compacted roots.
+            LinkedHashMap<String, NodeState> compactedRoots = compact(baseRoots, uncompactedRoots, compactor);
+            if (compactedRoots == null) {
+                return null;
             }
+
+            // Build a compacted super root by replacing the uncompacted roots with
+            // the compacted ones in the original node.
+            SegmentNodeBuilder builder = uncompacted.builder();
+            for (Entry<String, NodeState> compactedRoot : compactedRoots.entrySet()) {
+                String path = compactedRoot.getKey();
+                NodeState state = compactedRoot.getValue();
+                NodeBuilder childBuilder = getChild(builder, getParentPath(path));
+                childBuilder.setChildNode(getName(path), state);
+            }
+
+            // Use the segment writer of the *new generation* to persist the compacted super root.
+            RecordId nodeId = writer.writeNode(builder.getNodeState(), uncompacted.getStableIdBytes());
+            return new SegmentNodeState(segmentReader, segmentWriter, getBlobStore(), nodeId);
         }
 
+        /**
+         * Compact a list of uncompacted roots on top of base roots of the same key or
+         * an empty node if none.
+         */
         @CheckForNull
-        private SegmentNodeState forceCompact(@Nonnull final DefaultSegmentWriter writer,
-                                              @Nonnull final Supplier<Boolean> cancel)
+        private LinkedHashMap<String, NodeState> compact(
+                @Nonnull LinkedHashMap<String, NodeState> baseRoots,
+                @Nonnull LinkedHashMap<String, NodeState> uncompactedRoots,
+                @Nonnull OnlineCompactor compactor)
+        throws IOException {
+            NodeState onto = baseRoots.get("root");
+            NodeState previous = onto;
+            LinkedHashMap<String, NodeState> compactedRoots = newLinkedHashMap();
+            for (Entry<String, NodeState> uncompactedRoot : uncompactedRoots.entrySet()) {
+                String path = uncompactedRoot.getKey();
+                NodeState state = uncompactedRoot.getValue();
+                NodeState compacted;
+                if (onto == null) {
+                    compacted = compactor.compact(state);
+                } else {
+                    compacted = compactor.compact(previous, state, onto);
+                }
+                if (compacted == null) {
+                    return null;
+                }
+                previous = state;
+                onto = compacted;
+                compactedRoots.put(path, compacted);
+            }
+            return compactedRoots;
+        }
+
+        /**
+         * Collect a chronologically ordered list of roots for the base and the uncompacted
+         * state from a {@code superRoot} . This list consists of all checkpoints followed by
+         * the root.
+         */
+        @Nonnull
+        private LinkedHashMap<String, NodeState> collectRoots(@Nullable SegmentNodeState superRoot) {
+            LinkedHashMap<String, NodeState> roots = newLinkedHashMap();
+            if (superRoot != null) {
+                List<ChildNodeEntry> checkpoints = newArrayList(
+                        superRoot.getChildNode("checkpoints").getChildNodeEntries());
+
+                checkpoints.sort((cne1, cne2) -> {
+                    long c1 = cne1.getNodeState().getLong("created");
+                    long c2 = cne2.getNodeState().getLong("created");
+                    return Long.compare(c1, c2);
+                });
+
+                for (ChildNodeEntry checkpoint : checkpoints) {
+                    roots.put("checkpoints/" + checkpoint.getName() + "/root",
+                            checkpoint.getNodeState().getChildNode("root"));
+                }
+                roots.put("root", superRoot.getChildNode("root"));
+            }
+            return roots;
+        }
+
+        @Nonnull
+        private NodeBuilder getChild(NodeBuilder builder, String path) {
+            for (String name : elements(path)) {
+                builder = builder.getChildNode(name);
+            }
+            return builder;
+        }
+
+        private SegmentNodeState forceCompact(
+                @Nonnull final SegmentNodeState base,
+                @Nonnull final OnlineCompactor compactor,
+                @Nonnull SegmentWriter writer)
         throws InterruptedException {
             RecordId compactedId = revisions.setHead(new Function<RecordId, RecordId>() {
                 @Nullable
                 @Override
-                public RecordId apply(RecordId base) {
+                public RecordId apply(RecordId headId) {
                     try {
                         long t0 = currentTimeMillis();
                         SegmentNodeState after = compact(
-                                segmentReader.readNode(base), writer, cancel);
+                               base, segmentReader.readNode(headId), compactor, writer);
                         if (after == null) {
                             gcListener.info("TarMK GC #{}: compaction cancelled after {} seconds",
                                     GC_COUNT, (currentTimeMillis() - t0) / 1000);
@@ -801,11 +961,45 @@ public class FileStore extends AbstractFileStore {
                         return null;
                     }
                 }
-            },
-            timeout(gcOptions.getForceTimeout(), SECONDS));
+            }, timeout(gcOptions.getForceTimeout(), SECONDS));
             return compactedId != null
-                    ? segmentReader.readNode(compactedId)
-                    : null;
+                ? segmentReader.readNode(compactedId)
+                : null;
+        }
+
+        private CleanupContext newCleanupContext(Predicate<GCGeneration> old) {
+            return new CleanupContext() {
+
+                private boolean isUnreferencedBulkSegment(UUID id, boolean referenced) {
+                    return !isDataSegmentId(id.getLeastSignificantBits()) && !referenced;
+                }
+
+                private boolean isOldDataSegment(UUID id, GCGeneration generation) {
+                    return isDataSegmentId(id.getLeastSignificantBits()) && old.apply(generation);
+                }
+
+                @Override
+                public Collection<UUID> initialReferences() {
+                    Set<UUID> references = newHashSet();
+                    for (SegmentId id : tracker.getReferencedSegmentIds()) {
+                        if (id.isBulkSegmentId()) {
+                            references.add(id.asUUID());
+                        }
+                    }
+                    return references;
+                }
+
+                @Override
+                public boolean shouldReclaim(UUID id, GCGeneration generation, boolean referenced) {
+                    return isUnreferencedBulkSegment(id, referenced) || isOldDataSegment(id, generation);
+                }
+
+                @Override
+                public boolean shouldFollow(UUID from, UUID to) {
+                    return !isDataSegmentId(to.getLeastSignificantBits());
+                }
+
+            };
         }
 
         /**
@@ -826,7 +1020,7 @@ public class FileStore extends AbstractFileStore {
             // to clear stale weak references in the SegmentTracker
             System.gc();
 
-            CleanupResult cleanupResult = tarFiles.cleanup(referencesSupplier, compactionResult.reclaimer());
+            CleanupResult cleanupResult = tarFiles.cleanup(newCleanupContext(compactionResult.reclaimer()));
             if (cleanupResult.isInterrupted()) {
                 gcListener.info("TarMK GC #{}: cleanup interrupted", GC_COUNT);
             }
@@ -868,10 +1062,10 @@ public class FileStore extends AbstractFileStore {
          * running.
          * @param collector  reference collector called back for each blob reference found
          */
-        synchronized void collectBlobReferences(ReferenceCollector collector) throws IOException {
+        synchronized void collectBlobReferences(Consumer<String> collector) throws IOException {
             segmentWriter.flush();
-            int minGeneration = getGcGeneration() - gcOptions.getRetainedGenerations() + 1;
-            tarFiles.collectBlobReferences(collector, minGeneration);
+            tarFiles.collectBlobReferences(collector,
+                    Reclaimers.newOldReclaimer(getGcGeneration(), gcOptions.getRetainedGenerations()));
         }
 
         void cancel() {
@@ -942,13 +1136,14 @@ public class FileStore extends AbstractFileStore {
 
     /**
      * Instances of this class represent the result from a compaction.
-     * Either {@link #succeeded(int, SegmentGCOptions, RecordId) succeeded},
-     * {@link #aborted(int, int) aborted} or {@link #skipped(int, SegmentGCOptions) skipped}.
+     * Either {@link #succeeded(GCGeneration, SegmentGCOptions, RecordId) succeeded},
+     * {@link #aborted(GCGeneration, GCGeneration) aborted} or {@link #skipped(GCGeneration, SegmentGCOptions) skipped}.
      */
     private abstract static class CompactionResult {
-        private final int currentGeneration;
+        @Nonnull
+        private final GCGeneration currentGeneration;
 
-        protected CompactionResult(int currentGeneration) {
+        protected CompactionResult(@Nonnull GCGeneration currentGeneration) {
             this.currentGeneration = currentGeneration;
         }
 
@@ -959,15 +1154,13 @@ public class FileStore extends AbstractFileStore {
          * @param compactedRootId   the record id of the root created by compaction
          */
         static CompactionResult succeeded(
-                final int newGeneration,
+                @Nonnull GCGeneration newGeneration,
                 @Nonnull final SegmentGCOptions gcOptions,
                 @Nonnull final RecordId compactedRootId) {
             return new CompactionResult(newGeneration) {
-                final int oldGeneration = newGeneration - gcOptions.getRetainedGenerations();
-
                 @Override
-                Predicate<Integer> reclaimer() {
-                    return CompactionResult.newOldReclaimer(oldGeneration);
+                Predicate<GCGeneration> reclaimer() {
+                    return Reclaimers.newOldReclaimer(newGeneration, gcOptions.getRetainedGenerations());
                 }
 
                 @Override
@@ -988,12 +1181,12 @@ public class FileStore extends AbstractFileStore {
          * @param failedGeneration   the generation that compaction attempted to create
          */
         static CompactionResult aborted(
-                int currentGeneration,
-                final int failedGeneration) {
+                @Nonnull GCGeneration currentGeneration,
+                @Nonnull final GCGeneration failedGeneration) {
             return new CompactionResult(currentGeneration) {
                 @Override
-                Predicate<Integer> reclaimer() {
-                    return CompactionResult.newFailedReclaimer(failedGeneration);
+                Predicate<GCGeneration> reclaimer() {
+                    return Reclaimers.newExactReclaimer(failedGeneration);
                 }
 
                 @Override
@@ -1009,13 +1202,12 @@ public class FileStore extends AbstractFileStore {
          * @param gcOptions         the current GC options used by compaction
          */
         static CompactionResult skipped(
-                final int currentGeneration,
+                @Nonnull GCGeneration currentGeneration,
                 @Nonnull final SegmentGCOptions gcOptions) {
             return new CompactionResult(currentGeneration) {
-                final int oldGeneration = currentGeneration - gcOptions.getRetainedGenerations();
                 @Override
-                Predicate<Integer> reclaimer() {
-                    return CompactionResult.newOldReclaimer(oldGeneration);
+                Predicate<GCGeneration> reclaimer() {
+                    return Reclaimers.newOldReclaimer(currentGeneration, gcOptions.getRetainedGenerations());
                 }
 
                 @Override
@@ -1030,11 +1222,11 @@ public class FileStore extends AbstractFileStore {
          *          {@link GarbageCollector#cleanup(CompactionResult) clean up} for
          *          the given compaction result.
          */
-        abstract Predicate<Integer> reclaimer();
+        abstract Predicate<GCGeneration> reclaimer();
 
         /**
-         * @return  {@code true} for {@link #succeeded(int, SegmentGCOptions, RecordId) succeeded}
-         *          and {@link #skipped(int, SegmentGCOptions) skipped}, {@code false} otherwise.
+         * @return  {@code true} for {@link #succeeded(GCGeneration, SegmentGCOptions, RecordId) succeeded}
+         *          and {@link #skipped(GCGeneration, SegmentGCOptions) skipped}, {@code false} otherwise.
          */
         abstract boolean isSuccess();
 
@@ -1056,31 +1248,6 @@ public class FileStore extends AbstractFileStore {
                     ",reclaim-predicate=" + reclaimer();
         }
 
-        private static Predicate<Integer> newFailedReclaimer(final int failedGeneration) {
-            return new Predicate<Integer>() {
-                @Override
-                public boolean apply(Integer generation) {
-                    return generation == failedGeneration;
-                }
-                @Override
-                public String toString() {
-                    return "(generation==" + failedGeneration + ")";
-                }
-            };
-        }
-
-        private static Predicate<Integer> newOldReclaimer(final int oldGeneration) {
-            return new Predicate<Integer>() {
-                @Override
-                public boolean apply(Integer generation) {
-                    return generation <= oldGeneration;
-                }
-                @Override
-                public String toString() {
-                    return "(generation<=" + oldGeneration + ")";
-                }
-            };
-        }
     }
 
 }

@@ -19,18 +19,20 @@ package org.apache.jackrabbit.oak.segment;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 
-import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import com.google.common.base.Supplier;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 
+/**
+ * Converts nodes, properties, values, etc. to records and persists them.
+ */
 public interface SegmentWriter {
 
     void flush() throws IOException;
@@ -41,7 +43,7 @@ public interface SegmentWriter {
      * @param base    base map relative to which the {@code changes} are applied
      *                ot {@code null} for the empty map.
      * @param changes the changed mapping to apply to the {@code base} map.
-     * @return the map record written
+     * @return the record id of the map written
      * @throws IOException
      */
     @Nonnull
@@ -74,7 +76,7 @@ public interface SegmentWriter {
      * Write a blob (as list of block records)
      *
      * @param blob blob to write
-     * @return The segment blob written
+     * @return the record id of the blob written
      * @throws IOException
      */
     @Nonnull
@@ -86,7 +88,7 @@ public interface SegmentWriter {
      * @param bytes  source buffer
      * @param offset offset within the source buffer
      * @param length number of bytes to write
-     * @return block record identifier
+     * @return the record id of the block written
      */
     @Nonnull
     // TODO frm this method is only used from test code, should it be removed?
@@ -97,7 +99,7 @@ public interface SegmentWriter {
      * closed</em> by this method.
      *
      * @param stream stream to be written
-     * @return blob for the passed {@code stream}
+     * @return the record id of the stream written
      * @throws IOException if the input stream could not be read or the output
      *                     could not be written
      */
@@ -108,7 +110,7 @@ public interface SegmentWriter {
      * Write a property.
      *
      * @param state the property to write
-     * @return the property state written
+     * @return the record id of the property state written
      * @throws IOException
      */
     @Nonnull
@@ -116,41 +118,26 @@ public interface SegmentWriter {
     RecordId writeProperty(@Nonnull PropertyState state) throws IOException;
 
     /**
-     * Write a node state.
-     * <p>
-     * <em>Note:</em> the returned {@code SegmentNodeState} instance is bound to
-     * this {@code SegmentWriter} instance. That is, future calls to {@code
-     * #builder()} return a {@code NodeBuilder} that is also bound to the same
-     * {@code SegmentWriter} instance and uses it for writing any changes. This
-     * might not always be desired and callers of this method need to take care
-     * not to proliferate this writer through the returned node states beyond
-     * the intended bounds.
+     * Write a node state. If non null, the passed {@code stableId} will be assigned to
+     * the persisted node. Otherwise the stable id will be inferred from {@code state}.
      *
      * @param state node state to write
-     * @return segment node state equal to {@code state}
+     * @param stableIdBytes the stableId that should be assigned to the node or {@code null}.
+     * @return the record id of the segment node state written
      * @throws IOException
      */
     @Nonnull
-    RecordId writeNode(@Nonnull NodeState state) throws IOException;
+    RecordId writeNode(@Nonnull NodeState state, @Nullable ByteBuffer stableIdBytes) throws IOException;
 
     /**
-     * Write a node state, unless cancelled.
+     * Write a node state.
      * <p>
-     * <em>Note:</em> the returned {@code SegmentNodeState} instance is bound to
-     * this {@code SegmentWriter} instance. That is, future calls to {@code
-     * #builder()} return a {@code NodeBuilder} that is also bound to the same
-     * {@code SegmentWriter} instance and uses it for writing any changes. This
-     * might not always be desired and callers of this method need to take care
-     * not to proliferate this writer through the returned node states beyond
-     * the intended bounds.
+     * Equivalent to {@code writeNode(state, null)}
      *
-     * @param state  node state to write
-     * @param cancel supplier to signal cancellation of this write operation
-     * @return segment node state equal to {@code state} or {@code null} if
-     * cancelled.
-     * @throws IOException
+     * @see #writeNode(NodeState, ByteBuffer)
      */
-    @CheckForNull
-    RecordId writeNode(@Nonnull NodeState state, @Nonnull Supplier<Boolean> cancel) throws IOException;
-
+    @Nonnull
+    default RecordId writeNode(@Nonnull NodeState state) throws IOException {
+        return writeNode(state, null);
+    }
 }

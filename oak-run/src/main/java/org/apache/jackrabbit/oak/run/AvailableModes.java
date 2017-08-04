@@ -38,7 +38,6 @@ public final class AvailableModes {
             .put("debug", new DebugCommand())
             .put("explore", new ExploreCommand())
             .put("garbage", new GarbageCommand())
-            .put("graph", new GraphCommand())
             .put("help", new HelpCommand())
             .put("history", new HistoryCommand())
             .put(JsonIndexCommand.INDEX, new JsonIndexCommand())
@@ -54,5 +53,6 @@ public final class AvailableModes {
             .put("upgrade", new UpgradeCommand())
             .put("unlockupgrade", new UnlockUpgradeCommand())
             .put(IndexCommand.NAME, new IndexCommand())
+            .put("server", new ServerCommand())
             .build());
 }

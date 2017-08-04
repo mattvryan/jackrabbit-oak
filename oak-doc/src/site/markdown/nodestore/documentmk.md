@@ -41,7 +41,7 @@
         * [Cache Invalidation](#cache-invalidation)
         * [Cache Configuration](#cache-configuration)
     * [Unlock upgrade](#unlockUpgrade)
-    * [Revision Garbage Collection](#revisionGC)
+    * [Revision Garbage Collection](#revision-gc)
 
 One of the plugins in Oak stores data in a document oriented format. 
 The plugin implements the low level `NodeStore` interface.
@@ -617,6 +617,9 @@ example unlocks an upgrade to 1.8 with a DocumentNodeStore on MongoDB:
 
 Please note that unlocking an upgrade is only possible when all cluster nodes
 are inactive, otherwise the command will refuse to change the format version.
+
+See also detailed instructions for various [upgrade](document/upgrade.html)
+paths.
 
 ## <a name="secondary-store"></a> Secondary Store
 

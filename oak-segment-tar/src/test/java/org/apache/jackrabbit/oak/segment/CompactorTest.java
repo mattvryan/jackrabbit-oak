@@ -18,8 +18,9 @@
  */
 package org.apache.jackrabbit.oak.segment;
 
-import static org.apache.jackrabbit.oak.segment.SegmentWriterBuilder.segmentWriterBuilder;
+import static org.apache.jackrabbit.oak.segment.DefaultSegmentWriterBuilder.defaultSegmentWriterBuilder;
 import static org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions.defaultGCOptions;
+import static org.apache.jackrabbit.oak.segment.file.tar.GCGeneration.newGCGeneration;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
@@ -52,7 +53,9 @@ public class CompactorTest {
         NodeStore store = SegmentNodeStoreBuilders.builder(memoryStore).build();
         init(store);
 
-        DefaultSegmentWriter writer = segmentWriterBuilder("c").withGeneration(1).build(memoryStore);
+        SegmentWriter writer = defaultSegmentWriterBuilder("c")
+                .withGeneration(newGCGeneration(1, 0, false))
+                .build(memoryStore);
         Compactor compactor = new Compactor(memoryStore.getReader(), writer,
                 memoryStore.getBlobStore(), Suppliers.ofInstance(false), defaultGCOptions());
         addTestContent(store, 0);
@@ -75,7 +78,9 @@ public class CompactorTest {
         // doesn't have the child named "b".
 
         NodeStore store = SegmentNodeStoreBuilders.builder(memoryStore).build();
-        DefaultSegmentWriter writer = segmentWriterBuilder("c").withGeneration(1).build(memoryStore);
+        SegmentWriter writer = defaultSegmentWriterBuilder("c")
+                .withGeneration(newGCGeneration(1, 0, false))
+                .build(memoryStore);
         Compactor compactor = new Compactor(memoryStore.getReader(), writer,
                 memoryStore.getBlobStore(), Suppliers.ofInstance(true), defaultGCOptions());
         SegmentNodeState sns = compactor.compact(store.getRoot(),

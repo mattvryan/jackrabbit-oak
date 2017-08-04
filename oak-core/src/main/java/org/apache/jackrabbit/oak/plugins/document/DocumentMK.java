@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Suppliers.memoize;
 import static com.google.common.base.Suppliers.ofInstance;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
+import static org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreService.DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS;
 import static org.apache.jackrabbit.oak.plugins.document.util.MongoConnection.readConcernLevel;
 
 import java.io.InputStream;
@@ -96,6 +97,7 @@ import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
+import org.apache.jackrabbit.oak.spi.gc.LoggingGCMonitor;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.slf4j.Logger;
@@ -601,7 +603,9 @@ public class DocumentMK {
                 new JournalPropertyHandlerFactory();
         private int updateLimit = UPDATE_LIMIT;
         private int commitValueCacheSize = 10000;
-        private GCMonitor gcMonitor = GCMonitor.EMPTY;
+        private long maxRevisionAgeMillis = DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS;
+        private GCMonitor gcMonitor = new LoggingGCMonitor(
+                LoggerFactory.getLogger(VersionGarbageCollector.class));
 
         public Builder() {
         }
@@ -1143,6 +1147,21 @@ public class DocumentMK {
 
         public int getCommitValueCacheSize() {
             return commitValueCacheSize;
+        }
+
+        public Builder setJournalGCMaxAge(long maxRevisionAgeMillis) {
+            this.maxRevisionAgeMillis = maxRevisionAgeMillis;
+            return this;
+        }
+
+        /**
+         * The maximum age for journal entries in milliseconds. Older entries
+         * are candidates for GC.
+         *
+         * @return maximum age for journal entries in milliseconds.
+         */
+        public long getJournalGCMaxAge() {
+            return maxRevisionAgeMillis;
         }
 
         public Builder setGCMonitor(@Nonnull GCMonitor gcMonitor) {
