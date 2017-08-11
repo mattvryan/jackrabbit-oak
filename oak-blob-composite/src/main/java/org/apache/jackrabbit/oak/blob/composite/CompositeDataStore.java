@@ -19,12 +19,16 @@
 
 package org.apache.jackrabbit.oak.blob.composite;
 
-import com.google.common.collect.*;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.osgi.framework.*;
+import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,53 +36,59 @@ import javax.jcr.RepositoryException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
+
+import static org.apache.jackrabbit.oak.osgi.OsgiUtil.lookup;
 
 public class CompositeDataStore implements DataStore, BundleListener, FrameworkListener {
+    private static final String DATASTORE = "datastore";
+
     private static Logger LOG = LoggerFactory.getLogger(CompositeDataStore.class);
-    protected Properties properties;
 
-    public void setProperties(final Properties properties) {
-        this.properties = properties;
+    protected Properties properties = new Properties();
+    private Map<String, DelegateDataStoreSpec> dataStoreSpecsByBundleName = Maps.newConcurrentMap();
+
+    private Set<Bundle> bundlesWithActiveDataStores = Sets.newHashSet();
+
+    private DelegateTraversalStrategy traversalStrategy = new IntelligentDelegateTraversalStrategy();
+
+    public void setProperties(final Map<String, Object> config, final ComponentContext context) {
+        // Parse config to get a list of all the data stores we want to use.
+        Map<String, DelegateDataStoreSpec> specs = Maps.newConcurrentMap();
+        for (Map.Entry<String, Object> entry: config.entrySet()) {
+            if (DATASTORE.equals(entry.getKey())) {
+                Properties dsProps = parseProperties((String)entry.getValue());
+                dsProps.put("homeDir", lookup(context, "repository.home"));
+                Optional<DelegateDataStoreSpec> spec = DelegateDataStoreSpec.createFromProperties(dsProps);
+                if (spec.isPresent()) {
+                    specs.put(spec.get().getBundleName(), spec.get());
+                }
+            }
+            else {
+                properties.put(entry.getKey(), entry.getValue());
+            }
+        }
+
     }
 
-    private Map<DataIdentifier, DataStore> dsMap = Maps.newConcurrentMap();
-
-    private Set<String> bundlesWithActiveDataStores = Sets.newHashSet();
-
-    private DataStoreSpecification defaultDelegateDataStoreSpec = null;
-    private Multimap<String, DataStoreSpecification> secondaryDelegateDataStoreSpecsByName = HashMultimap.create();
-    private Multimap<String, DataStoreSpecification> secondaryDelegateDataStoreSpecsByBundle = HashMultimap.create();
-
-    private DataStore defaultDelegateDataStore = null;
-    private Map<String, DataStore> secondaryDelegateDataStores = Maps.newConcurrentMap();
-
-    public Map<String, DataStore> getSecondaryDelegateDataStores() {
-        return this.secondaryDelegateDataStores;
+    private Properties parseProperties(final String props) {
+        Map<String, Object> cfgMap = Maps.newHashMap();
+        List<String> cfgPairs = Lists.newArrayList(props.split(","));
+        for (String s : cfgPairs) {
+            String[] parts = s.split(":");
+            if (parts.length != 2) continue;
+            cfgMap.put(parts[0], parts[1]);
+        }
+        Properties properties = new Properties();
+        properties.putAll(cfgMap);
+        return properties;
     }
 
-    void setDefaultDataStoreSpecification(final Properties properties) {
-        this.defaultDelegateDataStoreSpec = DataStoreSpecification.create(properties);
-    }
-
-    void addSecondaryDataStoreSpecification(final Properties properties) {
-        DataStoreSpecification spec = DataStoreSpecification.create(properties);
-        secondaryDelegateDataStoreSpecsByName.put(spec.dataStoreName, spec);
-        secondaryDelegateDataStoreSpecsByBundle.put(spec.bundleName, spec);
-    }
-
-    void addActiveDataStores(BundleContext context) {
+    void addActiveDataStores(final BundleContext context) {
         // Get a list of all the bundles now, and use the bundles to create any data stores pertaining
         // to bundles that are already active.
         for (Bundle bundle : context.getBundles()) {
             addDataStoresFromBundle(bundle);
-        }
-
-        if (null == defaultDelegateDataStore) {
-            LOG.error("Configuration error - CompositeDataStore cannot determine the default delegate data store");
         }
     }
 
@@ -91,37 +101,26 @@ public class CompositeDataStore implements DataStore, BundleListener, FrameworkL
     private void addDataStoresFromBundle(final Bundle bundle) {
         String bundleName = bundle.getSymbolicName();
         LOG.info("FDSS - Checking bundle {} for data stores", bundle.getSymbolicName());
-        if (defaultDelegateDataStoreSpec.bundleName.equals(bundleName)) {
-            LOG.info("FDSS - Found bundle {} for default data store", bundle.getSymbolicName());
-            if (null != defaultDelegateDataStore) {
-                LOG.warn("Configuration error - Attempted to create additional primary data store");
-            } else {
-                defaultDelegateDataStore = createDataStoreFromBundle(defaultDelegateDataStoreSpec, bundle);
-                bundlesWithActiveDataStores.add(bundle.getSymbolicName());
-            }
-        }
-        for (DataStoreSpecification spec : secondaryDelegateDataStoreSpecsByBundle.get(bundleName)) {
-            if (null != spec) {
-                LOG.info("FDSS - Found bundle {} for secondary data store", bundle.getSymbolicName());
-                DataStore ds = createDataStoreFromBundle(spec, bundle);
-                if (null != ds) {
-                    secondaryDelegateDataStores.put(spec.dataStoreName, ds);
-                    bundlesWithActiveDataStores.add(bundle.getSymbolicName());
-                }
+        if (dataStoreSpecsByBundleName.containsKey(bundleName)) {
+            DelegateDataStoreSpec spec = dataStoreSpecsByBundleName.get(bundleName);
+            DataStore ds = createDataStoreFromBundle(spec, bundle);
+            if (null != spec && null != ds) {
+                traversalStrategy.addDelegateDataStore(ds, spec);
+                bundlesWithActiveDataStores.add(bundle);
             }
         }
     }
 
-    private DataStore createDataStoreFromBundle(final DataStoreSpecification spec, final Bundle bundle) {
+    private DataStore createDataStoreFromBundle(final DelegateDataStoreSpec spec, final Bundle bundle) {
         LOG.info("FDSS - Trying to create data store with spec {} and bundle {}", spec, bundle.getSymbolicName());
         if (bundle.getState() == Bundle.ACTIVE) {
             try {
-                LOG.info("FDSS - Getting new class instance for {} from bundle {}", spec.packageName, bundle.getSymbolicName());
-                Class dsClass = bundle.loadClass(spec.packageName);
+                LOG.info("FDSS - Getting new class instance for {} from bundle {}", spec.getClassName(), bundle.getSymbolicName());
+                Class dsClass = bundle.loadClass(spec.getClassName());
                 DataStore ds = (DataStore) dsClass.newInstance();
                 try {
                     Method setPropertiesMethod = dsClass.getMethod("setProperties", Properties.class);
-                    setPropertiesMethod.invoke(ds, spec.properties);
+                    setPropertiesMethod.invoke(ds, spec.getProperties());
                     if (ds.getClass().getSimpleName().equals("OakCachingFDS")) {
                         // TODO:  This all needs to be fixed.  We need a way to
                         // delegate property construction of a data store to the
@@ -166,80 +165,101 @@ public class CompositeDataStore implements DataStore, BundleListener, FrameworkL
 
     @Override
     public DataRecord getRecordIfStored(DataIdentifier identifier) throws DataStoreException {
-        //return defaultDelegateDataStore.getRecordIfStored(identifier);
-        return dsMap.get(identifier).getRecordIfStored(identifier);
+        DataRecord result = null;
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator(identifier);
+        while (iter.hasNext()) {
+            result = iter.next().getRecordIfStored(identifier);
+            if (null != result) {
+                break;
+            }
+        }
+        return result;
     }
 
     @Override
     public DataRecord getRecord(DataIdentifier identifier) throws DataStoreException {
-        //return defaultDelegateDataStore.getRecord(identifier);
-        return dsMap.get(identifier).getRecord(identifier);
+        DataRecord result = null;
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator(identifier);
+        while (iter.hasNext()) {
+            result = iter.next().getRecord(identifier);
+            if (null != result) {
+                break;
+            }
+        }
+        return result;
     }
 
     @Override
     public DataRecord getRecordFromReference(String reference) throws DataStoreException {
-        //return defaultDelegateDataStore.getRecordFromReference(reference);
-        return dsMap.get(getIdentifierFromReference(reference)).getRecordFromReference(reference);
+        return getRecord(getIdentifierFromReference(reference));
     }
 
-    private static final Object lock = new Object();
-    private static boolean useDefault = true;
     @Override
     public DataRecord addRecord(InputStream stream) throws DataStoreException {
-        DataStore ds;
-        synchronized(lock) {
-            ds = useDefault ? defaultDelegateDataStore : secondaryDelegateDataStores.values().iterator().next();
-            useDefault = !useDefault;
-        }
-        DataRecord record = ds.addRecord(stream);
-        dsMap.put(record.getIdentifier(), ds);
-        return record;
+        DataStore dataStore = traversalStrategy.selectWritableDelegate(identifier);
+        return dataStore.addRecord(stream);
     }
 
     @Override
     public void updateModifiedDateOnAccess(long before) {
-        defaultDelegateDataStore.updateModifiedDateOnAccess(before);
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            ds.updateModifiedDateOnAccess(before);
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
+        while (iter.hasNext()) {
+            iter.next().updateModifiedDateOnAccess(before);;
         }
     }
 
     @Override
     public int deleteAllOlderThan(long min) throws DataStoreException {
-        int nDeleted = defaultDelegateDataStore.deleteAllOlderThan(min);
-
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            nDeleted += ds.deleteAllOlderThan(min);
+        // Attempt to delete all records in all writable delegates older than min.
+        // First thrown data store exception kills the whole thing.
+        Iterator<DataStore> iter = traversalStrategy.getWritableDelegateIterator();
+        int nDeleted = 0;
+        while (iter.hasNext()) {
+            nDeleted += iter.next().deleteAllOlderThan(min);
         }
-
         return nDeleted;
     }
 
     @Override
     public Iterator<DataIdentifier> getAllIdentifiers() throws DataStoreException {
-        //return defaultDelegateDataStore.getAllIdentifiers();
-        Iterator<DataIdentifier> iter = defaultDelegateDataStore.getAllIdentifiers();
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            iter = Iterators.concat(iter, ds.getAllIdentifiers());
+        // Attempt to iterate through all identifiers in all delegates.
+        // First thrown data store exception kills the whole thing.
+        Iterator<DataIdentifier> result = null;
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
+        while (iter.hasNext()) {
+            if (null == result) {
+                result = iter.next().getAllIdentifiers();
+            }
+            else {
+                result = Iterators.concat(result, iter.next().getAllIdentifiers());
+            }
         }
-        return iter;
+        return result;
     }
 
     @Override
     public void init(String homeDir) throws RepositoryException {
-        defaultDelegateDataStore.init(homeDir);
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            ds.init(homeDir);
+        // Attempt to initialize all delegates.
+        // First thrown repository exception kills the whole thing.
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
+        while (iter.hasNext()) {
+            iter.next().init(homeDir);
         }
     }
 
     @Override
     public int getMinRecordLength() {
-        int minRecordLength = defaultDelegateDataStore.getMinRecordLength();
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            int smin = ds.getMinRecordLength();
-            if (smin < minRecordLength) {
-                minRecordLength = smin;
+        int minRecordLength = -1;
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
+        while (iter.hasNext()) {
+            if (-1 == minRecordLength) {
+                minRecordLength = iter.next().getMinRecordLength();
+            }
+            else {
+                int smin = iter.next().getMinRecordLength();
+                if (smin < minRecordLength) {
+                    minRecordLength = smin;
+                }
             }
         }
         return minRecordLength;
@@ -247,17 +267,32 @@ public class CompositeDataStore implements DataStore, BundleListener, FrameworkL
 
     @Override
     public void close() throws DataStoreException {
-        defaultDelegateDataStore.close();
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            ds.close();
+        // Attempt to close all delegates.
+        // If an exception is thrown, catch it and continue trying to
+        // close the remaining delegates.
+        // Rethrow the first caught exception if there is one.
+        List<DataStoreException> exceptionsCaught = Lists.newArrayList();
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
+        while (iter.hasNext()) {
+            try {
+                iter.next().close();
+            }
+            catch (DataStoreException dse) {
+                exceptionsCaught.add(dse);
+            }
+        }
+        if (! exceptionsCaught.isEmpty()) {
+            throw new DataStoreException(String.format("CompositeDataStore.close() caught %d close exceptions.  First exception:",
+                    exceptionsCaught.size()),
+                    exceptionsCaught.get(0));
         }
     }
 
     @Override
     public void clearInUse() {
-        defaultDelegateDataStore.clearInUse();
-        for (DataStore ds : secondaryDelegateDataStores.values()) {
-            ds.clearInUse();
+        Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
+        while (iter.hasNext()) {
+            iter.next().clearInUse();
         }
     }
 
@@ -268,105 +303,14 @@ public class CompositeDataStore implements DataStore, BundleListener, FrameworkL
             addDataStoresFromBundle(event.getBundle());
         }
         else if (event.getType() == BundleEvent.STOPPING) {
-            String bundleName = event.getBundle().getSymbolicName();
-            if (bundlesWithActiveDataStores.contains(bundleName)) {
-                if (bundleName.equals(defaultDelegateDataStoreSpec.bundleName)) {
-                    try {
-                        defaultDelegateDataStore.close();
-                    } catch (DataStoreException e) {
-                        e.printStackTrace();
-                    }
-                    defaultDelegateDataStore = null;
-                }
-                for (DataStoreSpecification spec : secondaryDelegateDataStoreSpecsByBundle.get(bundleName)) {
-                    DataStore toRemove = secondaryDelegateDataStores.remove(spec.dataStoreName);
-                    if (null != toRemove) {
-                        try {
-                            toRemove.close();
-                        } catch (DataStoreException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
+            traversalStrategy.removeDelegateDataStoresForBundle(event.getBundle());
         }
     }
 
     @Override
     public void frameworkEvent(FrameworkEvent event) {
-        if (event.getType() == FrameworkEvent.STARTED) {
-            // Check for bundles
-            if (bundlesWithActiveDataStores.size() != secondaryDelegateDataStores.size() + 1) {
-                if (null == defaultDelegateDataStore) {
-                    LOG.error("Framework started, but no default delegate data store was started");
-                }
-                else {
-                    for (String bundleName : secondaryDelegateDataStoreSpecsByBundle.keySet()) {
-                        if (! bundlesWithActiveDataStores.contains(bundleName)) {
-                            LOG.warn("Framework started, but secondary data store {} was not started", bundleName);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private enum DataStoreSpecification {
-        FILE_DATA_STORE (
-                "FileDataStore",
-                "org.apache.jackrabbit.oak.plugins.blob.datastore.OakCachingFDS",
-                "org.apache.jackrabbit.oak-core"
-        ),
-        S3_DATA_STORE (
-                "S3DataStore",
-                "org.apache.jackrabbit.oak.blob.cloud.aws.s3.SharedS3DataStore",
-                "org.apache.jackrabbit.oak-blob-cloud"
-        ),
-        AZURE_DATA_STORE (
-                "AzureDataStore",
-                "org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStore",
-                "org.apache.jackrabbit.oak-blob-cloud-azure"
-        );
-
-        private final String dataStoreName;
-        private final String packageName;
-        private final String bundleName;
-
-        private Properties properties = new Properties();
-
-        DataStoreSpecification(final String dataStoreName,
-                               final String packageName,
-                               final String bundleName) {
-            this.dataStoreName = dataStoreName;
-            this.packageName = packageName;
-            this.bundleName = bundleName;
-        }
-
-        @Override
-        public String toString() {
-            return dataStoreName;
-        }
-
-        private DataStoreSpecification withProperties(final Properties properties) {
-            this.properties.putAll(properties);
-            return this;
-        }
-
-        static DataStoreSpecification create(final Properties properties) {
-            final String dataStoreName = properties.getProperty("dataStoreName");
-            if (null == dataStoreName) {
-                LOG.warn("No 'dataStoreName' property specified for data store in config; cannot create data store");
-            }
-            else {
-                if (DataStoreSpecification.FILE_DATA_STORE.dataStoreName.equals(dataStoreName)) {
-                    return DataStoreSpecification.FILE_DATA_STORE.withProperties(properties);
-                } else if (DataStoreSpecification.S3_DATA_STORE.dataStoreName.equals(dataStoreName)) {
-                    return DataStoreSpecification.S3_DATA_STORE.withProperties(properties);
-                } else if (DataStoreSpecification.AZURE_DATA_STORE.dataStoreName.equals(dataStoreName)) {
-                    return DataStoreSpecification.AZURE_DATA_STORE.withProperties(properties);
-                }
-            }
-            return null;
+        if (event.getType() == FrameworkEvent.STARTED && ! traversalStrategy.hasDelegate()) {
+            LOG.error("Framework started, but no delegate data stores were started");
         }
     }
 }
