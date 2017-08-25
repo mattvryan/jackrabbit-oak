@@ -115,23 +115,23 @@ public class DelegateDataStoreSpec {
     private final DataStoreBundleName bundleName;
     private final Properties properties;
     private final boolean readOnly;
-    private final boolean coldStorage;
-    private final Optional<DelegateDataStoreFilter> filter;
+    //private final boolean coldStorage;
+    //private final Optional<DelegateDataStoreFilter> filter;
 
     private DelegateDataStoreSpec(final DataStoreName dataStoreName,
                                   final DataStoreClassName className,
                                   final DataStoreBundleName bundleName,
                                   final Properties properties,
-                                  final boolean readOnly,
-                                  final boolean coldStorage,
-                                  final DelegateDataStoreFilter filter) {
+                                  final boolean readOnly) {
+                                  //final boolean coldStorage,
+                                  //final DelegateDataStoreFilter filter) {
         this.dataStoreName = dataStoreName;
         this.className = className;
         this.bundleName = bundleName;
         this.properties = properties;
         this.readOnly = readOnly;
-        this.coldStorage = coldStorage;
-        this.filter = Optional.ofNullable(filter);
+        //this.coldStorage = coldStorage;
+        //this.filter = Optional.ofNullable(filter);
     }
 
     static Optional<DelegateDataStoreSpec> createFromProperties(final Properties properties) {
@@ -156,9 +156,9 @@ public class DelegateDataStoreSpec {
                         className,
                         bundleName,
                         properties,
-                        Boolean.getBoolean(properties.getProperty("readOnly", "false")),
-                        Boolean.getBoolean(properties.getProperty("coldStorage", "false")),
-                        DelegateDataStoreFilter.create((String)properties.get("filter"))
+                        Boolean.getBoolean(properties.getProperty("readOnly", "false"))
+                        //Boolean.getBoolean(properties.getProperty("coldStorage", "false")),
+                        //DelegateDataStoreFilter.create((String)properties.get("filter"))
                 ));
             }
             else {
@@ -187,19 +187,27 @@ public class DelegateDataStoreSpec {
         return properties;
     }
 
+    public void addProperty(final Object key, final Object value) {
+        properties.put(key, value);
+    }
+
+    public void removeProperty(final Object key) {
+        properties.remove(key);
+    }
+
     public boolean isReadOnly() {
         return readOnly;
     }
 
-    public boolean isColdStorage() {
-        return coldStorage;
-    }
+    //public boolean isColdStorage() {
+    //    return coldStorage;
+    //}
 
-    public boolean hasFilter() {
-        return filter.isPresent();
-    }
+    //public boolean hasFilter() {
+    //    return filter.isPresent();
+    //}
 
-    public DelegateDataStoreFilter getFilter() {
-        return filter.orElse(DelegateDataStoreFilter.emptyFilter());
-    }
+    //public DelegateDataStoreFilter getFilter() {
+    //    return filter.orElse(DelegateDataStoreFilter.emptyFilter());
+    //}
 }

@@ -19,19 +19,6 @@
 
 package org.apache.jackrabbit.oak.blob.composite;
 
-import org.apache.jackrabbit.core.data.DataIdentifier;
-import org.apache.jackrabbit.core.data.DataStore;
-import org.osgi.framework.Bundle;
-
-import java.util.Iterator;
-
-public interface DelegateTraversalStrategy {
-    void addDelegateDataStore(final DataStore ds, final DelegateDataStoreSpec spec);
-    void removeDelegateDataStoresForBundle(final Bundle bundle);
-    boolean hasDelegate();
-    DataStore selectWritableDelegate(final DataIdentifier identifier);
-    Iterator<DataStore> getWritableDelegateIterator(final DataIdentifier identifier);
-    Iterator<DataStore> getWritableDelegateIterator();
-    Iterator<DataStore> getDelegateIterator(final DataIdentifier identifier);
-    Iterator<DataStore> getDelegateIterator();
+public interface DelegateMinRecordLengthChooser {
+    int getMinRecordLength(DelegateTraversal traversalStrategy);
 }

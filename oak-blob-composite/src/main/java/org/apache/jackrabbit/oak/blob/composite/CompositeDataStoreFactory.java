@@ -29,9 +29,6 @@ import javax.jcr.RepositoryException;
 import java.util.Map;
 
 public class CompositeDataStoreFactory implements DataStoreFactory {
-    private static final String DATASTORE_PRIMARY = "datastore.primary";
-    private static final String DATASTORE_SECONDARY = "datastore.secondary";
-
     @Override
     public DataStore createDataStore(ComponentContext context,
                                      Map<String, Object> config,

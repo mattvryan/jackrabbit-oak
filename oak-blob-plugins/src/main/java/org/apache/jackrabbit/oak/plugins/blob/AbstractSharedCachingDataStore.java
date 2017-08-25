@@ -18,43 +18,29 @@
  */
 package org.apache.jackrabbit.oak.plugins.blob;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.security.DigestOutputStream;
-import java.security.MessageDigest;
-import java.util.Iterator;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
-import javax.annotation.Nullable;
-
 import com.google.common.base.Function;
-import com.google.common.base.Stopwatch;
 import com.google.common.cache.CacheLoader;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
-import com.google.common.io.Closeables;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.jackrabbit.core.data.AbstractDataStore;
-import org.apache.jackrabbit.core.data.DataIdentifier;
-import org.apache.jackrabbit.core.data.DataRecord;
-import org.apache.jackrabbit.core.data.DataStoreException;
-import org.apache.jackrabbit.core.data.MultiDataStoreAware;
+import org.apache.jackrabbit.core.data.*;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.TypedDataStore;
 import org.apache.jackrabbit.oak.spi.blob.AbstractDataRecord;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
-import org.apache.jackrabbit.util.TransientFileFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.jackrabbit.oak.spi.blob.BlobOptions.UploadType.SYNCHRONOUS;
@@ -148,7 +134,7 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
         }
         path = FilenameUtils.normalizeNoEndSeparator(new File(path).getAbsolutePath());
         checkArgument(stagingSplitPercentage >= 0 && stagingSplitPercentage <= 50,
-            "Staging percentage cache should be between 0 and 50");
+                "Staging percentage cache should be between 0 and 50");
 
         this.rootDirectory = new File(path);
         this.tmp = new File(rootDirectory, "tmp");
@@ -218,25 +204,28 @@ public abstract class AbstractSharedCachingDataStore extends AbstractDataStore
     @Override
     public DataRecord addRecord(InputStream inputStream, BlobOptions blobOptions)
         throws DataStoreException {
-        Stopwatch watch = Stopwatch.createStarted();
+        //Stopwatch watch = Stopwatch.createStarted();
         try {
-            TransientFileFactory fileFactory = TransientFileFactory.getInstance();
-            File tmpFile = fileFactory.createTransientFile("upload", null, tmp);
-
-            // Copy the stream to the temporary file and calculate the
-            // stream length and the message digest of the stream
-            MessageDigest digest = MessageDigest.getInstance(DIGEST);
-            OutputStream output = new DigestOutputStream(new FileOutputStream(tmpFile), digest);
-            long length = 0;
-            try {
-                length = IOUtils.copyLarge(inputStream, output);
-            } finally {
-                output.close();
-            }
-
-            DataIdentifier identifier = new DataIdentifier(encodeHexString(digest.digest()));
-            LOG.debug("SHA-256 of [{}], length =[{}] took [{}] ms ", identifier, length,
-                watch.elapsed(TimeUnit.MILLISECONDS));
+//            TransientFileFactory fileFactory = TransientFileFactory.getInstance();
+//            File tmpFile = fileFactory.createTransientFile("upload", null, tmp);
+//
+//            // Copy the stream to the temporary file and calculate the
+//            // stream length and the message digest of the stream
+//            MessageDigest digest = MessageDigest.getInstance(DIGEST);
+//            OutputStream output = new DigestOutputStream(new FileOutputStream(tmpFile), digest);
+//            long length = 0;
+//            try {
+//                length = IOUtils.copyLarge(inputStream, output);
+//            } finally {
+//                output.close();
+//            }
+//
+//            DataIdentifier identifier = new DataIdentifier(encodeHexString(digest.digest()));
+//            LOG.debug("SHA-256 of [{}], length =[{}] took [{}] ms ", identifier, length,
+//                    watch.elapsed(TimeUnit.MILLISECONDS));
+            DataIdentifierCreationResult result = DataIdentifierFactory.createIdentifier(inputStream, tmp);
+            DataIdentifier identifier = result.getIdentifier();
+            File tmpFile = result.getTmpFile();
 
             // asynchronously stage for upload if the size limit of staging cache permits
             // otherwise add to backend
