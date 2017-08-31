@@ -67,9 +67,20 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     public void setProperties(final Map<String, Object> config, final ComponentContext context) {
         // Parse config to get a list of all the data stores we want to use.
         for (Map.Entry<String, Object> entry: config.entrySet()) {
-            if (DATASTORE.equals(entry.getKey())) {
+            if (entry.getKey().startsWith(DATASTORE)) {
                 Properties dsProps = parseProperties((String)entry.getValue());
-                dsProps.put("homeDir", lookup(context, "repository.home"));
+                if (! dsProps.containsKey("homeDir")) {
+                    String homeDir = lookup(context, "repository.home");
+                    if (null != homeDir) {
+                        dsProps.put("homeDir", homeDir);
+                    }
+                    else {
+                        homeDir = lookup(context, "path");
+                        if (null != homeDir) {
+                            dsProps.put("homeDir", homeDir);
+                        }
+                    }
+                }
                 Optional<DelegateDataStoreSpec> spec = DelegateDataStoreSpec.createFromProperties(dsProps);
                 if (spec.isPresent()) {
                     dataStoreSpecsByBundleName.put(spec.get().getBundleName(), spec.get());
@@ -92,6 +103,13 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
         }
         Properties properties = new Properties();
         properties.putAll(cfgMap);
+        if (! properties.containsKey("homeDir")) {
+            if (properties.containsKey("repository.home")) {
+                properties.put("homeDir", properties.getProperty("repository.home"));
+            } else if (properties.containsKey("path")) {
+                properties.put("homeDir", properties.getProperty("path"));
+            }
+        }
         return properties;
     }
 
