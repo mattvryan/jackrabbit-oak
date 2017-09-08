@@ -54,7 +54,7 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     private static Logger LOG = LoggerFactory.getLogger(CompositeDataStore.class);
 
     protected Properties properties = new Properties();
-    private Map<String, DelegateDataStoreSpec> dataStoreSpecsByBundleName = Maps.newConcurrentMap();
+    private Map<String, List<DelegateDataStoreSpec>> dataStoreSpecsByBundleName = Maps.newConcurrentMap();
 
     private Set<Bundle> bundlesWithActiveDataStores = Sets.newHashSet();
 
@@ -67,7 +67,9 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     public void setProperties(final Map<String, Object> config, final ComponentContext context) {
         // Parse config to get a list of all the data stores we want to use.
         for (Map.Entry<String, Object> entry: config.entrySet()) {
+            LOG.debug("Read configuration entry {}:{}", entry.getKey(), entry.getValue());
             if (entry.getKey().startsWith(DATASTORE)) {
+                LOG.debug("{} is a delegate datastore definition", entry.getKey());
                 Properties dsProps = parseProperties((String)entry.getValue());
                 if (! dsProps.containsKey("homeDir")) {
                     String homeDir = lookup(context, "repository.home");
@@ -81,9 +83,17 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
                         }
                     }
                 }
-                Optional<DelegateDataStoreSpec> spec = DelegateDataStoreSpec.createFromProperties(dsProps);
-                if (spec.isPresent()) {
-                    dataStoreSpecsByBundleName.put(spec.get().getBundleName(), spec.get());
+                Optional<DelegateDataStoreSpec> specOpt = DelegateDataStoreSpec.createFromProperties(dsProps);
+                if (specOpt.isPresent()) {
+                    DelegateDataStoreSpec spec = specOpt.get();
+                    LOG.debug("Generated spec '{}' from configuration '{}'", spec.toString(), entry.getValue());
+                    if (! dataStoreSpecsByBundleName.containsKey(spec.getBundleName())) {
+                        dataStoreSpecsByBundleName.put(spec.getBundleName(), Lists.newArrayList());
+                    }
+                    dataStoreSpecsByBundleName.get(spec.getBundleName()).add(spec);
+                }
+                else {
+                    LOG.debug("Could not generate spec from configuration '{}'", entry.getValue());
                 }
             }
             else {
@@ -129,22 +139,23 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
      */
     private void addDataStoresFromBundle(final Bundle bundle) {
         String bundleName = bundle.getSymbolicName();
-        LOG.info("FDSS - Checking bundle {} for data stores", bundle.getSymbolicName());
         if (dataStoreSpecsByBundleName.containsKey(bundleName)) {
-            DelegateDataStoreSpec spec = dataStoreSpecsByBundleName.get(bundleName);
-            DataStore ds = createDataStoreFromBundle(spec, bundle);
-            if (null != spec && null != ds) {
-                traversalStrategy.addDelegateDataStore(ds, spec);
-                bundlesWithActiveDataStores.add(bundle);
+            List<DelegateDataStoreSpec> specs = dataStoreSpecsByBundleName.get(bundleName);
+            for (DelegateDataStoreSpec spec : specs) {
+                DataStore ds = createDataStoreFromBundle(spec, bundle);
+                if (null != spec && null != ds) {
+                    traversalStrategy.addDelegateDataStore(ds, spec);
+                    bundlesWithActiveDataStores.add(bundle);
+                }
             }
         }
     }
 
     private DataStore createDataStoreFromBundle(final DelegateDataStoreSpec spec, final Bundle bundle) {
-        LOG.info("FDSS - Trying to create data store with spec {} and bundle {}", spec, bundle.getSymbolicName());
+        LOG.info("Trying to create data store with spec {} and bundle {}", spec, bundle.getSymbolicName());
         if (bundle.getState() == Bundle.ACTIVE) {
             try {
-                LOG.info("FDSS - Getting new class instance for {} from bundle {}", spec.getClassName(), bundle.getSymbolicName());
+                LOG.info("Getting new class instance for {} from bundle {}", spec.getClassName(), bundle.getSymbolicName());
                 Class dsClass = bundle.loadClass(spec.getClassName());
                 DataStore ds = (DataStore) dsClass.newInstance();
                 try {
@@ -157,9 +168,10 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
                         String cs = spec.getProperties().getProperty("cacheSize", null);
                         long cacheSize = null == cs ? 0L : Long.parseLong(cs);
                         String fsBackendPath = spec.getProperties().getProperty("path", null);
-                        fsBackendPath = null==fsBackendPath ? spec.getProperties().getProperty("homeDir", null) :
-                                spec.getProperties().getProperty("homeDir") + fsBackendPath;
-                        //spec.properties.remove("path");
+                        if (null == fsBackendPath) {
+                            fsBackendPath = spec.getProperties().getProperty("homeDir", null);
+                        }
+                      //spec.properties.remove("path");
                         spec.removeProperty("path");
                         //spec.properties.put("fsBackendPath", fsBackendPath);
                         spec.addProperty("fsBackendPath", fsBackendPath);
@@ -172,6 +184,15 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
                             //spec.properties.put("path", cachePath);
                             spec.addProperty("path", cachePath);
                         }
+                    }
+
+                    Properties specProps = spec.getProperties();
+                    String path = specProps.containsKey("path") ? specProps.getProperty("path") :
+                            (specProps.containsKey("repository.home") ? specProps.getProperty("repository.home") :
+                                    specProps.getProperty("homeDir"));
+                    if (null != path) {
+                        Method setPathMethod = dsClass.getMethod("setPath", String.class);
+                        setPathMethod.invoke(ds, path);
                     }
                 }
                 catch (NoSuchMethodException | InvocationTargetException e) { }
@@ -201,18 +222,25 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     @Override
     public void init(String homeDir) throws RepositoryException {
         if (path == null) {
-            path = homeDir + "/repository/compositeds";
+            path = homeDir + "/compositeds";
         }
         path = FilenameUtils.normalizeNoEndSeparator(new File(path).getAbsolutePath());
+        LOG.debug("Root path is {}", path);
         this.rootDirectory = new File(path);
         this.tmp = new File(rootDirectory, "tmp");
+        if (! this.tmp.exists() && ! this.tmp.mkdirs() ) {
+            LOG.warn("Unable to create temporary directory");
+        }
 
         // Attempt to initialize all delegates.
+        LOG.debug("Using traversal strategy: {}", traversalStrategy);
         Iterator<DataStore> iter = traversalStrategy.getDelegateIterator();
         RepositoryException aggregateException = null;
         while (iter.hasNext()) {
+            DataStore ds = iter.next();
+            LOG.debug("Attempting to initialize {}", ds);
             try {
-                iter.next().init(homeDir);
+                ds.init(homeDir);
             }
             catch (RepositoryException e) {
                 if (null == aggregateException) {
@@ -618,7 +646,6 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     @Override
     public void bundleChanged(BundleEvent event) {
         if (event.getType() == BundleEvent.STARTED) {
-            LOG.info("FDSS - Bundle {} started, checking for data stores", event.getBundle().getSymbolicName());
             addDataStoresFromBundle(event.getBundle());
         }
         else if (event.getType() == BundleEvent.STOPPING) {
