@@ -52,6 +52,16 @@ public class IntelligentDelegateTraversal implements DelegateTraversal {
     private DelegateMinRecordLengthChooser minRecordLengthChooser = new GuaranteedMinRecordLengthChooser();
 
     @Override
+    public String toString() {
+        return String.format("Strategy: %s, data store bundles: %s, writable data stores: %s, readonly data stores: %s, rec len chooser: %s",
+                this.getClass().getSimpleName(),
+                dataStoresByBundleName,
+                nonFilteredWritableDataStores,
+                nonFilteredReadOnlyDataStores,
+                minRecordLengthChooser.getClass().getSimpleName());
+    }
+
+    @Override
     public void addDelegateDataStore(final DataStore ds, final DelegateDataStoreSpec spec) {
 //        if (spec.isColdStorage()) {
 //            if (spec.hasFilter()) {
@@ -108,8 +118,12 @@ public class IntelligentDelegateTraversal implements DelegateTraversal {
     @Override
     public DataStore selectWritableDelegate(final DataIdentifier identifier) {
         Iterator<DataStore> iter = getDelegateIterator(identifier, DelegateTraversalOptions.RW_ONLY);
+        DataStore firstWritableDelegate = null;
         while (iter.hasNext()) {
             DataStore writableDelegate = iter.next();
+            if (null == firstWritableDelegate) {
+                firstWritableDelegate = writableDelegate;
+            }
             try {
                 if (null != writableDelegate.getRecordIfStored(identifier)) {
                     return writableDelegate;
@@ -119,8 +133,10 @@ public class IntelligentDelegateTraversal implements DelegateTraversal {
                 LOG.warn("Unable to access delegate data store while selecting writable delegate", dse);
             }
         }
-        LOG.error("No writable delegates configured - could not select a writable delegate");
-        return null;
+        if (null == firstWritableDelegate) {
+            LOG.error("No writable delegates configured - could not select a writable delegate");
+        }
+        return firstWritableDelegate;
     }
 
     @Override
