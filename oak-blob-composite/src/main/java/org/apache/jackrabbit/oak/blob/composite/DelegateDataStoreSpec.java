@@ -156,8 +156,8 @@ public class DelegateDataStoreSpec {
                         className,
                         bundleName,
                         properties,
-                        Boolean.getBoolean(properties.getProperty("readOnly", "false"))
-                        //Boolean.getBoolean(properties.getProperty("coldStorage", "false")),
+                        Boolean.parseBoolean(properties.getProperty("readOnly", "false"))
+                        //Boolean.parseBoolean(properties.getProperty("coldStorage", "false")),
                         //DelegateDataStoreFilter.create((String)properties.get("filter"))
                 ));
             }
@@ -169,6 +169,12 @@ public class DelegateDataStoreSpec {
         {
             return Optional.empty();
         }
+    }
+
+    @Override
+    public String toString() {
+        return String.format("DataStoreName=%s, ClassName=%s, BundleName=%s, readOnly=%s, properties=%s",
+                dataStoreName, className, bundleName, Boolean.toString(readOnly), properties);
     }
 
     public String getDataStoreName() {
