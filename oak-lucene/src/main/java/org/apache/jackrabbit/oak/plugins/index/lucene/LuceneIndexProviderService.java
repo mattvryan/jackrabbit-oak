@@ -36,6 +36,7 @@ import javax.annotation.Nonnull;
 import javax.management.NotCompliantMBeanException;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.felix.scr.annotations.Activate;
@@ -66,6 +67,7 @@ import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.ExternalObserverBui
 import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.LocalIndexObserver;
 import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.LuceneJournalPropertyService;
 import org.apache.jackrabbit.oak.plugins.index.lucene.hybrid.NRTIndexFactory;
+import org.apache.jackrabbit.oak.plugins.index.lucene.property.PropertyIndexCleaner;
 import org.apache.jackrabbit.oak.plugins.index.lucene.reader.DefaultIndexReaderFactory;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.spi.commit.BackgroundObserver;
@@ -249,6 +251,16 @@ public class LuceneIndexProviderService {
                     "Cleanup implies purging index blobs marked as deleted earlier during some indexing cycle."
     )
     private static final String PROP_NAME_DELETED_BLOB_COLLECTION_DEFAULT_INTERVAL = "deletedBlobsCollectionInterval";
+
+    private static final int PROP_INDEX_CLEANER_INTERVAL_DEFAULT = 10*60;
+    @Property(
+            intValue = PROP_INDEX_CLEANER_INTERVAL_DEFAULT,
+            label = "Property Index Cleaner Interval (seconds)",
+            description = "Cleaner interval time (in seconds) for synchronous property indexes configured as " +
+                    "part of lucene indexes"
+    )
+    private static final String PROP_INDEX_CLEANER_INTERVAL = "propIndexCleanerIntervalInSecs";
+
     /**
      * Actively deleted blob must be deleted for at least this long (in seconds)
      */
@@ -331,6 +343,10 @@ public class LuceneIndexProviderService {
 
     private LuceneIndexEditorProvider editorProvider;
 
+    private IndexTracker tracker;
+
+    private PropertyIndexCleaner cleaner;
+
     @Activate
     private void activate(BundleContext bundleContext, Map<String, ?> config)
             throws NotCompliantMBeanException, IOException {
@@ -357,7 +373,7 @@ public class LuceneIndexProviderService {
         threadPoolSize = PropertiesUtil.toInteger(config.get(PROP_THREAD_POOL_SIZE), PROP_THREAD_POOL_SIZE_DEFAULT);
         initializeIndexDir(bundleContext, config);
         initializeExtractedTextCache(bundleContext, config);
-        IndexTracker tracker = createTracker(bundleContext, config);
+        tracker = createTracker(bundleContext, config);
         indexProvider = new LuceneIndexProvider(tracker, scorerFactory, augmentorFactory);
         initializeActiveBlobCollector(whiteboard, config);
         initializeLogging(config);
@@ -369,10 +385,11 @@ public class LuceneIndexProviderService {
         registerIndexEditor(bundleContext, tracker, config);
         registerIndexInfoProvider(bundleContext);
         registerIndexImporterProvider(bundleContext);
+        registerPropertyIndexCleaner(config, bundleContext);
 
         oakRegs.add(registerMBean(whiteboard,
                 LuceneIndexMBean.class,
-                new LuceneIndexMBeanImpl(indexProvider.getTracker(), nodeStore, indexPathService, getIndexCheckDir()),
+                new LuceneIndexMBeanImpl(indexProvider.getTracker(), nodeStore, indexPathService, getIndexCheckDir(), cleaner),
                 LuceneIndexMBean.TYPE,
                 "Lucene Index statistics"));
         registerGCMonitor(whiteboard, indexProvider.getTracker());
@@ -499,16 +516,20 @@ public class LuceneIndexProviderService {
 
     private IndexTracker createTracker(BundleContext bundleContext, Map<String, ?> config) throws IOException {
         boolean enableCopyOnRead = PropertiesUtil.toBoolean(config.get(PROP_COPY_ON_READ), true);
+        IndexTracker tracker;
         if (enableCopyOnRead){
             initializeIndexCopier(bundleContext, config);
             log.info("Enabling CopyOnRead support. Index files would be copied under {}", indexDir.getAbsolutePath());
             if (hybridIndex) {
                 nrtIndexFactory = new NRTIndexFactory(indexCopier, statisticsProvider);
             }
-            return new IndexTracker(new DefaultIndexReaderFactory(mountInfoProvider, indexCopier), nrtIndexFactory);
+            tracker = new IndexTracker(new DefaultIndexReaderFactory(mountInfoProvider, indexCopier), nrtIndexFactory);
+        } else {
+            tracker = new IndexTracker();
         }
 
-        return new IndexTracker();
+        tracker.setAsyncIndexInfoService(asyncIndexInfoService);
+        return tracker;
     }
 
     private void initializeIndexCopier(BundleContext bundleContext, Map<String, ?> config) throws IOException {
@@ -762,6 +783,24 @@ public class LuceneIndexProviderService {
 
         return timestamp;
     }
+
+
+    private void registerPropertyIndexCleaner(Map<String, ?> config, BundleContext bundleContext) {
+        int cleanerInterval = PropertiesUtil.toInteger(config.get(PROP_INDEX_CLEANER_INTERVAL),
+                PROP_INDEX_CLEANER_INTERVAL_DEFAULT);
+
+        if (cleanerInterval <= 0) {
+            log.info("Property index cleaner would not be registered");
+            return;
+        }
+
+        cleaner = new PropertyIndexCleaner(nodeStore, indexPathService, asyncIndexInfoService, statisticsProvider);
+        oakRegs.add(scheduleWithFixedDelay(whiteboard, cleaner,
+                ImmutableMap.of("scheduler.name", PropertyIndexCleaner.class.getName()),
+                cleanerInterval, true, true));
+        log.info("Property index cleaner configured to run every [{}] seconds", cleanerInterval);
+    }
+
 
     protected void bindNodeAggregator(QueryIndex.NodeAggregator aggregator) {
         this.nodeAggregator = aggregator;
