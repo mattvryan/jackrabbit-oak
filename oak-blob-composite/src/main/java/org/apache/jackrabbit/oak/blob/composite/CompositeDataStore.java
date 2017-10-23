@@ -19,36 +19,48 @@
 
 package org.apache.jackrabbit.oak.blob.composite;
 
+import com.google.common.collect.Lists;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.core.data.MultiDataStoreAware;
 import org.apache.jackrabbit.oak.plugins.blob.SharedDataStore;
+import org.apache.jackrabbit.oak.spi.blob.BlobStoreProvider;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.TypedDataStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
-import org.osgi.framework.BundleContext;
-import org.osgi.framework.BundleEvent;
-import org.osgi.framework.BundleListener;
-import org.osgi.framework.FrameworkEvent;
-import org.osgi.framework.FrameworkListener;
-import org.osgi.service.component.ComponentContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.jcr.RepositoryException;
 import java.io.File;
 import java.io.InputStream;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
+import java.util.Properties;
 
-public class CompositeDataStore implements DataStore, SharedDataStore, TypedDataStore, MultiDataStoreAware, BundleListener, FrameworkListener {
+public class CompositeDataStore implements DataStore, SharedDataStore, TypedDataStore, MultiDataStoreAware {
 
-    public void setProperties(final Map<String, Object> config, final ComponentContext context) {
+    private static Logger LOG = LoggerFactory.getLogger(CompositeDataStore.class);
+    private static final String DATASTORE = "datastore";
 
+    private Properties properties = new Properties();
+    private List<BlobStoreProvider> delegates = Lists.newArrayList();
+
+    public CompositeDataStore(final Properties properties) {
+        this.properties = properties;
     }
 
-    void addActiveDataStores(final BundleContext context) {
 
+    public void addDelegate(final CompositeDataStoreDelegate delegate) {
+        BlobStoreProvider ds = delegate.getDataStore();
+        delegates.add(ds);
+    }
+
+    public void removeDelegate(final BlobStoreProvider ds) {
+        if (ds instanceof DataStore) {
+            delegates.remove(ds);
+        }
     }
 
     @Override
@@ -159,15 +171,5 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     @Override
     public DataRecord addRecord(InputStream input, BlobOptions options) throws DataStoreException {
         return null;
-    }
-
-    @Override
-    public void bundleChanged(BundleEvent event) {
-
-    }
-
-    @Override
-    public void frameworkEvent(FrameworkEvent event) {
-
     }
 }

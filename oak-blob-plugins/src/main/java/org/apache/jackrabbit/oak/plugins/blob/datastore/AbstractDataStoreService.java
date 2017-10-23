@@ -19,12 +19,6 @@
 
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
-import java.util.Dictionary;
-import java.util.Hashtable;
-import java.util.Map;
-
-import javax.jcr.RepositoryException;
-
 import com.google.common.collect.Maps;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Reference;
@@ -33,10 +27,10 @@ import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.osgi.OsgiWhiteboard;
-import org.apache.jackrabbit.oak.spi.blob.stats.BlobStoreStatsMBean;
 import org.apache.jackrabbit.oak.plugins.blob.BlobStoreStats;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
+import org.apache.jackrabbit.oak.spi.blob.stats.BlobStoreStatsMBean;
 import org.apache.jackrabbit.oak.spi.whiteboard.CompositeRegistration;
 import org.apache.jackrabbit.oak.spi.whiteboard.Registration;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
@@ -47,6 +41,11 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.jcr.RepositoryException;
+import java.util.Dictionary;
+import java.util.Hashtable;
+import java.util.Map;
 
 import static org.apache.jackrabbit.oak.spi.blob.osgi.SplitBlobStoreService.PROP_SPLIT_BLOBSTORE;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
@@ -70,10 +69,42 @@ public abstract class AbstractDataStoreService {
 
     private DataStoreBlobStore dataStore;
 
+    protected ComponentContext context;
+    protected Map<String, Object> config;
+
     protected void activate(ComponentContext context, Map<String, Object> config) throws RepositoryException {
+        this.context = context;
+        this.config = config;
+
         // change to mutable map. may be modified in createDS call
         config = Maps.newHashMap(config);
+
         DataStore ds = createDataStore(context, config);
+        registerDataStore(ds);
+    }
+
+    protected void deactivate() throws DataStoreException {
+        if (reg != null) {
+            reg.unregister();
+        }
+
+        if (mbeanReg != null){
+            mbeanReg.unregister();
+        }
+
+        dataStore.close();
+    }
+
+    protected abstract DataStore createDataStore(ComponentContext context, Map<String, Object> config);
+
+    // Moving registerDataStore into a separate method allows child classes to perform
+    // a deferred registration of the data store.  In these cases child classes must
+    // remember to call registerDataStore when the deferred registration occurs.
+    protected void registerDataStore(final DataStore ds) throws RepositoryException {
+        if (null == ds) {
+            // deferred reg
+            return;
+        }
         boolean encodeLengthInId = PropertiesUtil.toBoolean(config.get(PROP_ENCODE_LENGTH), true);
         int cacheSizeInMB = PropertiesUtil.toInteger(config.get(PROP_CACHE_SIZE), DataStoreBlobStore.DEFAULT_CACHE_SIZE);
         String homeDir = lookup(context, PROP_HOME);
@@ -101,20 +132,6 @@ public abstract class AbstractDataStoreService {
 
         mbeanReg = registerMBeans(context.getBundleContext(), dataStore, stats);
     }
-
-    protected void deactivate() throws DataStoreException {
-        if (reg != null) {
-            reg.unregister();
-        }
-
-        if (mbeanReg != null){
-            mbeanReg.unregister();
-        }
-
-        dataStore.close();
-    }
-
-    protected abstract DataStore createDataStore(ComponentContext context, Map<String, Object> config);
 
     protected StatisticsProvider getStatisticsProvider(){
         return statisticsProvider;
