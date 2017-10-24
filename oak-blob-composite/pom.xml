@@ -104,6 +104,13 @@
       <artifactId>junit</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.apache.jackrabbit</groupId>
+      <artifactId>jackrabbit-data</artifactId>
+      <version>${jackrabbit.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
     <!--
     <dependency>
       <groupId>org.slf4j</groupId>
