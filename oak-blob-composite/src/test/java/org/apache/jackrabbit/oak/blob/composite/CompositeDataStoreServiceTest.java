@@ -21,16 +21,27 @@ package org.apache.jackrabbit.oak.blob.composite;
 
 import com.google.common.collect.Maps;
 import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.core.data.InMemoryDataStore;
+import org.apache.jackrabbit.oak.plugins.blob.BlobStoreStats;
+import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.apache.sling.testing.mock.osgi.junit.OsgiContext;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.osgi.framework.ServiceReference;
 
 import javax.jcr.RepositoryException;
 import java.io.File;
+import java.util.Iterator;
 import java.util.Map;
 
+import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertFalse;
+import static junit.framework.TestCase.assertNull;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
 public class CompositeDataStoreServiceTest {
     @Rule
@@ -39,11 +50,195 @@ public class CompositeDataStoreServiceTest {
     @Rule
     public final OsgiContext context = new OsgiContext();
 
+    private DataStoreProvider createDelegateDataStore() {
+        DataStoreProvider ds = new TestableDataStore();
+        return ds;
+    }
+
+    private Map<String, ?> createConfig() {
+        Map<String, ?> config = Maps.newHashMap();
+        return config;
+    }
+
+    private void verifyDelegateCount(Iterator<CompositeDataStoreDelegate> iter, int expectedCount) {
+        if (expectedCount > 0) {
+            assertTrue(iter.hasNext());
+            int actualCount = 0;
+            while (iter.hasNext()) {
+                ++actualCount;
+                iter.next();
+            }
+            assertEquals(expectedCount, actualCount);
+        } else {
+            assertFalse(iter.hasNext());
+        }
+    }
+
+    private void verifyRegistrationState(OsgiContext context, boolean shouldBeActive) {
+        ServiceReference ref = context.bundleContext().getServiceReference(CompositeDataStore.class.getName());
+        if (shouldBeActive) {
+            assertNotNull(ref);
+        } else {
+            assertNull(ref);
+        }
+    }
+
+    private void verifyActiveReg(OsgiContext context) { verifyRegistrationState(context, true); }
+    private void verifyInactiveReg(OsgiContext context) { verifyRegistrationState(context, false);}
+
     @Test
     public void testCreateDataStore() throws RepositoryException {
-        CompositeDataStoreService service = new CompositeDataStoreService();
+        CompositeDataStoreService service = new TestableCompositeDataStoreService();
+
+        service.addDelegateDataStore(
+                createDelegateDataStore(),
+                createConfig()
+        );
+
         Map<String, Object> config = Maps.newHashMap();
         DataStore ds = service.createDataStore(context.componentContext(), config);
         assertTrue(ds instanceof CompositeDataStore);
+
+        ServiceReference ref = context.bundleContext().getServiceReference(CompositeDataStore.class.getName());
+        assertNotNull(ref);
+    }
+
+    @Test
+    public void testCreateDataStoreWithoutActiveDelegatesReturnsNull() {
+        CompositeDataStoreService service = new TestableCompositeDataStoreService();
+
+        Map<String, Object> config = Maps.newHashMap();
+        DataStore ds = service.createDataStore(context.componentContext(), config);
+        assertNull(ds);
+
+        ServiceReference ref = context.bundleContext().getServiceReference(CompositeDataStore.class.getName());
+        assertNull(ref);
+    }
+
+    @Test
+    public void testCreateDataStoreDeferredDataStoreCreationWorks() {
+        CompositeDataStoreService service = new TestableCompositeDataStoreService();
+
+        Map<String, Object> config = Maps.newHashMap();
+        DataStore ds = service.createDataStore(context.componentContext(), config);
+        assertNull(ds);
+
+        ServiceReference ref = context.bundleContext().getServiceReference(CompositeDataStore.class.getName());
+        assertNull(ref);
+
+        service.addDelegateDataStore(
+                createDelegateDataStore(),
+                createConfig()
+        );
+
+        verifyDelegateCount(service.getDelegateIterator(), 1);
+        verifyActiveReg(context);
+    }
+
+    @Test
+    public void testCreateDataStoreDeferredDataStoreCreationIsAdditive() {
+        CompositeDataStoreService service = new TestableCompositeDataStoreService();
+
+        service.addDelegateDataStore(
+                createDelegateDataStore(),
+                createConfig()
+        );
+
+        Map<String, Object> config = Maps.newHashMap();
+        DataStore ds = service.createDataStore(context.componentContext(), config);
+        assertTrue(ds instanceof CompositeDataStore);
+
+        verifyDelegateCount(service.getDelegateIterator(), 1);
+        verifyActiveReg(context);
+
+        service.addDelegateDataStore(
+                createDelegateDataStore(),
+                createConfig()
+        );
+
+        assertEquals(ds, service.getDataStore());
+
+        verifyDelegateCount(service.getDelegateIterator(), 2);
+        verifyActiveReg(context);
+    }
+
+    @Test
+    public void testRemoveDelegateDataStoreUnregistersService() {
+        CompositeDataStoreService service = new TestableCompositeDataStoreService();
+
+        DataStoreProvider dsProvider = createDelegateDataStore();
+        service.addDelegateDataStore(
+                dsProvider,
+                createConfig()
+        );
+
+        Map<String, Object> config = Maps.newHashMap();
+        DataStore ds = service.createDataStore(context.componentContext(), config);
+        assertTrue(ds instanceof CompositeDataStore);
+
+        verifyDelegateCount(service.getDelegateIterator(), 1);
+        verifyActiveReg(context);
+
+        service.removeDelegateDataStore(dsProvider);
+
+        verifyDelegateCount(service.getDelegateIterator(), 0);
+        verifyInactiveReg(context);
+    }
+
+    @Test
+    public void testRemoveDelegateDataStoreTypeRemovesAllMatchingDelegates() {
+        CompositeDataStoreService service = new TestableCompositeDataStoreService();
+
+        DataStoreProvider ds1 = new TestableDataStore();
+        DataStoreProvider ds2 = new TestableDataStore();
+        DataStoreProvider ds3 = new OtherTestableBlobStore();
+
+        service.addDelegateDataStore(ds1, createConfig());
+        service.addDelegateDataStore(ds2, createConfig());
+        service.addDelegateDataStore(ds3, createConfig());
+
+        Map<String, Object> config = Maps.newHashMap();
+        DataStore ds = service.createDataStore(context.componentContext(), config);
+        assertTrue(ds instanceof CompositeDataStore);
+
+        verifyDelegateCount(service.getDelegateIterator(), 3);
+        verifyActiveReg(context);
+
+        service.removeDelegateDataStore(ds3);
+
+        verifyDelegateCount(service.getDelegateIterator(), 2);
+        verifyActiveReg(context);
+
+        service.addDelegateDataStore(ds3, createConfig());
+        service.removeDelegateDataStore(ds1);
+
+        verifyDelegateCount(service.getDelegateIterator(), 1);
+        verifyActiveReg(context);
+
+        service.removeDelegateDataStore(ds3);
+
+        verifyDelegateCount(service.getDelegateIterator(), 0);
+        verifyInactiveReg(context);
+    }
+
+    static class TestableCompositeDataStoreService extends CompositeDataStoreService {
+        @Override
+        protected BlobStoreStats getBlobStoreStats(StatisticsProvider sp) {
+            return mock(BlobStoreStats.class);
+        }
+    }
+
+    static class TestableDataStore extends InMemoryDataStore implements DataStoreProvider {
+        @Override
+        public DataStore getDataStore() {
+            return this;
+        }
+    }
+
+    static class OtherTestableBlobStore extends InMemoryDataStore implements DataStoreProvider {
+        @Override
+        public DataStore getDataStore() {
+            return this;
+        }
     }
 }

@@ -19,8 +19,10 @@
 
 package org.apache.jackrabbit.oak.spi.blob;
 
-public interface BlobStoreProvider {
+import org.apache.jackrabbit.core.data.DataStore;
+
+public interface DataStoreProvider {
     String ROLE = "role";
 
-    BlobStore getBlobStore();
+    DataStore getDataStore();
 }

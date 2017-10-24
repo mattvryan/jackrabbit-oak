@@ -20,7 +20,6 @@
 package org.apache.jackrabbit.oak.blob.composite;
 
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.ConfigurationPolicy;
 import org.apache.felix.scr.annotations.Reference;
@@ -29,7 +28,7 @@ import org.apache.felix.scr.annotations.ReferencePolicy;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreService;
-import org.apache.jackrabbit.oak.spi.blob.BlobStoreProvider;
+import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceRegistration;
@@ -44,7 +43,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 
 @Component(policy = ConfigurationPolicy.REQUIRE, name = CompositeDataStoreService.NAME)
 public class CompositeDataStoreService extends AbstractDataStoreService {
@@ -60,15 +58,25 @@ public class CompositeDataStoreService extends AbstractDataStoreService {
             policy = ReferencePolicy.DYNAMIC,
             bind = "addDelegateDataStore",
             unbind = "removeDelegateDataStore",
-            referenceInterface = BlobStoreProvider.class,
+            referenceInterface = DataStoreProvider.class,
             target="(!(service.pid=org.apache.jackrabbit.oak.plugins.blob.datastore.CompositeDataStore))"
     )
     private List<CompositeDataStoreDelegate> delegateDataStores = Lists.newArrayList();
-    private Set<BlobStoreProvider> dataStoresInUse = Sets.newConcurrentHashSet();
 
     @Override
     protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
+        if (null == super.context) {
+            super.context = context;
+        }
         // parse and save configuration here
+        if (null == super.config) {
+            super.config = config;
+        }
+        else {
+            for (Map.Entry<String, Object> entry : config.entrySet()) {
+                super.config.putIfAbsent(entry.getKey(), entry.getValue());
+            }
+        }
 
         registerCompositeDataStore();
 
@@ -88,13 +96,14 @@ public class CompositeDataStoreService extends AbstractDataStoreService {
         boolean needToRegisterDataStore = false;
         if (null == dataStore) {
             Properties properties = new Properties();
-            properties.putAll(config);
+            if (null != config) {
+                properties.putAll(config);
+            }
             dataStore = new CompositeDataStore(properties);
             needToRegisterDataStore = true;
         }
         for (CompositeDataStoreDelegate delegate : delegateDataStores) {
             dataStore.addDelegate(delegate);
-            dataStoresInUse.add(delegate.getDataStore());
         }
 
         BundleContext bundleContext = context.getBundleContext();
@@ -133,7 +142,7 @@ public class CompositeDataStoreService extends AbstractDataStoreService {
         }
     }
 
-    protected void addDelegateDataStore(final BlobStoreProvider ds, final Map<String, ?> props) {
+    protected void addDelegateDataStore(final DataStoreProvider ds, final Map<String, ?> props) {
         delegateDataStores.add(new CompositeDataStoreDelegate(ds, props));
         // Should we be able to add delegates even after this service is registered?
         if (context == null) {
@@ -145,20 +154,27 @@ public class CompositeDataStoreService extends AbstractDataStoreService {
         }
     }
 
-    protected void removeDelegateDataStore(final BlobStoreProvider ds) {
+    protected void removeDelegateDataStore(final DataStoreProvider ds) {
         dataStore.removeDelegate(ds);
 
-        Iterator<CompositeDataStoreDelegate> iter = delegateDataStores.iterator();
-        delegateDataStores.removeIf((CompositeDataStoreDelegate delegate) -> delegate.getDataStore() == ds);
+        delegateDataStores.removeIf((CompositeDataStoreDelegate delegate) -> delegate.getDataStore().getClass() == ds.getClass());
 
         if (context == null) {
             LOG.info("removeDelegateDataStore: context is null, delaying reconfiguration");
             return;
         }
 
-        if (dataStoreReg != null && dataStoresInUse.contains(ds)) {
+        if (dataStoreReg != null && delegateDataStores.isEmpty()) {
             unregisterCompositeDataStore();
         }
+    }
+
+    Iterator<CompositeDataStoreDelegate> getDelegateIterator() {
+        return delegateDataStores.iterator();
+    }
+
+    DataStore getDataStore() {
+        return dataStore;
     }
 
     @Override

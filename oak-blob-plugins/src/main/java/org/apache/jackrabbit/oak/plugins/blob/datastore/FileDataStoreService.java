@@ -25,7 +25,7 @@ import org.apache.felix.scr.annotations.ConfigurationPolicy;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
-import org.apache.jackrabbit.oak.spi.blob.BlobStoreProvider;
+import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
@@ -94,7 +94,7 @@ public class FileDataStoreService extends AbstractDataStoreService {
         delegateReg = context.getBundleContext().registerService(new String[] {
             AbstractSharedCachingDataStore.class.getName(),
             AbstractSharedCachingDataStore.class.getName(),
-                BlobStoreProvider.class.getName(),
+                DataStoreProvider.class.getName(),
         }, dataStore , config);
         return dataStore;
     }

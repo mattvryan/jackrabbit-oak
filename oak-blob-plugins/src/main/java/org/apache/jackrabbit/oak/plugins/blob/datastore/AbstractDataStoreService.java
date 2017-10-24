@@ -113,7 +113,7 @@ public abstract class AbstractDataStoreService {
         }
         PropertiesUtil.populate(ds, config, false);
         ds.init(homeDir);
-        BlobStoreStats stats = new BlobStoreStats(getStatisticsProvider());
+        BlobStoreStats stats = getBlobStoreStats(getStatisticsProvider());
         this.dataStore = new DataStoreBlobStore(ds, encodeLengthInId, cacheSizeInMB);
         this.dataStore.setBlobStatsCollector(stats);
         PropertiesUtil.populate(dataStore, config, false);
@@ -135,6 +135,10 @@ public abstract class AbstractDataStoreService {
 
     protected StatisticsProvider getStatisticsProvider(){
         return statisticsProvider;
+    }
+
+    protected BlobStoreStats getBlobStoreStats(StatisticsProvider statisticsProvider) {
+        return new BlobStoreStats(statisticsProvider);
     }
 
     protected String[] getDescription(){

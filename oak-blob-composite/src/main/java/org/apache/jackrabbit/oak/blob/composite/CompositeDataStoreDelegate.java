@@ -19,20 +19,20 @@
 
 package org.apache.jackrabbit.oak.blob.composite;
 
-import org.apache.jackrabbit.oak.spi.blob.BlobStoreProvider;
+import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
 
 import java.util.Map;
 
 public class CompositeDataStoreDelegate {
-    private final BlobStoreProvider ds;
+    private final DataStoreProvider ds;
     private final Map<String, ?> props;
 
-    public CompositeDataStoreDelegate(final BlobStoreProvider ds, final Map<String, ?> props) {
+    public CompositeDataStoreDelegate(final DataStoreProvider ds, final Map<String, ?> props) {
         this.ds = ds;
         this.props = props;
     }
 
-    public BlobStoreProvider getDataStore() {
+    public DataStoreProvider getDataStore() {
         return ds;
     }
 

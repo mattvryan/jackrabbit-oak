@@ -26,7 +26,7 @@ import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.core.data.MultiDataStoreAware;
 import org.apache.jackrabbit.oak.plugins.blob.SharedDataStore;
-import org.apache.jackrabbit.oak.spi.blob.BlobStoreProvider;
+import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.TypedDataStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
 import org.slf4j.Logger;
@@ -45,7 +45,7 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     private static final String DATASTORE = "datastore";
 
     private Properties properties = new Properties();
-    private List<BlobStoreProvider> delegates = Lists.newArrayList();
+    private List<DataStoreProvider> delegates = Lists.newArrayList();
 
     public CompositeDataStore(final Properties properties) {
         this.properties = properties;
@@ -53,11 +53,11 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
 
 
     public void addDelegate(final CompositeDataStoreDelegate delegate) {
-        BlobStoreProvider ds = delegate.getDataStore();
+        DataStoreProvider ds = delegate.getDataStore();
         delegates.add(ds);
     }
 
-    public void removeDelegate(final BlobStoreProvider ds) {
+    public void removeDelegate(final DataStoreProvider ds) {
         if (ds instanceof DataStore) {
             delegates.remove(ds);
         }
