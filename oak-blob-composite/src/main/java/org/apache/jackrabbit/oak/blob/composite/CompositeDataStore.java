@@ -26,9 +26,9 @@ import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.core.data.MultiDataStoreAware;
 import org.apache.jackrabbit.oak.plugins.blob.SharedDataStore;
-import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.TypedDataStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
+import org.apache.jackrabbit.oak.spi.blob.DataStoreProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,20 +47,26 @@ public class CompositeDataStore implements DataStore, SharedDataStore, TypedData
     private Properties properties = new Properties();
     private List<DataStoreProvider> delegates = Lists.newArrayList();
 
-    public CompositeDataStore(final Properties properties) {
+    CompositeDataStore(final Properties properties) {
         this.properties = properties;
     }
 
-
-    public void addDelegate(final CompositeDataStoreDelegate delegate) {
-        DataStoreProvider ds = delegate.getDataStore();
-        delegates.add(ds);
+    void addDelegate(final CompositeDataStoreDelegate delegate) {
+        String delegateRole = delegate.getRole();
+        if (null != delegateRole && properties.containsKey(delegate.getRole())) {
+            DataStoreProvider ds = delegate.getDataStore();
+            delegates.add(ds);
+        }
     }
 
-    public void removeDelegate(final DataStoreProvider ds) {
+    void removeDelegate(final DataStoreProvider ds) {
         if (ds instanceof DataStore) {
             delegates.remove(ds);
         }
+    }
+
+    Iterator<DataStoreProvider> getDelegateIterator() {
+        return delegates.iterator();
     }
 
     @Override
