@@ -51,12 +51,17 @@ public class CompositeDataStoreServiceTest {
     public final OsgiContext context = new OsgiContext();
 
     private DataStoreProvider createDelegateDataStore() {
-        DataStoreProvider ds = new TestableDataStore();
+        DataStoreProvider ds = new InMemoryDataStoreProvider();
         return ds;
     }
 
-    private Map<String, ?> createConfig() {
-        Map<String, ?> config = Maps.newHashMap();
+    private Map<String, Object> createConfig() {
+        return createConfig("localRole");
+    }
+
+    private Map<String, Object> createConfig(String role) {
+        Map<String, Object> config = Maps.newHashMap();
+        config.put(DataStoreProvider.ROLE, role);
         return config;
     }
 
@@ -189,13 +194,13 @@ public class CompositeDataStoreServiceTest {
     public void testRemoveDelegateDataStoreTypeRemovesAllMatchingDelegates() {
         CompositeDataStoreService service = new TestableCompositeDataStoreService();
 
-        DataStoreProvider ds1 = new TestableDataStore();
-        DataStoreProvider ds2 = new TestableDataStore();
-        DataStoreProvider ds3 = new OtherTestableBlobStore();
+        DataStoreProvider ds1 = new InMemoryDataStoreProvider();
+        DataStoreProvider ds2 = new InMemoryDataStoreProvider();
+        DataStoreProvider ds3 = new OtherInMemoryDataStoreProvider();
 
-        service.addDelegateDataStore(ds1, createConfig());
-        service.addDelegateDataStore(ds2, createConfig());
-        service.addDelegateDataStore(ds3, createConfig());
+        service.addDelegateDataStore(ds1, createConfig("local1"));
+        service.addDelegateDataStore(ds2, createConfig("local2"));
+        service.addDelegateDataStore(ds3, createConfig("remote1"));
 
         Map<String, Object> config = Maps.newHashMap();
         DataStore ds = service.createDataStore(context.componentContext(), config);
@@ -228,14 +233,7 @@ public class CompositeDataStoreServiceTest {
         }
     }
 
-    static class TestableDataStore extends InMemoryDataStore implements DataStoreProvider {
-        @Override
-        public DataStore getDataStore() {
-            return this;
-        }
-    }
-
-    static class OtherTestableBlobStore extends InMemoryDataStore implements DataStoreProvider {
+    static class OtherInMemoryDataStoreProvider extends InMemoryDataStore implements DataStoreProvider {
         @Override
         public DataStore getDataStore() {
             return this;

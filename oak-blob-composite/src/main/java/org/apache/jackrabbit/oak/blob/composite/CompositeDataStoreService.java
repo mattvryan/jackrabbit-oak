@@ -68,7 +68,7 @@ public class CompositeDataStoreService extends AbstractDataStoreService {
         if (null == super.context) {
             super.context = context;
         }
-        // parse and save configuration here
+
         if (null == super.config) {
             super.config = config;
         }
@@ -142,15 +142,20 @@ public class CompositeDataStoreService extends AbstractDataStoreService {
         }
     }
 
-    protected void addDelegateDataStore(final DataStoreProvider ds, final Map<String, ?> props) {
-        delegateDataStores.add(new CompositeDataStoreDelegate(ds, props));
-        // Should we be able to add delegates even after this service is registered?
-        if (context == null) {
-            LOG.info("addDelegateDataStore: context is null, delaying reconfiguration");
-            return;
-        }
-        if (dataStoreReg == null) {
-            registerCompositeDataStore();
+    protected void addDelegateDataStore(final DataStoreProvider ds, final Map<String, Object> config) {
+        CompositeDataStoreDelegate delegate = CompositeDataStoreDelegate.builder(ds)
+                .withConfig(config)
+                .build();
+        if (null != delegate) {
+            delegateDataStores.add(delegate);
+            // Should we be able to add delegates even after this service is registered?
+            if (context == null) {
+                LOG.info("addDelegateDataStore: context is null, delaying reconfiguration");
+                return;
+            }
+            if (dataStoreReg == null) {
+                registerCompositeDataStore();
+            }
         }
     }
 
