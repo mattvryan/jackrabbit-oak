@@ -23,11 +23,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>oak-parent</artifactId>
-<<<<<<< HEAD
     <version>1.8.4-SNAPSHOT</version>
-=======
-    <version>1.8.1.1-SNAPSHOT</version>
->>>>>>> 10e415958304274031c83c480ea4d050d88f73cc
     <relativePath>../oak-parent/pom.xml</relativePath>
   </parent>
 
