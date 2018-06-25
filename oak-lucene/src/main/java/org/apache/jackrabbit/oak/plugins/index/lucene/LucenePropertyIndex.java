@@ -18,10 +18,29 @@
  */
 package org.apache.jackrabbit.oak.plugins.index.lucene;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import javax.jcr.PropertyType;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.base.Predicates.notNull;
+import static com.google.common.collect.Lists.newArrayListWithCapacity;
+import static org.apache.jackrabbit.JcrConstants.JCR_MIXINTYPES;
+import static org.apache.jackrabbit.JcrConstants.JCR_PRIMARYTYPE;
+import static org.apache.jackrabbit.oak.api.Type.LONG;
+import static org.apache.jackrabbit.oak.api.Type.STRING;
+import static org.apache.jackrabbit.oak.commons.PathUtils.denotesRoot;
+import static org.apache.jackrabbit.oak.commons.PathUtils.getParentPath;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldNames.ANALYZED_FIELD_PREFIX;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.IndexDefinition.NATIVE_SORT_ORDER;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.VERSION;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.TermFactory.newAncestorTerm;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.TermFactory.newPathTerm;
+import static org.apache.jackrabbit.oak.plugins.memory.PropertyValues.newName;
+import static org.apache.jackrabbit.oak.spi.query.QueryConstants.JCR_PATH;
+import static org.apache.jackrabbit.oak.spi.query.QueryIndex.AdvancedQueryIndex;
+import static org.apache.jackrabbit.oak.spi.query.QueryIndex.NativeQueryIndex;
+import static org.apache.lucene.search.BooleanClause.Occur.MUST;
+import static org.apache.lucene.search.BooleanClause.Occur.MUST_NOT;
+import static org.apache.lucene.search.BooleanClause.Occur.SHOULD;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,6 +52,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+
+import javax.jcr.PropertyType;
 
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.FluentIterable;
@@ -49,6 +70,8 @@ import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.commons.PerfLogger;
 import org.apache.jackrabbit.oak.commons.json.JsopBuilder;
 import org.apache.jackrabbit.oak.commons.json.JsopWriter;
+import org.apache.jackrabbit.oak.plugins.index.Cursors;
+import org.apache.jackrabbit.oak.plugins.index.Cursors.PathCursor;
 import org.apache.jackrabbit.oak.plugins.index.lucene.IndexDefinition.IndexingRule;
 import org.apache.jackrabbit.oak.plugins.index.lucene.IndexPlanner.PlanResult;
 import org.apache.jackrabbit.oak.plugins.index.lucene.IndexPlanner.PropertyIndexResult;
@@ -60,16 +83,9 @@ import org.apache.jackrabbit.oak.plugins.index.lucene.util.MoreLikeThisHelper;
 import org.apache.jackrabbit.oak.plugins.index.lucene.util.PathStoredFieldVisitor;
 import org.apache.jackrabbit.oak.plugins.index.lucene.util.SpellcheckHelper;
 import org.apache.jackrabbit.oak.plugins.index.lucene.util.SuggestHelper;
+import org.apache.jackrabbit.oak.plugins.index.lucene.util.fv.SimSearchUtils;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyValues;
-import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextAnd;
-import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextContains;
-import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextExpression;
-import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextOr;
-import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextTerm;
-import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextVisitor;
 import org.apache.jackrabbit.oak.spi.query.Cursor;
-import org.apache.jackrabbit.oak.plugins.index.Cursors;
-import org.apache.jackrabbit.oak.plugins.index.Cursors.PathCursor;
 import org.apache.jackrabbit.oak.spi.query.Filter;
 import org.apache.jackrabbit.oak.spi.query.Filter.PropertyRestriction;
 import org.apache.jackrabbit.oak.spi.query.IndexRow;
@@ -77,6 +93,12 @@ import org.apache.jackrabbit.oak.spi.query.QueryConstants;
 import org.apache.jackrabbit.oak.spi.query.QueryIndex;
 import org.apache.jackrabbit.oak.spi.query.QueryIndex.AdvanceFulltextQueryIndex;
 import org.apache.jackrabbit.oak.spi.query.QueryLimits;
+import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextAnd;
+import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextContains;
+import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextExpression;
+import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextOr;
+import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextTerm;
+import org.apache.jackrabbit.oak.spi.query.fulltext.FullTextVisitor;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.NodeStateUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -123,29 +145,10 @@ import org.apache.lucene.search.postingshighlight.PostingsHighlighter;
 import org.apache.lucene.search.spell.SuggestWord;
 import org.apache.lucene.search.suggest.Lookup;
 import org.apache.lucene.util.Version;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.base.Predicates.notNull;
-import static com.google.common.collect.Lists.newArrayListWithCapacity;
-import static org.apache.jackrabbit.JcrConstants.JCR_MIXINTYPES;
-import static org.apache.jackrabbit.JcrConstants.JCR_PRIMARYTYPE;
-import static org.apache.jackrabbit.oak.api.Type.LONG;
-import static org.apache.jackrabbit.oak.api.Type.STRING;
-import static org.apache.jackrabbit.oak.commons.PathUtils.denotesRoot;
-import static org.apache.jackrabbit.oak.commons.PathUtils.getParentPath;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldNames.ANALYZED_FIELD_PREFIX;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.IndexDefinition.NATIVE_SORT_ORDER;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.VERSION;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.TermFactory.newAncestorTerm;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.TermFactory.newPathTerm;
-import static org.apache.jackrabbit.oak.plugins.memory.PropertyValues.newName;
-import static org.apache.jackrabbit.oak.spi.query.QueryConstants.JCR_PATH;
-import static org.apache.jackrabbit.oak.spi.query.QueryIndex.AdvancedQueryIndex;
-import static org.apache.jackrabbit.oak.spi.query.QueryIndex.NativeQueryIndex;
-import static org.apache.lucene.search.BooleanClause.Occur.*;
 
 /**
  * Provides a QueryIndex that does lookups against a Lucene-based index
@@ -860,9 +863,20 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
             if (query.startsWith("mlt?")) {
                 String mltQueryString = query.replace("mlt?", "");
                 if (reader != null) {
-                    Query moreLikeThis = MoreLikeThisHelper.getMoreLikeThis(reader, analyzer, mltQueryString);
-                    if (moreLikeThis != null) {
-                        qs.add(moreLikeThis);
+                    List<PropertyDefinition> sp = new LinkedList<>();
+                    for (IndexingRule r : defn.getDefinedRules()) {
+                        sp.addAll(r.getSimilarityProperties());
+                    }
+                    if (sp.isEmpty()) {
+                        Query moreLikeThis = MoreLikeThisHelper.getMoreLikeThis(reader, analyzer, mltQueryString);
+                        if (moreLikeThis != null) {
+                            qs.add(moreLikeThis);
+                        }
+                    } else {
+                        Query similarityQuery = SimSearchUtils.getSimilarityQuery(sp, reader, mltQueryString);
+                        if (similarityQuery != null) {
+                            qs.add(similarityQuery);
+                        }
                     }
                 }
             } else if (query.startsWith("spellcheck?")) {
@@ -929,8 +943,8 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
      * @param qs the list of queries. Cannot be null.
      * @return
      */
-    @Nonnull
-    public static LuceneRequestFacade<Query> performAdditionalWraps(@Nonnull List<Query> qs) {
+    @NotNull
+    public static LuceneRequestFacade<Query> performAdditionalWraps(@NotNull List<Query> qs) {
         checkNotNull(qs);
         if (qs.size() == 1) {
             Query q = qs.get(0);
@@ -972,7 +986,7 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
      * @param output the query where the unwrapped NOTs will be saved into. Cannot be null.
      * @return true if there where at least one unwrapped NOT. false otherwise.
      */
-    private static boolean unwrapMustNot(@Nonnull BooleanQuery input, @Nonnull BooleanQuery output) {
+    private static boolean unwrapMustNot(@NotNull BooleanQuery input, @NotNull BooleanQuery output) {
         checkNotNull(input);
         checkNotNull(output);
         boolean unwrapped = false;
@@ -1156,7 +1170,7 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
         }
     }
 
-    @CheckForNull
+    @NotNull
     private static Query createQuery(String propertyName, PropertyRestriction pr,
                                      PropertyDefinition defn) {
         int propType = determinePropertyType(defn, pr);
