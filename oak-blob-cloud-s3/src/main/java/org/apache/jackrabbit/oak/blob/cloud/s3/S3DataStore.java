@@ -18,17 +18,16 @@ package org.apache.jackrabbit.oak.blob.cloud.s3;
 
 import java.util.Properties;
 
+import org.apache.jackrabbit.oak.blob.cloud.CloudDataStore;
 import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 
 /**
  * Amazon S3 data store extending from {@link AbstractSharedCachingDataStore}.
  */
-public class S3DataStore extends AbstractSharedCachingDataStore {
+public class S3DataStore extends AbstractSharedCachingDataStore implements CloudDataStore {
 
     protected Properties properties;
 
@@ -51,6 +50,7 @@ public class S3DataStore extends AbstractSharedCachingDataStore {
     /**
      * Properties required to configure the S3Backend
      */
+    @Override
     public void setProperties(Properties properties) {
         this.properties = properties;
     }

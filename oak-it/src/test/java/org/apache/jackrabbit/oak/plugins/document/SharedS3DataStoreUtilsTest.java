@@ -24,8 +24,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 
-import org.apache.jackrabbit.oak.blob.cloud.s3.S3Constants;
-import org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils;
 import org.apache.jackrabbit.oak.plugins.blob.SharedDataStoreUtilsTest;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
 import org.junit.After;

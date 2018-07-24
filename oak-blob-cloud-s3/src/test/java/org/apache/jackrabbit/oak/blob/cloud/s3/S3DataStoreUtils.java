@@ -21,6 +21,7 @@ package org.apache.jackrabbit.oak.blob.cloud.s3;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -92,7 +93,10 @@ public class S3DataStoreUtils extends DataStoreUtils {
     public static Properties getS3Config() {
         String config = System.getProperty("s3.config");
         if (Strings.isNullOrEmpty(config)) {
-            config = DEFAULT_CONFIG_PATH;
+            config = Paths.get(System.getProperty("user.home"), ".aws", "aws.properties").toString();
+            if (! new File(config).exists()) {
+                config = DEFAULT_CONFIG_PATH;
+            }
         }
         Properties props = new Properties();
         if (new File(config).exists()) {

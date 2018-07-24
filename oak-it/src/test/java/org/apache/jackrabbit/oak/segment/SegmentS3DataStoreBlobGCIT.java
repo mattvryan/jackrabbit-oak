@@ -29,8 +29,6 @@ import java.util.List;
 import java.util.Properties;
 
 import com.google.common.base.Strings;
-import org.apache.jackrabbit.oak.blob.cloud.s3.S3Constants;
-import org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
 import org.junit.After;
 import org.junit.Before;

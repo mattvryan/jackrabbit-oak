@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.blob.cloud.s3;
+package org.apache.jackrabbit.oak.blob.cloud;
 
 import java.util.Dictionary;
 import java.util.Hashtable;
@@ -34,7 +34,7 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 
 @Component(componentAbstract = true)
-public abstract class AbstractS3DataStoreService extends AbstractDataStoreService {
+public abstract class AbstractCloudDataStoreService extends AbstractDataStoreService {
     private static final String DESCRIPTION = "oak.datastore.description";
 
     private ServiceRegistration delegateReg;
@@ -44,7 +44,7 @@ public abstract class AbstractS3DataStoreService extends AbstractDataStoreServic
         Properties properties = new Properties();
         properties.putAll(config);
 
-        S3DataStore dataStore = new S3DataStore();
+        CloudDataStore dataStore = getDataStoreInstance();
         dataStore.setStatisticsProvider(getStatisticsProvider());
         dataStore.setProperties(properties);
 
@@ -66,6 +66,8 @@ public abstract class AbstractS3DataStoreService extends AbstractDataStoreServic
         }
         super.deactivate();
     }
+
+    protected abstract CloudDataStore getDataStoreInstance();
 
     @Override
     protected String[] getDescription() {

@@ -21,8 +21,15 @@ package org.apache.jackrabbit.oak.blob.cloud.s3;
 
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.ConfigurationPolicy;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
+import org.apache.jackrabbit.oak.blob.cloud.CloudDataStore;
 
 @Component(policy = ConfigurationPolicy.REQUIRE, name = S3DataStoreService.NAME)
-public class S3DataStoreService extends AbstractS3DataStoreService {
+public class S3DataStoreService extends AbstractCloudDataStoreService {
     public static final String NAME = "org.apache.jackrabbit.oak.plugins.blob.datastore.S3DataStore";
+
+    @Override
+    protected CloudDataStore getDataStoreInstance() {
+        return new S3DataStore();
+    }
 }

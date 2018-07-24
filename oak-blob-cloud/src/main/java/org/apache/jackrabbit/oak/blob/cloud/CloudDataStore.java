@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -17,12 +17,14 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.blob.cloud.s3;
+package org.apache.jackrabbit.oak.blob.cloud;
 
-import org.apache.felix.scr.annotations.Component;
-import org.apache.felix.scr.annotations.ConfigurationPolicy;
+import java.util.Properties;
 
-@Component(policy = ConfigurationPolicy.REQUIRE, name = SharedS3DataStoreService.NAME)
-public class SharedS3DataStoreService extends AbstractS3DataStoreService {
-    public static final String NAME = "org.apache.jackrabbit.oak.plugins.blob.datastore.SharedS3DataStore";
+import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
+
+public interface CloudDataStore extends DataStore {
+    void setStatisticsProvider(StatisticsProvider statisticsProvider);
+    void setProperties(Properties properties);
 }

@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.oak.upgrade.cli.blob;
 
-import org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStore;
 import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
 import org.junit.Test;
 
