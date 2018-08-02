@@ -109,7 +109,11 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
      * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
      */
     public static Value createValue(PropertyState property, NamePathMapper namePathMapper) {
-        return newValue(property, namePathMapper);
+        return createValue(property, namePathMapper, null);
+    }
+
+    public static Value createValue(PropertyState property, NamePathMapper namePathMapper, BlobAccessProvider blobAccessProvider) {
+        return newValue(property, namePathMapper, blobAccessProvider);
     }
 
     /**
@@ -122,11 +126,15 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
      */
     @NotNull
     public static Value createValue(@NotNull PropertyValue property, @NotNull NamePathMapper namePathMapper) {
+        return createValue(property, namePathMapper, null);
+    }
+
+    public static Value createValue(@NotNull PropertyValue property, @NotNull NamePathMapper namePathMapper, @Nullable BlobAccessProvider blobAccessProvider) {
         PropertyState ps = PropertyValues.create(property);
         if (ps == null) {
             throw new IllegalArgumentException("Failed to convert the specified property value to a property state.");
         }
-        return newValue(ps, namePathMapper);
+        return createValue(ps, namePathMapper, blobAccessProvider);
     }
 
     /**
@@ -369,6 +377,11 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
             return ((BinaryImpl) binary).getBinaryValue().getBlob();
         }
         return null;
+    }
+
+    @NotNull
+    public BlobAccessProvider getBlobAccessProvider() {
+        return blobAccessProvider;
     }
 
     /**
