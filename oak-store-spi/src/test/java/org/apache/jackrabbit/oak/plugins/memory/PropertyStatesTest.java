@@ -19,29 +19,32 @@
 
 package org.apache.jackrabbit.oak.plugins.memory;
 
+import static org.junit.Assert.assertEquals;
+
 import java.util.Calendar;
+
 import javax.jcr.PropertyType;
 import javax.jcr.RepositoryException;
 import javax.jcr.Value;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.api.blob.BlobAccessProvider;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
 import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryImpl;
 import org.apache.jackrabbit.util.ISO8601;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import static org.junit.Assert.assertEquals;
-
 public class PropertyStatesTest {
 
     private final NamePathMapper namePathMapper = Mockito.mock(NamePathMapper.class);
+    private final BlobAccessProvider blobAccessProvider = Mockito.mock(BlobAccessProvider.class);
 
     @Test
     public void namePropertyFromNameValue() throws RepositoryException {
         PropertyState nameProperty = PropertyStates.createProperty("name", "oak-prefix:value", PropertyType.NAME);
-        Value nameValue = ValueFactoryImpl.createValue(nameProperty, namePathMapper);
+        Value nameValue = ValueFactoryImpl.createValue(nameProperty, namePathMapper, blobAccessProvider);
         PropertyState namePropertyFromValue = PropertyStates.createProperty("name", nameValue);
         assertEquals(nameProperty, namePropertyFromValue);
     }
@@ -49,7 +52,7 @@ public class PropertyStatesTest {
     @Test
     public void pathPropertyFromPathValue() throws RepositoryException {
         PropertyState pathProperty = PropertyStates.createProperty("path", "oak-prefix:a/oak-prefix:b", PropertyType.PATH);
-        Value nameValue = ValueFactoryImpl.createValue(pathProperty, namePathMapper);
+        Value nameValue = ValueFactoryImpl.createValue(pathProperty, namePathMapper, blobAccessProvider);
         PropertyState namePropertyFromValue = PropertyStates.createProperty("path", nameValue);
         assertEquals(pathProperty, namePropertyFromValue);
     }

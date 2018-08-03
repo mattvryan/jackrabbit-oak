@@ -16,10 +16,19 @@
  */
 package org.apache.jackrabbit.oak.spi.security.authorization.restriction;
 
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.when;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import javax.jcr.PropertyType;
 import javax.jcr.Value;
 import javax.jcr.ValueFactory;
@@ -40,14 +49,6 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
-
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.mockito.Mockito.when;
 
 public class AbstractRestrictionProviderTest implements AccessControlConstants {
 
@@ -223,7 +224,8 @@ public class AbstractRestrictionProviderTest implements AccessControlConstants {
         assertTrue(ps.isArray());
         assertEquals(Type.NAMES, ps.getType());
 
-        List<Value> vs = ValueFactoryImpl.createValues(ps, namePathMapper);
+        List<Value> vs = ValueFactoryImpl.createValues(ps, namePathMapper,
+                ((ValueFactoryImpl) valueFactory).getBlobAccessProvider());
         assertArrayEquals(nameValues, vs.toArray(new Value[vs.size()]));
     }
 
@@ -238,7 +240,8 @@ public class AbstractRestrictionProviderTest implements AccessControlConstants {
         assertTrue(ps.isArray());
         assertEquals(Type.NAMES, ps.getType());
 
-        List<Value> vs = ValueFactoryImpl.createValues(ps, namePathMapper);
+        List<Value> vs = ValueFactoryImpl.createValues(ps, namePathMapper,
+                ((ValueFactoryImpl) valueFactory).getBlobAccessProvider());
         assertArrayEquals(nameValues, vs.toArray(new Value[vs.size()]));
     }
 
@@ -252,7 +255,8 @@ public class AbstractRestrictionProviderTest implements AccessControlConstants {
         assertTrue(r.getProperty().isArray());
         assertEquals(Type.NAMES, r.getProperty().getType());
 
-        List<Value> vs = ValueFactoryImpl.createValues(r.getProperty(), namePathMapper);
+        List<Value> vs = ValueFactoryImpl.createValues(r.getProperty(), namePathMapper,
+                ((ValueFactoryImpl) valueFactory).getBlobAccessProvider());
         assertArrayEquals(new Value[] {nameValue}, vs.toArray(new Value[vs.size()]));
     }
 
@@ -266,7 +270,8 @@ public class AbstractRestrictionProviderTest implements AccessControlConstants {
         assertTrue(r.getProperty().isArray());
         assertEquals(Type.NAMES, r.getProperty().getType());
 
-        List<Value> vs = ValueFactoryImpl.createValues(r.getProperty(), namePathMapper);
+        List<Value> vs = ValueFactoryImpl.createValues(r.getProperty(), namePathMapper,
+                ((ValueFactoryImpl) valueFactory).getBlobAccessProvider());
         assertNotNull(vs);
         assertEquals(0, vs.size());
     }
@@ -281,7 +286,8 @@ public class AbstractRestrictionProviderTest implements AccessControlConstants {
         assertTrue(r.getProperty().isArray());
         assertEquals(Type.NAMES, r.getProperty().getType());
 
-        List<Value> vs = ValueFactoryImpl.createValues(r.getProperty(), namePathMapper);
+        List<Value> vs = ValueFactoryImpl.createValues(r.getProperty(), namePathMapper,
+                ((ValueFactoryImpl) valueFactory).getBlobAccessProvider());
         assertNotNull(vs);
         assertEquals(0, vs.size());
     }

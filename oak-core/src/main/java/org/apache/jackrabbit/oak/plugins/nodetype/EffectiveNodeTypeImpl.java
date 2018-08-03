@@ -35,18 +35,18 @@ import javax.jcr.nodetype.NodeDefinition;
 import javax.jcr.nodetype.NodeType;
 import javax.jcr.nodetype.PropertyDefinition;
 
+import com.google.common.base.Function;
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Maps;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Tree;
+import org.apache.jackrabbit.oak.api.blob.BlobAccessProvider;
 import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryImpl;
 import org.apache.jackrabbit.oak.spi.nodetype.EffectiveNodeType;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
 
 /**
  * EffectiveNodeTypeImpl... TODO
@@ -285,13 +285,18 @@ class EffectiveNodeTypeImpl implements EffectiveNodeType {
         }
 
         NodeType nt = definition.getDeclaringNodeType();
+        BlobAccessProvider blobAccessProvider = null;
+        if (null != ntMgr.getValueFactory() &&
+                ntMgr.getValueFactory() instanceof ValueFactoryImpl) {
+            blobAccessProvider = ((ValueFactoryImpl) ntMgr.getValueFactory()).getBlobAccessProvider();
+        }
         if (definition.isMultiple()) {
-            List<Value> values = ValueFactoryImpl.createValues(property, ntMgr.getNamePathMapper());
+            List<Value> values = ValueFactoryImpl.createValues(property, ntMgr.getNamePathMapper(), blobAccessProvider);
             if (!nt.canSetProperty(property.getName(), values.toArray(new Value[values.size()]))) {
                 throw new ConstraintViolationException("Cannot set property '" + property.getName() + "' to '" + values + '\'');
             }
         } else {
-            Value v = ValueFactoryImpl.createValue(property, ntMgr.getNamePathMapper());
+            Value v = ValueFactoryImpl.createValue(property, ntMgr.getNamePathMapper(), blobAccessProvider);
             if (!nt.canSetProperty(property.getName(), v)) {
                 throw new ConstraintViolationException("Cannot set property '" + property.getName() + "' to '" + v + '\'');
             }

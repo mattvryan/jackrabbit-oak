@@ -125,15 +125,6 @@ class ValueImpl implements JackrabbitValue, OakValue {
      * @throws IllegalArgumentException if {@code index < propertyState.count()}
      */
     @NotNull
-    static Value newValue(@NotNull PropertyState property, int index, @NotNull NamePathMapper namePathMapper) {
-        try {
-            return new ValueImpl(property, index, namePathMapper);
-        } catch (RepositoryException e) {
-            return new ErrorValue(e);
-        }
-    }
-
-    @NotNull
     static Value newValue(@NotNull PropertyState property, int index, @NotNull NamePathMapper namePathMapper, BlobAccessProvider blobAccessProvider) {
         try {
             return new ValueImpl(property, index, namePathMapper, blobAccessProvider);

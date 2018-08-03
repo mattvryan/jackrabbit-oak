@@ -41,14 +41,12 @@ import javax.jcr.version.VersionException;
 
 import org.apache.jackrabbit.oak.api.Tree.Status;
 import org.apache.jackrabbit.oak.api.Type;
-import org.apache.jackrabbit.oak.api.blob.BlobAccessProvider;
 import org.apache.jackrabbit.oak.jcr.delegate.NodeDelegate;
 import org.apache.jackrabbit.oak.jcr.delegate.PropertyDelegate;
 import org.apache.jackrabbit.oak.jcr.session.operation.PropertyOperation;
 import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryImpl;
 import org.apache.jackrabbit.value.ValueHelper;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -247,22 +245,14 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public Value getValue() throws RepositoryException {
-        return getValue(null);
-    }
-
-    private Value getValue(@Nullable BlobAccessProvider blobAccessProvider)
-            throws RepositoryException {
         return perform(new PropertyOperation<Value>(dlg, "getValue") {
             @NotNull
             @Override
             public Value perform() throws RepositoryException {
-                return null == blobAccessProvider ?
-                        ValueFactoryImpl.createValue(
-                                property.getSingleState(), sessionContext)
-                        :
-                        ValueFactoryImpl.createValue(
-                                property.getSingleState(), sessionContext, blobAccessProvider
-                        );
+                return ValueFactoryImpl.createValue(
+                        property.getSingleState(), sessionContext,
+                        ((ValueFactoryImpl) sessionContext.getValueFactory()).getBlobAccessProvider()
+                );
             }
         });
     }
@@ -275,7 +265,9 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
             @Override
             public List<Value> perform() throws RepositoryException {
                 return ValueFactoryImpl.createValues(
-                        property.getMultiState(), sessionContext);
+                        property.getMultiState(), sessionContext,
+                        ((ValueFactoryImpl) sessionContext.getValueFactory()).getBlobAccessProvider()
+                );
             }
         }).toArray(NO_VALUES);
     }
@@ -296,9 +288,7 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public Binary getBinary() throws RepositoryException {
-        return getValue(
-                ((ValueFactoryImpl) sessionContext.getValueFactory()).getBlobAccessProvider()
-        ).getBinary();
+        return getValue().getBinary();
     }
 
     @Override

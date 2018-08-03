@@ -234,7 +234,8 @@ public class QueryResultImpl implements QueryResult {
         if (value == null) {
             return null;
         }
-        return ValueFactoryImpl.createValue(value, sessionContext);
+        return ValueFactoryImpl.createValue(value, sessionContext,
+                ((ValueFactoryImpl) sessionContext.getValueFactory()).getBlobAccessProvider());
     }
 
 }

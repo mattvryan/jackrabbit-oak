@@ -145,9 +145,13 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
      * @return  A list of new {@code Value} instances
      */
     public static List<Value> createValues(PropertyState property, NamePathMapper namePathMapper) {
+        return createValues(property, namePathMapper, null);
+    }
+
+    public static List<Value> createValues(PropertyState property, NamePathMapper namePathMapper, BlobAccessProvider blobAccessProvider) {
         List<Value> values = Lists.newArrayList();
         for (int i = 0; i < property.count(); i++) {
-            values.add(newValue(property, i, namePathMapper));
+            values.add(newValue(property, i, namePathMapper, blobAccessProvider));
         }
         return values;
     }
@@ -160,7 +164,7 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
     public List<Value> createValues(PropertyState property) {
         List<Value> values = Lists.newArrayList();
         for (int i = 0; i < property.count(); i++) {
-            values.add(newValue(property, i, namePathMapper));
+            values.add(newValue(property, i, namePathMapper, blobAccessProvider));
         }
         return values;
     }

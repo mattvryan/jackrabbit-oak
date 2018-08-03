@@ -70,7 +70,9 @@ public class VersionImpl extends NodeImpl<VersionDelegate> implements Version {
             @Override
             public Calendar perform() throws RepositoryException {
                 PropertyDelegate dlg = getPropertyOrThrow(JcrConstants.JCR_CREATED);
-                return ValueFactoryImpl.createValue(dlg.getSingleState(), sessionContext).getDate();
+                return ValueFactoryImpl.createValue(dlg.getSingleState(), sessionContext,
+                        ((ValueFactoryImpl) sessionContext.getValueFactory()).getBlobAccessProvider())
+                        .getDate();
             }
         });
     }
@@ -114,7 +116,8 @@ public class VersionImpl extends NodeImpl<VersionDelegate> implements Version {
     }
 
     private List<Value> getValues(PropertyDelegate p) throws InvalidItemStateException, ValueFormatException {
-        return ValueFactoryImpl.createValues(p.getMultiState(), sessionContext);
+        return ValueFactoryImpl.createValues(p.getMultiState(), sessionContext,
+                ((ValueFactoryImpl) sessionContext.getValueFactory()).getBlobAccessProvider());
     }
 
     @Override
