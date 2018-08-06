@@ -113,6 +113,16 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
     }
 
     /**
+     * Utility method for creating a {@code Value} based on a {@code PropertyState}.
+     * @param property The property state
+     * @return New {@code Value} instance
+     * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
+     */
+    public Value createValue(PropertyState property) {
+        return newValue(property, namePathMapper, blobAccessProvider);
+    }
+
+    /**
      * Utility method for creating a {@code Value} based on a {@code PropertyValue}.
      * @param property  The property value
      * @param namePathMapper The name/path mapping used for converting JCR names/paths to
@@ -127,6 +137,21 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
             throw new IllegalArgumentException("Failed to convert the specified property value to a property state.");
         }
         return newValue(ps, namePathMapper);
+    }
+
+    /**
+     * Utility method for creating a {@code Value} based on a {@code PropertyValue}.
+     * @param property The property value
+     * @return New {@code Value} instance
+     * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
+     */
+    @NotNull
+    public Value createValue(@NotNull PropertyValue property) {
+        PropertyState ps = PropertyValues.create(property);
+        if (ps == null) {
+            throw new IllegalArgumentException("Failed to convert the specified property value to a property state.");
+        }
+        return newValue(ps, namePathMapper, blobAccessProvider);
     }
 
     /**
@@ -152,7 +177,7 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
     public List<Value> createValues(PropertyState property) {
         List<Value> values = Lists.newArrayList();
         for (int i = 0; i < property.count(); i++) {
-            values.add(newValue(property, i, namePathMapper));
+            values.add(newValue(property, i, namePathMapper, blobAccessProvider));
         }
         return values;
     }
@@ -161,7 +186,7 @@ public class ValueFactoryImpl implements JackrabbitValueFactory {
 
     @Override
     public Value createValue(String value) {
-        return newValue(StringPropertyState.stringProperty("", value), namePathMapper);
+        return newValue(StringPropertyState.stringProperty("", value), namePathMapper, blobAccessProvider);
     }
 
     @Override

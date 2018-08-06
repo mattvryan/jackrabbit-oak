@@ -126,8 +126,24 @@ class ValueImpl implements JackrabbitValue, OakValue {
      */
     @NotNull
     static Value newValue(@NotNull PropertyState property, int index, @NotNull NamePathMapper namePathMapper) {
+        return newValue(property, index, namePathMapper, null);
+    }
+
+    /**
+     * Create a new {@code Value} instance
+     * @param property  The property state this instance is based on
+     * @param index  The index
+     * @param namePathMapper The name/path mapping used for converting JCR names/paths to
+     * the internal representation.
+     * @param blobAccessProvider The {@code BlobAccessProvider} instance, or
+     * {@code null} if not known or available.
+     * @return New {@code Value} instance
+     * @throws IllegalArgumentException if {@code index < propertyState.count()}
+     */
+    @NotNull
+    static Value newValue(@NotNull PropertyState property, int index, @NotNull NamePathMapper namePathMapper, @Nullable BlobAccessProvider blobAccessProvider) {
         try {
-            return new ValueImpl(property, index, namePathMapper);
+            return new ValueImpl(property, index, namePathMapper, blobAccessProvider);
         } catch (RepositoryException e) {
             return new ErrorValue(e);
         }
@@ -142,11 +158,22 @@ class ValueImpl implements JackrabbitValue, OakValue {
      */
     @NotNull
     static Value newValue(@NotNull PropertyState property, @NotNull NamePathMapper namePathMapper) {
-        try {
-            return new ValueImpl(property, 0, namePathMapper);
-        } catch (RepositoryException e) {
-            return new ErrorValue(e);
-        }
+        return newValue(property, 0, namePathMapper, null);
+    }
+
+    /**
+     * Create a new {@code Value} instance
+     * @param property  The property state this instance is based on
+     * @param namePathMapper The name/path mapping used for converting JCR names/paths to
+     * the internal representation.
+     * @param blobAccessProvider The {@code BlobAccessProvider} instance, or
+     * {@code null} if not known or available.
+     * @return New {@code Value} instance
+     * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
+     */
+    @NotNull
+    static Value newValue(@NotNull PropertyState property, @NotNull NamePathMapper namePathMapper, @Nullable BlobAccessProvider blobAccessProvider) {
+        return newValue(property, 0, namePathMapper, blobAccessProvider);
     }
 
     //-----------------------------------------------------------< OakValue >---

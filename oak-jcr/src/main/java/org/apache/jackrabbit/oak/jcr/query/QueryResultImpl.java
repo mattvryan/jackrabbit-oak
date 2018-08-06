@@ -25,6 +25,7 @@ import java.util.NoSuchElementException;
 import javax.jcr.NodeIterator;
 import javax.jcr.RepositoryException;
 import javax.jcr.Value;
+import javax.jcr.ValueFactory;
 import javax.jcr.query.QueryResult;
 import javax.jcr.query.RowIterator;
 
@@ -34,11 +35,11 @@ import org.apache.jackrabbit.oak.api.PropertyValue;
 import org.apache.jackrabbit.oak.api.Result;
 import org.apache.jackrabbit.oak.api.ResultRow;
 import org.apache.jackrabbit.oak.api.Tree;
+import org.apache.jackrabbit.oak.jcr.delegate.NodeDelegate;
+import org.apache.jackrabbit.oak.jcr.delegate.SessionDelegate;
 import org.apache.jackrabbit.oak.jcr.query.PrefetchIterator.PrefetchOptions;
 import org.apache.jackrabbit.oak.jcr.session.NodeImpl;
 import org.apache.jackrabbit.oak.jcr.session.SessionContext;
-import org.apache.jackrabbit.oak.jcr.delegate.NodeDelegate;
-import org.apache.jackrabbit.oak.jcr.delegate.SessionDelegate;
 import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryImpl;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -234,7 +235,13 @@ public class QueryResultImpl implements QueryResult {
         if (value == null) {
             return null;
         }
-        return ValueFactoryImpl.createValue(value, sessionContext);
+        ValueFactory valueFactory = sessionContext.getValueFactory();
+        if (valueFactory instanceof ValueFactoryImpl) {
+            return ((ValueFactoryImpl) valueFactory).createValue(value);
+        }
+        else {
+            return ValueFactoryImpl.createValue(value, sessionContext);
+        }
     }
 
 }

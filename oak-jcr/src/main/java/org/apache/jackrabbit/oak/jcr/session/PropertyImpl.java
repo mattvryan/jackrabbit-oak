@@ -249,8 +249,16 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
             @NotNull
             @Override
             public Value perform() throws RepositoryException {
-                return ValueFactoryImpl.createValue(
-                        property.getSingleState(), sessionContext);
+                ValueFactory valueFactory = sessionContext.getValueFactory();
+                if (valueFactory instanceof ValueFactoryImpl) {
+                    return ((ValueFactoryImpl) valueFactory).createValue(
+                            property.getSingleState()
+                    );
+                }
+                else {
+                    return ValueFactoryImpl.createValue(
+                            property.getSingleState(), sessionContext);
+                }
             }
         });
     }
