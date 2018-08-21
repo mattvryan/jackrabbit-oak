@@ -14,7 +14,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
   -->
-
+  
 # Direct Binary Access
 
 `@since Oak 1.10`
@@ -32,7 +32,7 @@ The following diagram shows the 3 involved parties:  A _remote client_, the Oak-
 ![](direct-binary-access-block-diagram.png)
 
 Further background of the design of this feature can be found [on the wiki](https://wiki.apache.org/jackrabbit/Direct%20Binary%20Access).
-
+ 
 ## Requirements
 
 To use this feature, Oak must be configured with a [BlobStore](../plugins/blobstore.html) that supports this feature.
@@ -77,7 +77,7 @@ Binary binary = ntResource.getProperty("jcr:data").getBinary();
 
 if (binary instanceof BinaryDownload) {
     BinaryDownload binaryDownload = (BinaryDownload) binary;
-
+    
     BinaryDownloadOptions.BinaryDownloadOptionsBuilder builder = BinaryDownloadOptions.builder()
         // would typically come from a JCR node name
         .withFileName(ntFile.getName())
@@ -87,18 +87,18 @@ if (binary instanceof BinaryDownload) {
     if (ntResource.hasProperty("jcr:encoding")) {
         builder.withCharacterEncoding(ntResource.getProperty("jcr:encoding"));
     }
-
+    
     // if you need to prevent the browser from potentially executing the response
     // (for example js, flash, html), you can enforce a download with this option
     // builder.withDispositionTypeAttachment();
-
+        
     URI uri = binaryDownload.getURI(builder.build());
-
+    
     if (uri == null) {
         // feature not available
         // ...
     }
-
+    
     // use uri in <img src="uri"> or send in response to remote client
     // ...
 }
@@ -112,7 +112,7 @@ The direct binary upload process is split into 3 phases:
 
 1. **Initialize:** A remote client makes request to the Jackrabbit-based application to request an upload, which calls `initiateBinaryUpload(long, int)` and returns the resulting information to the remote client.
 2. **Upload:** The remote client performs the actual binary upload directly to the binary storage provider. The BinaryUpload returned from the previous call to `initiateBinaryUpload(long, int)` contains detailed instructions on how to complete the upload successfully. For more information, see the `BinaryUpload` documentation.
-3. **Complete:** The remote client notifies the Jackrabbit-based application that step 2 is complete. The upload token returned in the first step (obtained by calling `BinaryUpload.getUploadToken()` is passed by the client to `completeBinaryUpload(String)`. This will provide the application with a regular JCR Binary that can then be used to write JCR content including the binary (such as an `nt:file` structure) and persist it.
+3. **Complete:** The remote client notifies the Jackrabbit-based application that step 2 is complete. The upload token returned in the first step (obtained by calling `BinaryUpload.getUploadToken()`) is passed by the client to `completeBinaryUpload(String)`. This will provide the application with a regular JCR Binary that can then be used to write JCR content including the binary (such as an `nt:file` structure) and persist it.
 
 ![](direct-binary-upload-block-diagram.png)
 
@@ -132,22 +132,22 @@ public class InitiateUploadServlet extends HttpServlet {
 
    public void doPost(HttpServletRequest request, HttpServletResponse response)
                throws IOException, ServletException {
-
+               
         final Session session = // .. retrieve session for request
 
         // allows to limit number of returned URIs in case the response message size is limited
         // use -1 for unlimited
         final int maxURIs = 50;
-
+        
         final String path = request.getParameter("path");
         final long filesize = Long.parseLong(request.getParameter("filesize"));
 
         ValueFactory vf = session.getValueFactory();
         if (vf instanceof JackrabbitValueFactory) {
             JackrabbitValueFactory valueFactory = (JackrabbitValueFactory) vf;
-
+            
             BinaryUpload upload = valueFactory.initiateBinaryUpload(filesize, maxURIs);
-
+            
             if (upload == null) {
                 // feature not available, must pass binary via InputStream through vf.createBinary()
                 // ...
@@ -155,7 +155,7 @@ public class InitiateUploadServlet extends HttpServlet {
                 JSONObject json = new JSONObject();
                 json.put("minPartSize", upload.getMinPartSize());
                 json.put("maxPartSize", upload.getMaxPartSize());
-
+                
                 JSONArray uris = new JSONArray();
                 Iterator<URI> iter = upload.getUploadURIs();
                 while (iter.hasNext()) {
@@ -165,7 +165,7 @@ public class InitiateUploadServlet extends HttpServlet {
 
                 // provide the client with a complete URL to request later, pass through the path
                 json.put("completeURL", "/complete-upload?uploadToken=" + upload.getUploadToken() + "&path=" + path);
-
+                
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
                 response.getWriter().write(json.toString());
@@ -198,9 +198,9 @@ public class CompleteUploadServlet extends HttpServlet {
 
    public void doPost(HttpServletRequest request, HttpServletResponse response)
                throws IOException, ServletException {
-
+               
         final Session session = // .. retrieve session for request
-
+               
         final String path = request.getParameter("path");
         final String uploadToken = request.getParameter("uploadToken");
 
@@ -209,19 +209,20 @@ public class CompleteUploadServlet extends HttpServlet {
             JackrabbitValueFactory valueFactory = (JackrabbitValueFactory) vf;
             
             Binary binary = valueFactory.completeBinaryUpload(uploadToken);
-
+            
             Node ntFile = JcrUtils.getOrCreateByPath(path, "nt:file", session);
             Node ntResource = ntFile.addNode("jcr:content", "nt:resource");
-
+            
             ntResource.setProperty("jcr:data", binary);
-
+            
             // also set jcr:mimeType etc.
-
+            
             session.save();
-
+            
         } else {
             // feature not available - not unexpected if initiate-upload worked
         }
     }
 }
 ```
+
