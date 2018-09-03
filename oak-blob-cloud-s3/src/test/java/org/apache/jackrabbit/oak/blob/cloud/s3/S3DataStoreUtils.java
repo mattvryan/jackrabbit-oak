@@ -59,7 +59,7 @@ public class S3DataStoreUtils extends DataStoreUtils {
     private static final Logger log = LoggerFactory.getLogger(S3DataStoreUtils.class);
 
     static final String DEFAULT_CONFIG_PATH = "./src/test/resources/aws.properties";
-    private static final String DEFAULT_PROPERTY_FILE = "aws.properties";
+    private static final String DEFAULT_PROPERTY_FILE = "src/test/resources/aws.properties";
     private static final String SYS_PROP_NAME = "s3.config";
 
     protected static Class S3 = S3DataStore.class;
