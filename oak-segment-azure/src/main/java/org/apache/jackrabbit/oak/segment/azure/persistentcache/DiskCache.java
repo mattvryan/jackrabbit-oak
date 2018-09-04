@@ -37,6 +37,7 @@ public class DiskCache implements Closeable{
     @NotNull
     private final TarFiles tarFiles;
 
+    // michid add builder for disk cache so consumers do not need to fiddle with impl details
     public DiskCache(@NotNull TarFiles tarFiles) {
         this.tarFiles = tarFiles;
     }

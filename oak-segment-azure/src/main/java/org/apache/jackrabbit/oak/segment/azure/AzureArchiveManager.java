@@ -19,12 +19,11 @@ package org.apache.jackrabbit.oak.segment.azure;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.jackrabbit.oak.segment.azure.AzureUtilities.getName;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.FileAttribute;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -48,7 +47,9 @@ import org.apache.jackrabbit.oak.segment.azure.persistentcache.CachingSegmentArc
 import org.apache.jackrabbit.oak.segment.azure.persistentcache.DiskCache;
 import org.apache.jackrabbit.oak.segment.file.tar.TarFiles;
 import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitor;
+import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitorAdapter;
 import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitor;
+import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitorAdapter;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveManager;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveReader;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveWriter;
@@ -122,17 +123,16 @@ public class AzureArchiveManager implements SegmentArchiveManager {
         //return new AzureSegmentArchiveWriter(getDirectory(archiveName), ioMonitor, monitor);
     }
 
-    private DiskCache getOrCreateDiskCache() {
+    private DiskCache getOrCreateDiskCache() throws IOException {
         if (null == diskCache) {
             diskCache = new DiskCache(
-                    TarFiles.builder()
-                            .withDirectory(/*??*/)
-                            .withMaxFileSize(/*??*/)
-                            .withFileStoreMonitor(monitor)
-                            .withIOMonitor(ioMonitor)
+                    TarFiles.builder()  // michid add config options
+                            .withDirectory(new File("."))
+                            .withMaxFileSize(256*1024*1024)
+                            .withFileStoreMonitor(new FileStoreMonitorAdapter())  // michid add monitoring to cache layer
+                            .withIOMonitor(new IOMonitorAdapter())                // michid add monitoring to cache layer
                             .withMemoryMapping(false)
-                            .withTarRecovery(/*??*/)
-//                            .withPersistence(/*??*/) // MR - needed?
+                            .withTarRecovery((uuid, data, entryRecovery) -> { })  // michid does this work?
                             .build()
             );
         }
