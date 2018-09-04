@@ -48,26 +48,7 @@ import com.amazonaws.HttpMethod;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
-import com.amazonaws.services.s3.model.BucketAccelerateConfiguration;
-import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
-import com.amazonaws.services.s3.model.CopyObjectRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsResult;
-import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest;
-import com.amazonaws.services.s3.model.GetBucketAccelerateConfigurationRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ListPartsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PartETag;
-import com.amazonaws.services.s3.model.PartListing;
-import com.amazonaws.services.s3.model.PartSummary;
-import com.amazonaws.services.s3.model.PutObjectRequest;
-import com.amazonaws.services.s3.model.Region;
-import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.amazonaws.services.s3.model.*;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
@@ -85,6 +66,7 @@ import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.core.data.util.NamedThreadFactory;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudBackend;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
@@ -98,7 +80,7 @@ import org.slf4j.LoggerFactory;
 /**
  * A data store backend that stores data on Amazon S3.
  */
-public class S3Backend extends AbstractSharedBackend {
+public class S3Backend extends AbstractCloudBackend {
 
     /**
      * Logger instance.
@@ -235,7 +217,7 @@ public class S3Backend extends AbstractSharedBackend {
             }
 
             String enablePresignedAccelerationStr = properties.getProperty(S3Constants.PRESIGNED_URI_ENABLE_ACCELERATION);
-            setBinaryTransferAccelerationEnabled(enablePresignedAccelerationStr != null && "true".equals(enablePresignedAccelerationStr));
+            setHttpUploadBinaryTransferAccelerationEnabled(enablePresignedAccelerationStr != null && "true".equals(enablePresignedAccelerationStr));
 
             LOG.debug("S3 Backend initialized in [{}] ms",
                 +(System.currentTimeMillis() - startTime.getTime()));
@@ -258,7 +240,7 @@ public class S3Backend extends AbstractSharedBackend {
         }
     }
 
-    void setBinaryTransferAccelerationEnabled(boolean enabled) {
+    public void setHttpUploadBinaryTransferAccelerationEnabled(boolean enabled) {
         if (enabled) {
             // verify acceleration is enabled on the bucket
             BucketAccelerateConfiguration accelerateConfig = s3service.getBucketAccelerateConfiguration(new GetBucketAccelerateConfigurationRequest(bucket));
@@ -672,7 +654,7 @@ public class S3Backend extends AbstractSharedBackend {
         }
     }
 
-    void setHttpUploadURIExpirySeconds(int seconds) {
+    public void setHttpUploadURIExpirySeconds(int seconds) {
         this.httpUploadURIExpirySeconds = seconds;
     }
 
@@ -694,11 +676,11 @@ public class S3Backend extends AbstractSharedBackend {
         return createPresignedURI(identifier, HttpMethod.PUT, httpUploadURIExpirySeconds);
     }
 
-    void setHttpDownloadURIExpirySeconds(int seconds) {
+    public void setHttpDownloadURIExpirySeconds(int seconds) {
         this.httpDownloadURIExpirySeconds = seconds;
     }
 
-    void setHttpDownloadURICacheSize(int maxSize) {
+    public void setHttpDownloadURICacheSize(int maxSize) {
         // max size 0 or smaller is used to turn off the cache
         if (maxSize > 0) {
             LOG.info("presigned GET URI cache enabled, maxSize = {} items, expiry = {} seconds", maxSize, httpDownloadURIExpirySeconds / 2);
@@ -713,8 +695,8 @@ public class S3Backend extends AbstractSharedBackend {
         }
     }
 
-    URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
-                              @NotNull DataRecordDownloadOptions downloadOptions) {
+    public URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
+                                     @NotNull DataRecordDownloadOptions downloadOptions) {
         if (httpDownloadURIExpirySeconds <= 0) {
             // feature disabled
             return null;
@@ -755,7 +737,7 @@ public class S3Backend extends AbstractSharedBackend {
         return uri;
     }
 
-    DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes, int maxNumberOfURIs) {
+    public DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes, int maxNumberOfURIs) {
         List<URI> uploadPartURIs = Lists.newArrayList();
         long minPartSize = MIN_MULTIPART_UPLOAD_PART_SIZE;
         long maxPartSize = MAX_MULTIPART_UPLOAD_PART_SIZE;
@@ -862,7 +844,7 @@ public class S3Backend extends AbstractSharedBackend {
         return null;
     }
 
-    DataRecord completeHttpUpload(@NotNull String uploadTokenStr)
+    public DataRecord completeHttpUpload(@NotNull String uploadTokenStr)
             throws DataRecordUploadException, DataStoreException {
 
         if (Strings.isNullOrEmpty(uploadTokenStr)) {
