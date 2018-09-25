@@ -16,128 +16,17 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
-import java.net.URI;
-import java.util.Properties;
-
-import org.apache.jackrabbit.core.data.DataIdentifier;
-import org.apache.jackrabbit.core.data.DataRecord;
-import org.apache.jackrabbit.core.data.DataStoreException;
-import org.apache.jackrabbit.oak.blob.cloud.CloudDataStore;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudBackend;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStore;
 import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
-import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
-import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 
 /**
  * Amazon S3 data store extending from {@link AbstractSharedCachingDataStore}.
  */
-public class S3DataStore extends AbstractSharedCachingDataStore implements ConfigurableDataRecordAccessProvider, CloudDataStore {
-
-    protected Properties properties;
-
-    private S3Backend s3Backend;
-
-    /**
-     * The minimum size of an object that should be stored in this data store.
-     */
-    private int minRecordLength = 16 * 1024;
-
+public class S3DataStore extends AbstractCloudDataStore {
     @Override
-    protected AbstractSharedBackend createBackend() {
-        s3Backend = new S3Backend();
-        if(properties != null){
-            s3Backend.setProperties(properties);
-        }
-        return s3Backend;
-    }
-
-    /**------------------------------------------- Getters & Setters-----------------------------**/
-
-    /**
-     * Properties required to configure the S3Backend
-     */
-    @Override
-    public void setProperties(@NotNull Properties properties) {
-        this.properties = properties;
-    }
-
-    public SharedBackend getBackend() {
-        return backend;
-    }
-
-    @Override
-    public int getMinRecordLength() {
-        return minRecordLength;
-    }
-
-    public void setMinRecordLength(int minRecordLength) {
-        this.minRecordLength = minRecordLength;
-    }
-
-    //
-    // ConfigurableDataRecordAccessProvider implementation
-    //
-    @Override
-    public void setDirectUploadURIExpirySeconds(int seconds) {
-        if (s3Backend != null) {
-            s3Backend.setHttpUploadURIExpirySeconds(seconds);
-        }
-    }
-
-    @Override
-    public void setBinaryTransferAccelerationEnabled(boolean enabled) {
-        if (s3Backend != null) {
-            s3Backend.setBinaryTransferAccelerationEnabled(enabled);
-        }
-    }
-
-    @Nullable
-    @Override
-    public DataRecordUpload initiateDataRecordUpload(long maxUploadSizeInBytes, int maxNumberOfURIs)
-            throws IllegalArgumentException, DataRecordUploadException {
-        if (null == s3Backend) {
-            throw new DataRecordUploadException("Backend not initialized");
-        }
-        return s3Backend.initiateHttpUpload(maxUploadSizeInBytes, maxNumberOfURIs);
-    }
-
-    @NotNull
-    @Override
-    public DataRecord completeDataRecordUpload(@NotNull String uploadToken)
-            throws IllegalArgumentException, DataRecordUploadException, DataStoreException {
-        if (null == s3Backend) {
-            throw new DataRecordUploadException("Backend not initialized");
-        }
-        return s3Backend.completeHttpUpload(uploadToken);
-    }
-
-    @Override
-    public void setDirectDownloadURIExpirySeconds(int seconds) {
-        if (s3Backend != null) {
-            s3Backend.setHttpDownloadURIExpirySeconds(seconds);
-        }
-    }
-
-    @Override
-    public void setDirectDownloadURICacheSize(int maxSize) {
-        if (s3Backend != null) {
-            s3Backend.setHttpDownloadURICacheSize(maxSize);
-        }
-    }
-
-    @Nullable
-    @Override
-    public URI getDownloadURI(@NotNull DataIdentifier identifier,
-                              @NotNull DataRecordDownloadOptions downloadOptions) {
-        if (s3Backend == null) {
-            return null;
-        }
-        return s3Backend.createHttpDownloadURI(identifier, downloadOptions);
+    protected AbstractCloudBackend createBackendInstance() {
+        return new S3Backend();
     }
 }

@@ -22,10 +22,11 @@ package org.apache.jackrabbit.oak.blob.cloud;
 import java.util.Properties;
 
 import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.jetbrains.annotations.NotNull;
 
-public interface CloudDataStore extends DataStore {
-    void setStatisticsProvider(@NotNull StatisticsProvider statisticsProvider);
+public interface CloudDataStore extends DataStore, ConfigurableDataRecordAccessProvider {
+    void setStatisticsProvider(StatisticsProvider statisticsProvider);
     void setProperties(@NotNull Properties properties);
 }
