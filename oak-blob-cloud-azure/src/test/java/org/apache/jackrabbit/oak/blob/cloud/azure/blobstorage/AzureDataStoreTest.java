@@ -26,28 +26,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
 
-import com.google.common.base.Strings;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.microsoft.azure.storage.StorageException;
-
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.io.output.NullOutputStream;
-import org.apache.jackrabbit.core.data.DataIdentifier;
-import org.apache.jackrabbit.core.data.DataRecord;
-import org.apache.jackrabbit.core.data.DataStoreException;
-import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -72,6 +50,27 @@ import java.util.Set;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.jcr.RepositoryException;
+
+import com.google.common.base.Strings;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import com.microsoft.azure.storage.StorageException;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.output.NullOutputStream;
+import org.apache.jackrabbit.core.data.DataIdentifier;
+import org.apache.jackrabbit.core.data.DataRecord;
+import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Test {@link AzureDataStore} with AzureDataStore and local cache on.
@@ -283,9 +282,7 @@ public class AzureDataStoreTest {
         try {
             backend.write(identifier, testFile);
             fail();
-        } catch (NullPointerException e) {
-            assertEquals("identifier", e.getMessage());
-        }
+        } catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -296,9 +293,7 @@ public class AzureDataStoreTest {
             backend.write(identifier, testFile);
             fail();
         }
-        catch (NullPointerException e) {
-            assertTrue("file".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -324,9 +319,7 @@ public class AzureDataStoreTest {
             backend.read(identifier);
             fail();
         }
-        catch (NullPointerException e) {
-            assert("identifier".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
