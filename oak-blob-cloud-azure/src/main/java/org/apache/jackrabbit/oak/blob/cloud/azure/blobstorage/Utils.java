@@ -19,6 +19,17 @@
 
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.SocketAddress;
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
+import java.util.Properties;
+
 import com.google.common.base.Strings;
 import com.microsoft.azure.storage.CloudStorageAccount;
 import com.microsoft.azure.storage.OperationContext;
@@ -31,18 +42,7 @@ import com.microsoft.azure.storage.blob.CloudBlobContainer;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.InetSocketAddress;
-import java.net.Proxy;
-import java.net.SocketAddress;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
-import java.util.Properties;
-
-public final class Utils {
+public final class Utils extends org.apache.jackrabbit.oak.blob.cloud.Utils {
 
     public static final String DEFAULT_CONFIG_FILE = "azure.properties";
 
