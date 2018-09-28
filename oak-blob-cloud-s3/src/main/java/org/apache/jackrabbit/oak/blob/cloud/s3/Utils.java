@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Amazon S3 utilities.
  */
-public final class Utils {
+public final class Utils extends org.apache.jackrabbit.oak.blob.cloud.Utils {
 
     private static final Logger LOG = LoggerFactory.getLogger(Utils.class);
 

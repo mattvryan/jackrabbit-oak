@@ -75,6 +75,7 @@ import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordU
 import org.apache.jackrabbit.oak.spi.blob.AbstractDataRecord;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,10 +90,6 @@ public class S3Backend extends AbstractCloudBackend {
     private static final Logger LOG = LoggerFactory.getLogger(S3Backend.class);
 
     private static final String KEY_PREFIX = "dataStore_";
-
-    private static final String META_KEY_PREFIX = "META/";
-
-    private static final String REF_KEY = "reference.key";
 
     private static final int MAX_UNIQUE_RECORD_TRIES = 10;
 
@@ -117,21 +114,27 @@ public class S3Backend extends AbstractCloudBackend {
 
     private TransferManager tmx;
 
-    private Properties properties;
-
     private Date startTime;
 
     private S3RequestDecorator s3ReqDecorator;
 
     private Cache<DataIdentifier, URI> httpDownloadURICache;
 
+    private Cache<String, ObjectMetadata> objectMetadataCache =
+            CacheBuilder.newBuilder()
+            .maximumSize(256)
+            .expireAfterWrite(500, TimeUnit.MILLISECONDS)
+            .build();
+
     // 0 = off by default
     private int httpUploadURIExpirySeconds = 0;
     private int httpDownloadURIExpirySeconds = 0;
 
+    @Override
     public void init() throws DataStoreException {
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
 
+        Properties properties = getProperties();
         try {
             startTime = new Date();
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
@@ -241,8 +244,10 @@ public class S3Backend extends AbstractCloudBackend {
         }
     }
 
+    @Override
     public void setBinaryTransferAccelerationEnabled(boolean enabled) {
-        if (enabled) {
+        Properties properties = getProperties();
+        if (enabled && null != properties) {
             // verify acceleration is enabled on the bucket
             BucketAccelerateConfiguration accelerateConfig = s3service.getBucketAccelerateConfiguration(new GetBucketAccelerateConfigurationRequest(bucket));
             if (accelerateConfig.isAccelerateEnabled()) {
@@ -262,124 +267,108 @@ public class S3Backend extends AbstractCloudBackend {
         }
     }
 
-    /**
-     * It uploads file to Amazon S3. If file size is greater than 5MB, this
-     * method uses parallel concurrent connections to upload.
-     */
-    @Override
-    public void write(DataIdentifier identifier, File file)
-        throws DataStoreException {
-        String key = getKeyName(identifier);
-        ObjectMetadata objectMetaData = null;
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-            // check if the same record already exists
+    @Nullable
+    private ObjectMetadata getObjectMetadata(@NotNull final String key) throws DataStoreException {
+        ObjectMetadata metadata = objectMetadataCache.getIfPresent(key);
+        if (null == metadata) {
             try {
-                objectMetaData = s3service.getObjectMetadata(bucket, key);
-            } catch (AmazonServiceException ase) {
-                if (!(ase.getStatusCode() == 404 || ase.getStatusCode() == 403)) {
-                    throw ase;
-                }
+                metadata = s3service.getObjectMetadata(bucket, key);
+                objectMetadataCache.put(key, metadata);
             }
-            if (objectMetaData != null) {
-                long l = objectMetaData.getContentLength();
-                if (l != file.length()) {
-                    throw new DataStoreException("Collision: " + key
-                        + " new length: " + file.length() + " old length: " + l);
+            catch (AmazonServiceException e) {
+                if (403 == e.getStatusCode() || 404 == e.getStatusCode()) {
+                    // Object doesn't exist
+                    return null;
                 }
-                LOG.debug("[{}]'s exists, lastmodified = [{}]", key,
-                    objectMetaData.getLastModified().getTime());
-                CopyObjectRequest copReq = new CopyObjectRequest(bucket, key,
-                    bucket, key);
-                copReq.setNewObjectMetadata(objectMetaData);
-                Copy copy = tmx.copy(s3ReqDecorator.decorate(copReq));
-                try {
-                    copy.waitForCopyResult();
-                    LOG.debug("lastModified of [{}] updated successfully.", identifier);
-                }catch (Exception e2) {
-                    throw new DataStoreException("Could not upload " + key, e2);
-                }
-            }
-
-            if (objectMetaData == null) {
-                try {
-                    // start multipart parallel upload using amazon sdk
-                    Upload up = tmx.upload(s3ReqDecorator.decorate(new PutObjectRequest(
-                        bucket, key, file)));
-                    // wait for upload to finish
-                    up.waitForUploadResult();
-                    LOG.debug("synchronous upload to identifier [{}] completed.", identifier);
-                } catch (Exception e2 ) {
-                    throw new DataStoreException("Could not upload " + key, e2);
-                }
-            }
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
+                throw new DataStoreException(
+                        String.format("Error occurred getting object metadata for key [%s]",
+                                key
+                        )
+                );
             }
         }
-        LOG.debug("write of [{}], length=[{}], in [{}]ms",
-            identifier, file.length(), (System.currentTimeMillis() - start));
+        return metadata;
     }
 
-    /**
-     * Check if record identified by identifier exists in Amazon S3.
-     */
+    @Nullable
     @Override
-    public boolean exists(DataIdentifier identifier) throws DataStoreException {
-        long start = System.currentTimeMillis();
-        String key = getKeyName(identifier);
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+    protected BlobAttributes getBlobAttributes(@NotNull final String key) throws DataStoreException {
+        ObjectMetadata metadata = getObjectMetadata(key);
+        if (null != metadata) {
+            return new BlobAttributes() {
+                @Override
+                public long getLength() {
+                    return metadata.getContentLength();
+                }
+
+                @Override
+                public long getLastModifiedTime() {
+                    return metadata.getLastModified().getTime();
+                }
+            };
+        }
+        return null;
+    }
+
+    @Override
+    protected void touchObject(@NotNull final String key) throws DataStoreException {
+        CopyObjectRequest copReq = new CopyObjectRequest(bucket, key,
+                bucket, key);
+        copReq.setNewObjectMetadata(getObjectMetadata(key));
+        Copy copy = tmx.copy(s3ReqDecorator.decorate(copReq));
         try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-            ObjectMetadata objectMetaData = s3service.getObjectMetadata(bucket,
-                key);
-            if (objectMetaData != null) {
-                LOG.trace("exists [{}]: [true] took [{}] ms.",
-                    identifier, (System.currentTimeMillis() - start) );
-                return true;
-            }
-            return false;
-        } catch (AmazonServiceException e) {
-            if (e.getStatusCode() == 404 || e.getStatusCode() == 403) {
-                LOG.debug("exists [{}]: [false] took [{}] ms.",
-                    identifier, (System.currentTimeMillis() - start) );
-                return false;
-            }
+            copy.waitForCopyResult();
+        }
+        catch (InterruptedException e) {
             throw new DataStoreException(
-                "Error occured to getObjectMetadata for key [" + identifier.toString() + "]", e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
+                    String.format("Error updating last modified of blob [%s]",
+                            getIdentifierName(key)),
+                    e
+            );
         }
     }
 
     @Override
-    public InputStream read(DataIdentifier identifier)
-            throws DataStoreException {
-        long start = System.currentTimeMillis();
-        String key = getKeyName(identifier);
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+    protected void writeObject(@NotNull final String key,
+                               @NotNull final InputStream in,
+                               long length) throws DataStoreException {
         try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-            S3Object object = s3service.getObject(bucket, key);
-            InputStream in = object.getObjectContent();
-            LOG.debug("[{}] read took [{}]ms", identifier, (System.currentTimeMillis() - start));
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("binary downloaded from S3: " + identifier, new Exception());
-            }
-            return in;
-        } catch (AmazonServiceException e) {
-            throw new DataStoreException("Object not found: " + key, e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
+            // start multipart parallel upload using amazon sdk
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(length);
+            Upload upload = tmx.upload(s3ReqDecorator.decorate(
+                    new PutObjectRequest(bucket, key, in, metadata))
+            );
+            // wait for upload to finish
+            upload.waitForUploadResult();
+        } catch (Exception e) {
+            throw new DataStoreException(
+                    String.format("Error uploading blob [%s]",
+                            getIdentifierName(key)),
+                    e
+            );
         }
+    }
+
+    @Override
+    protected boolean objectExists(@NotNull final String key) throws DataStoreException {
+        return getObjectMetadata(key) != null;
+    }
+
+    @Nullable
+    @Override
+    protected InputStream readObject(@NotNull final String key) throws DataStoreException {
+        if (! s3service.doesObjectExist(bucket, key)) {
+            return null;
+        }
+        S3Object object = s3service.getObject(bucket, key);
+        if (null == object) {
+            throw new DataStoreException(
+                    String.format("Unexpected null object returned for blob [%s]",
+                            getIdentifierName(key))
+            );
+        }
+        return object.getObjectContent();
     }
 
     @Override
@@ -435,15 +424,15 @@ public class S3Backend extends AbstractCloudBackend {
         this.bucket = bucket;
     }
 
-    /**
-     * Properties used to configure the backend. If provided explicitly
-     * before init is invoked then these take precedence
-     *
-     * @param properties  to configure S3Backend
-     */
-    public void setProperties(Properties properties) {
-        this.properties = properties;
-    }
+//    /**
+//     * Properties used to configure the backend. If provided explicitly
+//     * before init is invoked then these take precedence
+//     *
+//     * @param properties  to configure S3Backend
+//     */
+//    public void setProperties(Properties properties) {
+//        this.properties = properties;
+//    }
 
     @Override
     public void addMetadataRecord(final InputStream input, final String name) throws DataStoreException {
@@ -1002,7 +991,7 @@ public class S3Backend extends AbstractCloudBackend {
                         new Predicate<S3ObjectSummary>() {
                             @Override
                             public boolean apply(S3ObjectSummary input) {
-                                return !input.getKey().startsWith(META_KEY_PREFIX);
+                                return !input.getKey().startsWith(Utils.META_KEY_PREFIX);
                             }
                         }));
 
@@ -1030,12 +1019,12 @@ public class S3Backend extends AbstractCloudBackend {
     }
 
     private static String addMetaKeyPrefix(String key) {
-        return META_KEY_PREFIX + key;
+        return Utils.META_KEY_PREFIX + key;
     }
 
     private static String stripMetaKeyPrefix(String name) {
-        if (name.startsWith(META_KEY_PREFIX)) {
-            return name.substring(META_KEY_PREFIX.length());
+        if (name.startsWith(Utils.META_KEY_PREFIX)) {
+            return name.substring(Utils.META_KEY_PREFIX.length());
         }
         return name;
     }
@@ -1117,7 +1106,9 @@ public class S3Backend extends AbstractCloudBackend {
                 getClass().getClassLoader());
             ObjectListing prevObjectListing = s3service.listObjects(bucket);
             List<DeleteObjectsRequest.KeyVersion> deleteList = new ArrayList<DeleteObjectsRequest.KeyVersion>();
-            int nThreads = Integer.parseInt(properties.getProperty("maxConnections"));
+            int nThreads = null != getProperties()
+                    ? Integer.parseInt(getProperties().getProperty("maxConnections", "1"))
+                    : 1;
             ExecutorService executor = Executors.newFixedThreadPool(nThreads,
                 new NamedThreadFactory("s3-object-rename-worker"));
             boolean taskAdded = false;
@@ -1193,25 +1184,25 @@ public class S3Backend extends AbstractCloudBackend {
         return key.substring(0, 4) + Utils.DASH + key.substring(4);
     }
 
-    /**
-     * Get key from data identifier. Object is stored with key in S3.
-     */
-    private static String getKeyName(DataIdentifier identifier) {
-        String key = identifier.toString();
-        return key.substring(0, 4) + Utils.DASH + key.substring(4);
-    }
-
-    /**
-     * Get data identifier from key.
-     */
-    private static String getIdentifierName(String key) {
-        if (!key.contains(Utils.DASH)) {
-            return null;
-        } else if (key.contains(META_KEY_PREFIX)) {
-            return key;
-        }
-        return key.substring(0, 4) + key.substring(5);
-    }
+//    /**
+//     * Get key from data identifier. Object is stored with key in S3.
+//     */
+//    private static String getKeyName(DataIdentifier identifier) {
+//        String key = identifier.toString();
+//        return key.substring(0, 4) + Utils.DASH + key.substring(4);
+//    }
+//
+//    /**
+//     * Get data identifier from key.
+//     */
+//    private static String getIdentifierName(String key) {
+//        if (!key.contains(Utils.DASH)) {
+//            return null;
+//        } else if (key.contains(META_KEY_PREFIX)) {
+//            return key;
+//        }
+//        return key.substring(0, 4) + key.substring(5);
+//    }
 
 
     /**
