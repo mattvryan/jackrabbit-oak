@@ -307,7 +307,6 @@ public class TestS3DataStore {
         assumeTrue(isS3Configured());
 
         expectedEx.expect(IllegalArgumentException.class);
-        expectedEx.expectMessage("prefix should not be null");
 
         S3DataStore s3ds = getDataStore();
         s3ds.getAllMetadataRecords(null);
