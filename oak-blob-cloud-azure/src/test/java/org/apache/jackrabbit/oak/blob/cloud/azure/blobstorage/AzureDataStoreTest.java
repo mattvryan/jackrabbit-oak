@@ -341,9 +341,7 @@ public class AzureDataStoreTest {
             backend.deleteRecord(identifier);
             fail();
         }
-        catch (NullPointerException e) {
-            assert("identifier".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -416,9 +414,7 @@ public class AzureDataStoreTest {
             backend.getRecord(identifier);
             fail();
         }
-        catch (NullPointerException e) {
-            assertTrue("identifier".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -525,9 +521,7 @@ public class AzureDataStoreTest {
             backend.addMetadataRecord((InputStream)null, "name");
             fail();
         }
-        catch (NullPointerException e) {
-            assertTrue("input".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -536,9 +530,7 @@ public class AzureDataStoreTest {
             backend.addMetadataRecord((File)null, "name");
             fail();
         }
-        catch (NullPointerException e) {
-            assertTrue("input".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -555,9 +547,7 @@ public class AzureDataStoreTest {
                         backend.addMetadataRecord(testFile, name);
                     }
                     fail();
-                } catch (IllegalArgumentException e) {
-                    assertTrue("name".equals(e.getMessage()));
-                }
+                } catch (NullPointerException | IllegalArgumentException e) { }
             }
         }
     }

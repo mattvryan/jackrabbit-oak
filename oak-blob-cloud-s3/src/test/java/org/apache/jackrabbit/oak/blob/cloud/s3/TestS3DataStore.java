@@ -16,6 +16,19 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
+import static org.apache.commons.codec.binary.Hex.encodeHexString;
+import static org.apache.commons.io.FileUtils.copyInputStreamToFile;
+import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getFixtures;
+import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getS3DataStore;
+import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.isS3Configured;
+import static org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils.randomStream;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
@@ -47,19 +60,6 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.apache.commons.codec.binary.Hex.encodeHexString;
-import static org.apache.commons.io.FileUtils.copyInputStreamToFile;
-import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getFixtures;
-import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getS3DataStore;
-import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.isS3Configured;
-import static org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils.randomStream;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
 
 /**
  * Simple tests for S3DataStore.
@@ -215,7 +215,6 @@ public class TestS3DataStore {
         assumeTrue(isS3Configured());
 
         expectedEx.expect(IllegalArgumentException.class);
-        expectedEx.expectMessage("input should not be null");
 
         S3DataStore s3ds = getDataStore();
         s3ds.addMetadataRecord((InputStream)null, "name");
@@ -225,11 +224,12 @@ public class TestS3DataStore {
     public void testBackendAddMetadataRecordNullFileThrowsNullPointerException() throws Exception {
         assumeTrue(isS3Configured());
 
-        expectedEx.expect(IllegalArgumentException.class);
-        expectedEx.expectMessage("input should not be null");
-
         S3DataStore s3ds = getDataStore();
-        s3ds.addMetadataRecord((File)null, "name");
+        try {
+            s3ds.addMetadataRecord((File) null, "name");
+            fail();
+        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
@@ -250,9 +250,7 @@ public class TestS3DataStore {
                         s3ds.addMetadataRecord(testFile, name);
                     }
                     fail();
-                } catch (IllegalArgumentException e) {
-                    assertTrue("name should not be empty".equals(e.getMessage()));
-                }
+                } catch (IllegalArgumentException e) { }
             }
         }
     }

@@ -22,7 +22,6 @@ import static com.google.common.collect.Iterables.filter;
 import static java.lang.Thread.currentThread;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -335,7 +334,9 @@ public class S3Backend extends AbstractCloudBackend {
         try {
             // start multipart parallel upload using amazon sdk
             ObjectMetadata metadata = new ObjectMetadata();
-            metadata.setContentLength(length);
+            if (length > 0) {
+                metadata.setContentLength(length);
+            }
             Upload upload = tmx.upload(s3ReqDecorator.decorate(
                     new PutObjectRequest(bucket, key, in, metadata))
             );
@@ -352,6 +353,7 @@ public class S3Backend extends AbstractCloudBackend {
 
     @Override
     protected boolean objectExists(@NotNull final String key) throws DataStoreException {
+        // TODO:  should we use s3service.doesObjectExist(bucket, key)?
         return getObjectMetadata(key) != null;
     }
 
@@ -384,25 +386,12 @@ public class S3Backend extends AbstractCloudBackend {
     }
 
     @Override
-    public void deleteRecord(DataIdentifier identifier)
-            throws DataStoreException {
-        long start = System.currentTimeMillis();
-        String key = getKeyName(identifier);
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-            s3service.deleteObject(bucket, key);
-            LOG.debug("Identifier [{}] deleted. It took [{}]ms.", new Object[] {
-                identifier, (System.currentTimeMillis() - start) });
-        } catch (AmazonServiceException e) {
-            throw new DataStoreException(
-                "Could not delete dataIdentifier " + identifier, e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
+    protected boolean deleteObject(@NotNull final String key) throws DataStoreException {
+        if (! s3service.doesObjectExist(bucket, key)) {
+            return false;
         }
+        s3service.deleteObject(bucket, key);
+        return true;
     }
 
     @Override
@@ -422,61 +411,6 @@ public class S3Backend extends AbstractCloudBackend {
 
     public void setBucket(String bucket) {
         this.bucket = bucket;
-    }
-
-//    /**
-//     * Properties used to configure the backend. If provided explicitly
-//     * before init is invoked then these take precedence
-//     *
-//     * @param properties  to configure S3Backend
-//     */
-//    public void setProperties(Properties properties) {
-//        this.properties = properties;
-//    }
-
-    @Override
-    public void addMetadataRecord(final InputStream input, final String name) throws DataStoreException {
-        checkArgument(input != null, "input should not be null");
-        checkArgument(!Strings.isNullOrEmpty(name), "name should not be empty");
-
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            Upload upload = tmx.upload(s3ReqDecorator
-                .decorate(new PutObjectRequest(bucket, addMetaKeyPrefix(name), input, new ObjectMetadata())));
-            upload.waitForUploadResult();
-        } catch (InterruptedException e) {
-            LOG.error("Error in uploading", e);
-            throw new DataStoreException("Error in uploading", e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-    }
-
-    @Override
-    public void addMetadataRecord(File input, String name) throws DataStoreException {
-        checkArgument(input != null, "input should not be null");
-        checkArgument(!Strings.isNullOrEmpty(name), "name should not be empty");
-
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            Upload upload = tmx.upload(s3ReqDecorator
-                .decorate(new PutObjectRequest(bucket, addMetaKeyPrefix(name), input)));
-            upload.waitForUploadResult();
-        } catch (InterruptedException e) {
-            LOG.error("Exception in uploading metadata file {}", new Object[] {input, e});
-            throw new DataStoreException("Error in uploading metadata file", e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
     }
 
     @Override
@@ -585,33 +519,15 @@ public class S3Backend extends AbstractCloudBackend {
             });
     }
 
+    @Nullable
     @Override
-    public DataRecord getRecord(DataIdentifier identifier) throws DataStoreException {
-        long start = System.currentTimeMillis();
-        String key = getKeyName(identifier);
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            ObjectMetadata object = s3service.getObjectMetadata(bucket, key);
-            S3DataRecord record = new S3DataRecord(this, s3service, bucket, identifier,
-                object.getLastModified().getTime(), object.getContentLength());
-            LOG.debug("Identifier [{}]'s getRecord = [{}] took [{}]ms.",
-                identifier, record, (System.currentTimeMillis() - start));
-
-            return record;
-        } catch (AmazonServiceException e) {
-            if (e.getStatusCode() == 404 || e.getStatusCode() == 403) {
-                LOG.info(
-                        "getRecord:Identifier [{}] not found. Took [{}] ms.",
-                        identifier, (System.currentTimeMillis() - start));
-            }
-            throw new DataStoreException(e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
+    protected DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier)
+            throws DataStoreException {
+        ObjectMetadata metadata = getObjectMetadata(getKeyName(identifier));
+        return metadata != null
+                ? new S3DataRecord(this, s3service, bucket, identifier,
+                metadata.getLastModified().getTime(), metadata.getContentLength())
+                : null;
     }
 
     @Override
@@ -1016,17 +932,6 @@ public class S3Backend extends AbstractCloudBackend {
             }
             return false;
         }
-    }
-
-    private static String addMetaKeyPrefix(String key) {
-        return Utils.META_KEY_PREFIX + key;
-    }
-
-    private static String stripMetaKeyPrefix(String name) {
-        if (name.startsWith(Utils.META_KEY_PREFIX)) {
-            return name.substring(Utils.META_KEY_PREFIX.length());
-        }
-        return name;
     }
 
     /**
