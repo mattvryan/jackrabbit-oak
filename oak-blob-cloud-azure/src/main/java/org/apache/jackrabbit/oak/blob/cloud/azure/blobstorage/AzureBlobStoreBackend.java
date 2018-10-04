@@ -447,43 +447,31 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
         }
     }
 
+    @NotNull
     @Override
-    public List<DataRecord> getAllMetadataRecords(String prefix) {
-        if (null == prefix) {
-            throw new NullPointerException("prefix");
-        }
-        long start = System.currentTimeMillis();
+    protected List<DataRecord> getAllObjectMetadataRecords(@NotNull final String prefix) {
         final List<DataRecord> records = Lists.newArrayList();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
             CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(Utils.META_DIR_NAME);
             for (ListBlobItem item : metaDir.listBlobs(prefix)) {
                 if (item instanceof CloudBlob) {
                     CloudBlob blob = (CloudBlob) item;
                     records.add(new AzureBlobStoreDataRecord(
-                        this,
-                        connectionString,
-                        containerName,
-                        new DataIdentifier(stripMetaKeyPrefix(blob.getName())),
-                        blob.getProperties().getLastModified().getTime(),
-                        blob.getProperties().getLength(),
-                        true));
+                            this,
+                            connectionString,
+                            containerName,
+                            new DataIdentifier(stripMetaKeyPrefix(blob.getName())),
+                            blob.getProperties().getLastModified().getTime(),
+                            blob.getProperties().getLength(),
+                            true));
                 }
             }
-            LOG.debug("Metadata records read. recordsRead={} metadataFolder={} duration={}", records.size(), prefix, (System.currentTimeMillis() - start));
         }
         catch (StorageException e) {
             LOG.info("Error reading all metadata records. metadataFolder={}", prefix, e);
         }
         catch (DataStoreException | URISyntaxException e) {
             LOG.debug("Error reading all metadata records. metadataFolder={}", prefix, e);
-        }
-        finally {
-            if (null != contextClassLoader) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
         }
         return records;
     }

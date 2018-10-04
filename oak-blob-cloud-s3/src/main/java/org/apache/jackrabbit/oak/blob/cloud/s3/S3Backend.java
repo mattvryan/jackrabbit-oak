@@ -413,27 +413,17 @@ public class S3Backend extends AbstractCloudBackend {
         this.bucket = bucket;
     }
 
+    @NotNull
     @Override
-    public List<DataRecord> getAllMetadataRecords(String prefix) {
-        checkArgument(null != prefix, "prefix should not be null");
-
+    protected List<DataRecord> getAllObjectMetadataRecords(@NotNull final String prefix) {
         List<DataRecord> metadataList = new ArrayList<DataRecord>();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-            ListObjectsRequest listObjectsRequest =
+        ListObjectsRequest listObjectsRequest =
                 new ListObjectsRequest().withBucketName(bucket).withPrefix(addMetaKeyPrefix(prefix));
-            ObjectListing prevObjectListing = s3service.listObjects(listObjectsRequest);
-            for (final S3ObjectSummary s3ObjSumm : prevObjectListing.getObjectSummaries()) {
-                metadataList.add(new S3DataRecord(this, s3service, bucket,
+        ObjectListing prevObjectListing = s3service.listObjects(listObjectsRequest);
+        for (final S3ObjectSummary s3ObjSumm : prevObjectListing.getObjectSummaries()) {
+            metadataList.add(new S3DataRecord(this, s3service, bucket,
                     new DataIdentifier(stripMetaKeyPrefix(s3ObjSumm.getKey())),
                     s3ObjSumm.getLastModified().getTime(), s3ObjSumm.getSize(), true));
-            }
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
         }
         return metadataList;
     }
