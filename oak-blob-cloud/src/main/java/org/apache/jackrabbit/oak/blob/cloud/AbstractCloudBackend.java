@@ -347,6 +347,29 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
         }
     }
 
+    @Override
+    public boolean deleteMetadataRecord(@NotNull final String name) {
+        long start = System.currentTimeMillis();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            boolean result = deleteObject(addMetaKeyPrefix(name));
+            LOG.debug("Metadata record {}. metadataName={} duration={}",
+                    result ? "deleted" : "delete requested, but it does not exist (perhaps already deleted)",
+                    name, (System.currentTimeMillis() - start));
+            return result;
+        }
+        catch (DataStoreException e) {
+            LOG.debug("Error deleting metadata record. metadataName={}", name, e);
+        }
+        finally {
+            if (contextClassLoader != null) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
+        return false;
+    }
+
 
     /**
      * Get key from data identifier. Object is stored with key in cloud storage.
