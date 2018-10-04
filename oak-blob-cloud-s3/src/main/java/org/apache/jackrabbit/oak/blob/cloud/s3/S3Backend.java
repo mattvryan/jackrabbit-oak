@@ -17,7 +17,6 @@
 
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.Iterables.filter;
 import static java.lang.Thread.currentThread;
 
@@ -429,31 +428,21 @@ public class S3Backend extends AbstractCloudBackend {
     }
 
     @Override
-    public void deleteAllMetadataRecords(String prefix) {
-        checkArgument(null != prefix, "prefix should not be empty");
-
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-
-            ListObjectsRequest listObjectsRequest =
-                new ListObjectsRequest().withBucketName(bucket).withPrefix(addMetaKeyPrefix(prefix));
-            ObjectListing metaList = s3service.listObjects(listObjectsRequest);
-            List<DeleteObjectsRequest.KeyVersion> deleteList = new ArrayList<DeleteObjectsRequest.KeyVersion>();
-            for (S3ObjectSummary s3ObjSumm : metaList.getObjectSummaries()) {
-                deleteList.add(new DeleteObjectsRequest.KeyVersion(s3ObjSumm.getKey()));
-            }
-            if (deleteList.size() > 0) {
-                DeleteObjectsRequest delObjsReq = new DeleteObjectsRequest(bucket);
-                delObjsReq.setKeys(deleteList);
-                s3service.deleteObjects(delObjsReq);
-            }
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
+    protected int deleteAllObjectMetadataRecords(@NotNull final String prefix) {
+        ListObjectsRequest listObjectsRequest =
+                new ListObjectsRequest().withBucketName(bucket).withPrefix(prefix);
+        ObjectListing metaList = s3service.listObjects(listObjectsRequest);
+        List<DeleteObjectsRequest.KeyVersion> deleteList = new ArrayList<DeleteObjectsRequest.KeyVersion>();
+        for (S3ObjectSummary s3ObjSumm : metaList.getObjectSummaries()) {
+            deleteList.add(new DeleteObjectsRequest.KeyVersion(s3ObjSumm.getKey()));
         }
+        int numToDelete = deleteList.size();
+        if (numToDelete > 0) {
+            DeleteObjectsRequest delObjsReq = new DeleteObjectsRequest(bucket);
+            delObjsReq.setKeys(deleteList);
+            s3service.deleteObjects(delObjsReq);
+        }
+        return numToDelete;
     }
 
     @Override
