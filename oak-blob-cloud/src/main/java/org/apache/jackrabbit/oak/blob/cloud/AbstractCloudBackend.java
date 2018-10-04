@@ -47,6 +47,7 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
     abstract protected void writeObject(@NotNull final String key, @NotNull final InputStream in, long length) throws DataStoreException;
     abstract protected boolean deleteObject(@NotNull final String key) throws DataStoreException;
     abstract protected @Nullable DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier) throws DataStoreException;
+    abstract protected @Nullable DataRecord getObjectMetadataRecord(@NotNull final String name) throws DataStoreException;
 
     private Properties properties;
 
@@ -284,6 +285,39 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
                 Thread.currentThread().setContextClassLoader(contextClassLoader);
             }
         }
+    }
+
+    @Nullable
+    @Override
+    public DataRecord getMetadataRecord(@NotNull final String name) {
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("name must not be empty");
+        }
+
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        long start = System.currentTimeMillis();
+        DataRecord record = null;
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            record = getObjectMetadataRecord(name);
+            if (null == record) {
+                LOG.info("Metadata record not found. metadataName={} duration ={} record={}",
+                        name, (System.currentTimeMillis() - start), record);
+            }
+            else {
+                LOG.debug("Metadata record read. metadataName={} duration={} record={}",
+                        name, (System.currentTimeMillis() - start), record);
+            }
+        }
+        catch (DataStoreException e) {
+            LOG.error("Error reading metadata record. metadataName={}", name, e);
+        }
+        finally {
+            if (null != contextClassLoader) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
+        return record;
     }
 
 
