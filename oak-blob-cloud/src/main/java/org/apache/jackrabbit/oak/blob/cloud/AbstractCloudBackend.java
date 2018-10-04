@@ -393,6 +393,30 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
         }
     }
 
+    @Override
+    public boolean metadataRecordExists(@NotNull final String name) {
+        long start = System.currentTimeMillis();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            boolean exists = objectExists(addMetaKeyPrefix(name));
+            LOG.debug("Metadata record [{}] {}. duration={}",
+                    name,
+                    exists ? "exists" : "requested, but does not exist",
+                    (System.currentTimeMillis() - start));
+            return exists;
+        }
+        catch (DataStoreException e) {
+            LOG.info("Error checking for existence of metadata record [{}]", name, e);
+        }
+        finally {
+            if (contextClassLoader != null) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
+        return false;
+    }
+
 
     /**
      * Get key from data identifier. Object is stored with key in cloud storage.
