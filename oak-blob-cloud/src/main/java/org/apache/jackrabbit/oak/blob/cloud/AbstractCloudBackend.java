@@ -23,9 +23,11 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Properties;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
@@ -48,6 +50,7 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
     abstract protected boolean deleteObject(@NotNull final String key) throws DataStoreException;
     abstract protected @Nullable DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier) throws DataStoreException;
     abstract protected @Nullable DataRecord getObjectMetadataRecord(@NotNull final String name) throws DataStoreException;
+    abstract protected @NotNull List<DataRecord> getAllObjectMetadataRecords(@NotNull final String prefix);
 
     private Properties properties;
 
@@ -318,6 +321,30 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
             }
         }
         return record;
+    }
+
+    @NotNull
+    @Override
+    public List<DataRecord> getAllMetadataRecords(@NotNull final String prefix) {
+        // Command-line maven doesn't seem to honor the @NotNull annotations
+        if (null == prefix) {
+            throw new IllegalArgumentException("prefix must not be null");
+        }
+
+        long start = System.currentTimeMillis();
+        List<DataRecord> records = Lists.newArrayList();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            records = getAllObjectMetadataRecords(prefix);
+            LOG.debug("Metadata records read. recordsRead={} metadataFolder={} duration={}", records.size(), prefix, (System.currentTimeMillis() - start));
+            return records;
+        }
+        finally {
+            if (null != contextClassLoader) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
     }
 
 
