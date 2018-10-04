@@ -344,29 +344,45 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     @Override
     protected DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier)
             throws DataStoreException {
-        String key = getKeyName(identifier);
+        return getDataRecordImpl(identifier, getKeyName(identifier), false);
+    }
+
+    @Nullable
+    @Override
+    protected DataRecord getObjectMetadataRecord(@NotNull final String name)
+            throws DataStoreException {
+        return getDataRecordImpl(new DataIdentifier(name), addMetaKeyPrefix(name), true);
+    }
+
+    @Nullable
+    private DataRecord getDataRecordImpl(@NotNull final DataIdentifier identifier,
+                                         @NotNull final String key,
+                                         boolean isMetadataRecord)
+            throws DataStoreException {
+        DataRecord record = null;
         try {
             CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
             if (blob.exists()) {
                 blob.downloadAttributes();
-                return new AzureBlobStoreDataRecord(
+                record = new AzureBlobStoreDataRecord(
                         this,
                         connectionString,
                         containerName,
-                        new DataIdentifier(getIdentifierName(blob.getName())),
+                        identifier,
                         blob.getProperties().getLastModified().getTime(),
-                        blob.getProperties().getLength());
+                        blob.getProperties().getLength(),
+                        isMetadataRecord);
             }
-            return null;
         }
         catch (StorageException | URISyntaxException e) {
-            LOG.info("Error getting data record for blob. identifier=[{}]", key, e);
+            LOG.info("Error getting data record for blob. identifier=[{}]", identifier, e);
             throw new DataStoreException(
                     String.format("Error getting data record for blob. identifier=[%s]",
-                            key),
+                            identifier),
                     e
             );
         }
+        return record;
     }
 
     @Override
@@ -428,44 +444,6 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
         catch (StorageException | URISyntaxException e) {
             LOG.info("Error deleting blob. identifier={}", getIdentifierName(key), e);
             throw new DataStoreException(e);
-        }
-    }
-
-    @Override
-    public DataRecord getMetadataRecord(String name) {
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        long start = System.currentTimeMillis();
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(Utils.META_DIR_NAME);
-            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
-            if (!blob.exists()) {
-                LOG.warn("Trying to read missing metadata. metadataName={}", name);
-                return null;
-            }
-            blob.downloadAttributes();
-            long lastModified = blob.getProperties().getLastModified().getTime();
-            long length = blob.getProperties().getLength();
-            AzureBlobStoreDataRecord record =  new AzureBlobStoreDataRecord(this,
-                                                connectionString,
-                                                containerName, new DataIdentifier(name),
-                                                lastModified,
-                                                length,
-                                                true);
-            LOG.debug("Metadata record read. metadataName={} duration={} record={}", name, (System.currentTimeMillis() - start), record);
-            return record;
-
-        } catch (StorageException e) {
-            LOG.info("Error reading metadata record. metadataName={}", name, e);
-            throw new RuntimeException(e);
-        } catch (Exception e) {
-            LOG.debug("Error reading metadata record. metadataName={}", name, e);
-            throw new RuntimeException(e);
-        } finally {
-            if (null != contextClassLoader) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
         }
     }
 

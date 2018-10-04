@@ -414,28 +414,6 @@ public class S3Backend extends AbstractCloudBackend {
     }
 
     @Override
-    public DataRecord getMetadataRecord(String name) {
-        checkArgument(!Strings.isNullOrEmpty(name), "name should not be empty");
-
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-            ObjectMetadata meta = s3service.getObjectMetadata(bucket, addMetaKeyPrefix(name));
-            return new S3DataRecord(this, s3service, bucket, new DataIdentifier(name),
-                meta.getLastModified().getTime(), meta.getContentLength(), true);
-        } catch(Exception e) {
-            LOG.error("Error getting metadata record for {}", name, e);
-        }
-        finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-        return null;
-    }
-
-    @Override
     public List<DataRecord> getAllMetadataRecords(String prefix) {
         checkArgument(null != prefix, "prefix should not be null");
 
@@ -523,11 +501,32 @@ public class S3Backend extends AbstractCloudBackend {
     @Override
     protected DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier)
             throws DataStoreException {
-        ObjectMetadata metadata = getObjectMetadata(getKeyName(identifier));
-        return metadata != null
-                ? new S3DataRecord(this, s3service, bucket, identifier,
-                metadata.getLastModified().getTime(), metadata.getContentLength())
-                : null;
+        return getDataRecordImpl(identifier, getKeyName(identifier), false);
+    }
+
+    @Nullable
+    @Override
+    protected DataRecord getObjectMetadataRecord(@NotNull final String name)
+            throws DataStoreException {
+        return getDataRecordImpl(new DataIdentifier(name), addMetaKeyPrefix(name), true);
+    }
+
+    @Nullable
+    private DataRecord getDataRecordImpl(@NotNull final DataIdentifier identifier,
+                                         @NotNull final String key,
+                                         boolean isMeta)
+            throws DataStoreException {
+        ObjectMetadata metadata = getObjectMetadata(key);
+        if (null != metadata) {
+            return new S3DataRecord(this,
+                    s3service,
+                    bucket,
+                    identifier,
+                    metadata.getLastModified().getTime(),
+                    metadata.getContentLength(),
+                    isMeta);
+        }
+        return null;
     }
 
     @Override
