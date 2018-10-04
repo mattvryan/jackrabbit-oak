@@ -477,39 +477,21 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     }
 
     @Override
-    public void deleteAllMetadataRecords(String prefix) {
-        if (null == prefix) {
-            throw new NullPointerException("prefix");
-        }
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+    protected int deleteAllObjectMetadataRecords(@NotNull final String prefix) {
+        int total = 0;
         try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(Utils.META_DIR_NAME);
-            int total = 0;
-            for (ListBlobItem item : metaDir.listBlobs(prefix)) {
+            for (ListBlobItem item : getAzureContainer().listBlobs(prefix)) {
                 if (item instanceof CloudBlob) {
                     if (((CloudBlob)item).deleteIfExists()) {
                         total++;
                     }
                 }
             }
-            LOG.debug("Metadata records deleted. recordsDeleted={} metadataFolder={} duration={}",
-                    total, prefix, (System.currentTimeMillis() - start));
-
         }
-        catch (StorageException e) {
+        catch (StorageException | DataStoreException e) {
             LOG.info("Error deleting all metadata records. metadataFolder={}", prefix, e);
         }
-        catch (DataStoreException | URISyntaxException e) {
-            LOG.debug("Error deleting all metadata records. metadataFolder={}", prefix, e);
-        }
-        finally {
-            if (null != contextClassLoader) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
+        return total;
     }
 
     @Override

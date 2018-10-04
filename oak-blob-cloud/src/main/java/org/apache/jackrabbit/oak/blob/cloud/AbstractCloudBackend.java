@@ -51,6 +51,7 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
     abstract protected @Nullable DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier) throws DataStoreException;
     abstract protected @Nullable DataRecord getObjectMetadataRecord(@NotNull final String name) throws DataStoreException;
     abstract protected @NotNull List<DataRecord> getAllObjectMetadataRecords(@NotNull final String prefix);
+    abstract protected int deleteAllObjectMetadataRecords(@NotNull final String prefix);
 
     private Properties properties;
 
@@ -368,6 +369,28 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
             }
         }
         return false;
+    }
+
+    @Override
+    public void deleteAllMetadataRecords(@NotNull final String prefix) {
+        // Command-line maven doesn't seem to honor the @NotNull annotations
+        if (null == prefix) {
+            throw new IllegalArgumentException("prefix must not be null");
+        }
+
+        long start = System.currentTimeMillis();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            int total = deleteAllObjectMetadataRecords(addMetaKeyPrefix(prefix));
+            LOG.debug("Metadata records deleted. recordsDeleted={} metadataFolder={} duration={}",
+                    total, prefix, (System.currentTimeMillis() - start));
+        }
+        finally {
+            if (null != contextClassLoader) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
     }
 
 
