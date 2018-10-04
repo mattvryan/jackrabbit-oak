@@ -526,20 +526,6 @@ public class S3Backend extends AbstractCloudBackend {
         }
     }
 
-    @Override
-    public boolean metadataRecordExists(String name) {
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-            return s3service.doesObjectExist(bucket, addMetaKeyPrefix(name));
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-    }
-
     public void setHttpUploadURIExpirySeconds(int seconds) {
         this.httpUploadURIExpirySeconds = seconds;
     }
