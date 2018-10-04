@@ -25,7 +25,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
+import com.google.common.base.Strings;
 import org.apache.jackrabbit.core.data.DataIdentifier;
+import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 import org.jetbrains.annotations.NotNull;
@@ -43,6 +45,8 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
     abstract protected @Nullable BlobAttributes getBlobAttributes(@NotNull final String key) throws DataStoreException;
     abstract protected void touchObject(@NotNull final String key) throws DataStoreException;
     abstract protected void writeObject(@NotNull final String key, @NotNull final InputStream in, long length) throws DataStoreException;
+    abstract protected boolean deleteObject(@NotNull final String key) throws DataStoreException;
+    abstract protected @Nullable DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier) throws DataStoreException;
 
     private Properties properties;
 
@@ -187,6 +191,102 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
         }
     }
 
+    @NotNull
+    @Override
+    public DataRecord getRecord(@NotNull final DataIdentifier identifier) throws DataStoreException {
+        long start = System.currentTimeMillis();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            DataRecord record = getObjectDataRecord(identifier);
+            if (null != record) {
+                LOG.debug("Identifier [{}]'s getRecord = [{}] took [{}]ms.",
+                        identifier, record, (System.currentTimeMillis() - start));
+                return record;
+            }
+            else {
+                LOG.info("getRecord for identifier [{}] - not found.  Took [{}]ms.",
+                        identifier, (System.currentTimeMillis() - start));
+                throw new DataStoreException(
+                        String.format("No record found for identifier [%s]", identifier)
+                );
+            }
+        } finally {
+            if (contextClassLoader != null) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
+    }
+
+    @Override
+    public void deleteRecord(@NotNull final DataIdentifier identifier) throws DataStoreException {
+        long start = System.currentTimeMillis();
+        String key = getKeyName(identifier);
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(
+                    getClass().getClassLoader());
+            boolean result = deleteObject(key);
+            LOG.debug("Blob {}. identifier={} duration={}",
+                    result ? "deleted" : "delete requested, but it does not exist (perhaps already deleted)",
+                    getIdentifierName(key),
+                    (System.currentTimeMillis() - start)
+            );
+        }
+        finally {
+            if (contextClassLoader != null) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
+    }
+
+    @Override
+    public void addMetadataRecord(@NotNull final InputStream inputStream,
+                                  @NotNull final String name) throws DataStoreException {
+        addMetadataRecordImpl(inputStream, name, -1L);
+    }
+
+    @Override
+    public void addMetadataRecord(@NotNull final File file,
+                                  @NotNull final String name) throws DataStoreException {
+        try {
+            addMetadataRecordImpl(new FileInputStream(file), name, file.length());
+        }
+        catch (IOException e) {
+            throw new DataStoreException(
+                    String.format("Error writing metadata record for file %s",
+                            file.getAbsolutePath()),
+                    e
+            );
+        }
+    }
+
+    private void addMetadataRecordImpl(@NotNull final InputStream inputStream,
+                                       @NotNull final String name,
+                                       long length) throws DataStoreException {
+        // Command-line maven doesn't seem to honor the @NotNull annotations
+        if (null == inputStream) {
+            throw new IllegalArgumentException("Input must not be null");
+        }
+        if (Strings.isNullOrEmpty(name)) {
+            throw new IllegalArgumentException("name cannot be empty");
+        }
+
+        long start = System.currentTimeMillis();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+            writeObject(addMetaKeyPrefix(name), inputStream, length);
+            LOG.debug("Metadata record added. metadataName={} duration={}", name, (System.currentTimeMillis() - start));
+        }
+        finally {
+            if (null != contextClassLoader) {
+                Thread.currentThread().setContextClassLoader(contextClassLoader);
+            }
+        }
+    }
+
+
     /**
      * Get key from data identifier. Object is stored with key in cloud storage.
      */
@@ -205,6 +305,17 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
             return key;
         }
         return key.substring(0, 4) + key.substring(5);
+    }
+
+    protected static String addMetaKeyPrefix(String key) {
+        return Utils.META_KEY_PREFIX + key;
+    }
+
+    protected static String stripMetaKeyPrefix(String name) {
+        if (name.startsWith(Utils.META_KEY_PREFIX)) {
+            return name.substring(Utils.META_KEY_PREFIX.length());
+        }
+        return name;
     }
 
     protected interface BlobAttributes {

@@ -23,9 +23,6 @@ import static java.lang.Thread.currentThread;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -343,46 +340,32 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
         return key;
     }
 
+    @Nullable
     @Override
-    public DataRecord getRecord(DataIdentifier identifier) throws DataStoreException {
-        if (null == identifier) {
-            throw new NullPointerException("identifier");
-        }
+    protected DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier)
+            throws DataStoreException {
         String key = getKeyName(identifier);
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
             CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
             if (blob.exists()) {
                 blob.downloadAttributes();
-                AzureBlobStoreDataRecord record = new AzureBlobStoreDataRecord(
-                    this,
-                    connectionString,
-                    containerName,
-                    new DataIdentifier(getIdentifierName(blob.getName())),
-                    blob.getProperties().getLastModified().getTime(),
-                    blob.getProperties().getLength());
-                LOG.debug("Data record read for blob. identifier={} duration={} record={}",
-                          key, (System.currentTimeMillis() - start), record);
-                return record;
-            } else {
-                LOG.debug("Blob not found. identifier={} duration={}",
-                          key, (System.currentTimeMillis() - start));
-                throw new DataStoreException(String.format("Cannot find blob. identifier=%s", key));
+                return new AzureBlobStoreDataRecord(
+                        this,
+                        connectionString,
+                        containerName,
+                        new DataIdentifier(getIdentifierName(blob.getName())),
+                        blob.getProperties().getLastModified().getTime(),
+                        blob.getProperties().getLength());
             }
-        }catch (StorageException e) {
-            LOG.info("Error getting data record for blob. identifier={}", key, e);
-            throw new DataStoreException(String.format("Cannot retrieve blob. identifier=%s", key), e);
+            return null;
         }
-        catch (URISyntaxException e) {
-            LOG.debug("Error getting data record for blob. identifier={}", key, e);
-            throw new DataStoreException(String.format("Cannot retrieve blob. identifier=%s", key), e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
+        catch (StorageException | URISyntaxException e) {
+            LOG.info("Error getting data record for blob. identifier=[{}]", key, e);
+            throw new DataStoreException(
+                    String.format("Error getting data record for blob. identifier=[%s]",
+                            key),
+                    e
+            );
         }
     }
 
@@ -438,93 +421,12 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     }
 
     @Override
-    public void deleteRecord(DataIdentifier identifier) throws DataStoreException {
-        if (null == identifier) throw new NullPointerException("identifier");
-
-        String key = getKeyName(identifier);
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+    protected boolean deleteObject(@NotNull final String key) throws DataStoreException {
         try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            boolean result = getAzureContainer().getBlockBlobReference(key).deleteIfExists();
-            LOG.debug("Blob {}. identifier={} duration={}",
-                    result ? "deleted" : "delete requested, but it does not exist (perhaps already deleted)",
-                    key, (System.currentTimeMillis() - start));
+            return getAzureContainer().getBlockBlobReference(key).deleteIfExists();
         }
-        catch (StorageException e) {
-            LOG.info("Error deleting blob. identifier={}", key, e);
-            throw new DataStoreException(e);
-        }
-        catch (URISyntaxException e) {
-            throw new DataStoreException(e);
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-    }
-
-    @Override
-    public void addMetadataRecord(InputStream input, String name) throws DataStoreException {
-        if (null == input) {
-            throw new NullPointerException("input");
-        }
-        if (Strings.isNullOrEmpty(name)) {
-            throw new IllegalArgumentException("name");
-        }
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            addMetadataRecordImpl(input, name, -1L);
-            LOG.debug("Metadata record added. metadataName={} duration={}", name, (System.currentTimeMillis() - start));
-        }
-        finally {
-            if (null != contextClassLoader) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-    }
-
-    @Override
-    public void addMetadataRecord(File input, String name) throws DataStoreException {
-        if (null == input) {
-            throw new NullPointerException("input");
-        }
-        if (Strings.isNullOrEmpty(name)) {
-            throw new IllegalArgumentException("name");
-        }
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            addMetadataRecordImpl(new FileInputStream(input), name, input.length());
-            LOG.debug("Metadata record added. metadataName={} duration={}", name, (System.currentTimeMillis() - start));
-        }
-        catch (FileNotFoundException e) {
-            throw new DataStoreException(e);
-        }
-        finally {
-            if (null != contextClassLoader) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-    }
-
-    private void addMetadataRecordImpl(final InputStream input, String name, long recordLength) throws DataStoreException {
-        try {
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(Utils.META_DIR_NAME);
-            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
-            blob.upload(input, recordLength);
-        }
-        catch (StorageException e) {
-            LOG.info("Error adding metadata record. metadataName={} length={}", name, recordLength, e);
-            throw new DataStoreException(e);
-        }
-        catch (URISyntaxException |  IOException e) {
+        catch (StorageException | URISyntaxException e) {
+            LOG.info("Error deleting blob. identifier={}", getIdentifierName(key), e);
             throw new DataStoreException(e);
         }
     }
@@ -695,37 +597,6 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
         return false;
     }
 
-
-//    /**
-//     * Get key from data identifier. Object is stored with key in ADS.
-//     */
-//    private static String getKeyName(DataIdentifier identifier) {
-//        String key = identifier.toString();
-//        return key.substring(0, 4) + Utils.DASH + key.substring(4);
-//    }
-//
-//    /**
-//     * Get data identifier from key.
-//     */
-//    private static String getIdentifierName(String key) {
-//        if (!key.contains(Utils.DASH)) {
-//            return null;
-//        } else if (key.contains(META_KEY_PREFIX)) {
-//            return key;
-//        }
-//        return key.substring(0, 4) + key.substring(5);
-//    }
-
-    private static String addMetaKeyPrefix(final String key) {
-        return Utils.META_KEY_PREFIX + key;
-    }
-
-    private static String stripMetaKeyPrefix(String name) {
-        if (name.startsWith(Utils.META_KEY_PREFIX)) {
-            return name.substring(Utils.META_KEY_PREFIX.length());
-        }
-        return name;
-    }
 
     public void setHttpDownloadURIExpirySeconds(int seconds) {
         httpDownloadURIExpirySeconds = seconds;
