@@ -477,35 +477,6 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     }
 
     @Override
-    public boolean deleteMetadataRecord(String name) {
-        long start = System.currentTimeMillis();
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(addMetaKeyPrefix(name));
-            boolean result = blob.deleteIfExists();
-            LOG.debug("Metadata record {}. metadataName={} duration={}",
-                    result ? "deleted" : "delete requested, but it does not exist (perhaps already deleted)",
-                    name, (System.currentTimeMillis() - start));
-            return result;
-
-        }
-        catch (StorageException e) {
-            LOG.info("Error deleting metadata record. metadataName={}", name, e);
-        }
-        catch (DataStoreException | URISyntaxException e) {
-            LOG.debug("Error deleting metadata record. metadataName={}", name, e);
-        }
-        finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-        return false;
-    }
-
-    @Override
     public void deleteAllMetadataRecords(String prefix) {
         if (null == prefix) {
             throw new NullPointerException("prefix");
