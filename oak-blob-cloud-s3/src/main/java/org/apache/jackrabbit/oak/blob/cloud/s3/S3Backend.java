@@ -429,23 +429,6 @@ public class S3Backend extends AbstractCloudBackend {
     }
 
     @Override
-    public boolean deleteMetadataRecord(String name) {
-        checkArgument(!Strings.isNullOrEmpty(name), "name should not be empty");
-
-        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(
-                getClass().getClassLoader());
-            s3service.deleteObject(bucket, addMetaKeyPrefix(name));
-        } finally {
-            if (contextClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(contextClassLoader);
-            }
-        }
-        return true;
-    }
-
-    @Override
     public void deleteAllMetadataRecords(String prefix) {
         checkArgument(null != prefix, "prefix should not be empty");
 
