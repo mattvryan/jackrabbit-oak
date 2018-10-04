@@ -688,9 +688,7 @@ public class AzureDataStoreTest {
             backend.deleteAllMetadataRecords(null);
             fail();
         }
-        catch (NullPointerException e) {
-            assertTrue("prefix".equals(e.getMessage()));
-        }
+        catch (NullPointerException | IllegalArgumentException e) { }
     }
 
     @Test
