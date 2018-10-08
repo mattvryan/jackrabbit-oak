@@ -22,7 +22,6 @@ package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 import static java.lang.Thread.currentThread;
 
 import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -31,7 +30,6 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.security.InvalidKeyException;
 import java.time.Instant;
-import java.util.Collection;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.Iterator;
@@ -40,13 +38,10 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -69,7 +64,6 @@ import com.microsoft.azure.storage.blob.ListBlobItem;
 import com.microsoft.azure.storage.blob.SharedAccessBlobHeaders;
 import com.microsoft.azure.storage.blob.SharedAccessBlobPermissions;
 import com.microsoft.azure.storage.blob.SharedAccessBlobPolicy;
-import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
@@ -99,18 +93,11 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     private static final int MAX_ALLOWABLE_UPLOAD_URIS = 50000; // Azure limit
     private static final int MAX_UNIQUE_RECORD_TRIES = 10;
 
-    //private Properties properties;
     private String containerName;
     private String connectionString;
     private int concurrentRequestCount = 1;
     private RetryPolicy retryPolicy;
     private Integer requestTimeout;
-    private int httpDownloadURIExpirySeconds = 0; // disabled by default
-    private int httpUploadURIExpirySeconds = 0; // disabled by default
-
-    private Cache<DataIdentifier, URI> httpDownloadURICache;
-
-    private byte[] secret;
 
     protected CloudBlobContainer getAzureContainer() throws DataStoreException {
         CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
@@ -303,43 +290,6 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
         return status == CopyStatus.SUCCESS;
     }
 
-    @Override
-    public byte[] getOrCreateReferenceKey() throws DataStoreException {
-        try {
-            if (secret != null && secret.length != 0) {
-                return secret;
-            } else {
-                byte[] key;
-                // Try reading from the metadata folder if it exists
-                key = readMetadataBytes(REF_KEY);
-                if (key == null) {
-                    key = super.getOrCreateReferenceKey();
-                    addMetadataRecord(new ByteArrayInputStream(key), REF_KEY);
-                    key = readMetadataBytes(REF_KEY);
-                }
-                secret = key;
-                return secret;
-            }
-        } catch (IOException e) {
-            throw new DataStoreException("Unable to get or create key " + e);
-        }
-    }
-
-    private byte[] readMetadataBytes(String name) throws IOException, DataStoreException {
-        DataRecord rec = getMetadataRecord(name);
-        byte[] key = null;
-        if (rec != null) {
-            InputStream stream = null;
-            try {
-                stream = rec.getStream();
-                return IOUtils.toByteArray(stream);
-            } finally {
-                IOUtils.closeQuietly(stream);
-            }
-        }
-        return key;
-    }
-
     @Nullable
     @Override
     protected DataRecord getObjectDataRecord(@NotNull final DataIdentifier identifier)
@@ -495,242 +445,53 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     }
 
 
-    public void setHttpDownloadURIExpirySeconds(int seconds) {
-        httpDownloadURIExpirySeconds = seconds;
-    }
-
-    public void setHttpDownloadURICacheSize(int maxSize) {
-        // max size 0 or smaller is used to turn off the cache
-        if (maxSize > 0) {
-            LOG.info("presigned GET URI cache enabled, maxSize = {} items, expiry = {} seconds", maxSize, httpDownloadURIExpirySeconds / 2);
-            httpDownloadURICache = CacheBuilder.newBuilder()
-                    .maximumSize(maxSize)
-                    .expireAfterWrite(httpDownloadURIExpirySeconds / 2, TimeUnit.SECONDS)
-                    .build();
-        } else {
-            LOG.info("presigned GET URI cache disabled");
-            httpDownloadURICache = null;
-        }
-    }
-
-    public URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
-                                     @NotNull DataRecordDownloadOptions downloadOptions) {
-        URI uri = null;
-        if (httpDownloadURIExpirySeconds > 0) {
-            if (null != httpDownloadURICache) {
-                uri = httpDownloadURICache.getIfPresent(identifier);
-            }
-            if (null == uri) {
-                String key = getKeyName(identifier);
-                SharedAccessBlobHeaders headers = new SharedAccessBlobHeaders();
-                headers.setCacheControl(String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds));
-
-                String contentType = downloadOptions.getContentTypeHeader();
-                if (! Strings.isNullOrEmpty(contentType)) {
-                    headers.setContentType(contentType);
-                }
-
-                String contentDisposition =
-                        downloadOptions.getContentDispositionHeader();
-                if (! Strings.isNullOrEmpty(contentDisposition)) {
-                    headers.setContentDisposition(contentDisposition);
-                }
-
-                uri = createPresignedURI(key,
-                        EnumSet.of(SharedAccessBlobPermissions.READ),
-                        httpDownloadURIExpirySeconds,
-                        headers);
-                if (uri != null && httpDownloadURICache != null) {
-                    httpDownloadURICache.put(identifier, uri);
-                }
-            }
-        }
-        return uri;
-    }
-
-    public void setHttpUploadURIExpirySeconds(int seconds) { httpUploadURIExpirySeconds = seconds; }
+    // Direct Binary Access
 
     public void setBinaryTransferAccelerationEnabled(boolean enabled) {
         // No-op - not supported in Azure Blob Storage
     }
 
-    private DataIdentifier generateSafeRandomIdentifier() {
-        return new DataIdentifier(
-                String.format("%s-%d",
-                        UUID.randomUUID().toString(),
-                        Instant.now().toEpochMilli()
-                )
-        );
+    @Nullable
+    @Override
+    protected URI createPresignedGetURI(@NotNull final DataIdentifier identifier,
+                                        @NotNull final DataRecordDownloadOptions downloadOptions) {
+        SharedAccessBlobHeaders headers = new SharedAccessBlobHeaders();
+        headers.setCacheControl(String.format("private, max-age=%d, immutable", getHttpDownloadURIExpirySeconds()));
+
+        String contentType = downloadOptions.getContentTypeHeader();
+        if (! Strings.isNullOrEmpty(contentType)) {
+            headers.setContentType(contentType);
+        }
+
+        String contentDisposition =
+                downloadOptions.getContentDispositionHeader();
+        if (! Strings.isNullOrEmpty(contentDisposition)) {
+            headers.setContentDisposition(contentDisposition);
+        }
+
+        return createPresignedURI(identifier,
+                EnumSet.of(SharedAccessBlobPermissions.READ),
+                getHttpDownloadURIExpirySeconds(),
+                Maps.newHashMap(),
+                headers);
     }
 
-    public DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes, int maxNumberOfURIs) {
-        List<URI> uploadPartURIs = Lists.newArrayList();
-        long minPartSize = MIN_MULTIPART_UPLOAD_PART_SIZE;
-        long maxPartSize = MAX_MULTIPART_UPLOAD_PART_SIZE;
-
-        if (0L >= maxUploadSizeInBytes) {
-            throw new IllegalArgumentException("maxUploadSizeInBytes must be > 0");
-        }
-        else if (0 == maxNumberOfURIs) {
-            throw new IllegalArgumentException("maxNumberOfURIs must either be > 0 or -1");
-        }
-        else if (-1 > maxNumberOfURIs) {
-            throw new IllegalArgumentException("maxNumberOfURIs must either be > 0 or -1");
-        }
-        else if (maxUploadSizeInBytes > MAX_SINGLE_PUT_UPLOAD_SIZE &&
-                maxNumberOfURIs == 1) {
-            throw new IllegalArgumentException(
-                    String.format("Cannot do single-put upload with file size %d - exceeds max single-put upload size of %d",
-                            maxUploadSizeInBytes,
-                            MAX_SINGLE_PUT_UPLOAD_SIZE)
-            );
-        }
-        else if (maxUploadSizeInBytes > MAX_BINARY_UPLOAD_SIZE) {
-            throw new IllegalArgumentException(
-                    String.format("Cannot do upload with file size %d - exceeds max upload size of %d",
-                            maxUploadSizeInBytes,
-                            MAX_BINARY_UPLOAD_SIZE)
-            );
-        }
-
-        DataIdentifier newIdentifier = generateSafeRandomIdentifier();
-        String blobId = getKeyName(newIdentifier);
-        String uploadId = null;
-
-        if (httpUploadURIExpirySeconds > 0) {
-            // Always do multi-part uploads for Azure, even for small binaries.
-            //
-            // This is because Azure requires a unique header, "x-ms-blob-type=BlockBlob", to be
-            // set but only for single-put uploads, not multi-part.
-            // This would require clients to know not only the type of service provider being used
-            // but also the type of upload (single-put vs multi-part), which breaks abstraction.
-            // Instead we can insist that clients always do multi-part uploads to Azure, even
-            // if the multi-part upload consists of only one upload part.  This doesn't require
-            // additional work on the part of the client since the "complete" request must always
-            // be sent regardless, but it helps us avoid the client having to know what type
-            // of provider is being used, or us having to instruct the client to use specific
-            // types of headers, etc.
-
-            // Azure doesn't use upload IDs like AWS does
-            // Generate a fake one for compatibility - we use them to determine whether we are
-            // doing multi-part or single-put upload
-            uploadId = Base64.encode(UUID.randomUUID().toString());
-
-            long numParts = 0L;
-            if (maxNumberOfURIs > 0) {
-                long requestedPartSize = (long) Math.ceil(((double) maxUploadSizeInBytes) / ((double) maxNumberOfURIs));
-                if (requestedPartSize <= maxPartSize) {
-                    numParts = Math.min(
-                            maxNumberOfURIs,
-                            Math.min(
-                                    (long) Math.ceil(((double) maxUploadSizeInBytes) / ((double) minPartSize)),
-                                    MAX_ALLOWABLE_UPLOAD_URIS
-                            )
-                    );
-                } else {
-                    throw new IllegalArgumentException(
-                            String.format("Cannot do multi-part upload with requested part size %d", requestedPartSize)
-                    );
-                }
-            }
-            else {
-                long maximalNumParts = (long) Math.ceil(((double) maxUploadSizeInBytes) / ((double) MIN_MULTIPART_UPLOAD_PART_SIZE));
-                numParts = Math.min(maximalNumParts, MAX_ALLOWABLE_UPLOAD_URIS);
-            }
-
-            String key = getKeyName(newIdentifier);
-            EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
-            Map<String, String> presignedURIRequestParams = Maps.newHashMap();
-            presignedURIRequestParams.put("comp", "block");
-            for (long blockId = 1; blockId <= numParts; ++blockId) {
-                presignedURIRequestParams.put("blockId",
-                        Base64.encode(String.format("%06d", blockId)));
-                uploadPartURIs.add(createPresignedURI(key, perms, httpUploadURIExpirySeconds, presignedURIRequestParams));
-            }
-        }
-
-        try {
-            byte[] secret = getOrCreateReferenceKey();
-            String uploadToken = new DataRecordUploadToken(blobId, uploadId).getEncodedToken(secret);
-            return new DataRecordUpload() {
-                @Override
-                @NotNull
-                public String getUploadToken() { return uploadToken; }
-
-                @Override
-                public long getMinPartSize() { return minPartSize; }
-
-                @Override
-                public long getMaxPartSize() { return maxPartSize; }
-
-                @Override
-                @NotNull
-                public Collection<URI> getUploadURIs() { return uploadPartURIs; }
-            };
-        }
-        catch (DataStoreException e) {
-            LOG.warn("Unable to obtain data store key");
-        }
-
-        return null;
+    private URI createPresignedPutURI(@NotNull final DataIdentifier identifier,
+                                      @NotNull final Map<String, String> additionalQueryParams) {
+        return createPresignedURI(identifier,
+                EnumSet.of(SharedAccessBlobPermissions.WRITE),
+                getHttpUploadURIExpirySeconds(),
+                additionalQueryParams,
+                null);
     }
 
-    public DataRecord completeHttpUpload(@NotNull String uploadTokenStr)
-            throws DataRecordUploadException, DataStoreException {
-
-        if (Strings.isNullOrEmpty(uploadTokenStr)) {
-            throw new IllegalArgumentException("uploadToken required");
-        }
-
-        DataRecordUploadToken uploadToken = DataRecordUploadToken.fromEncodedToken(uploadTokenStr, getOrCreateReferenceKey());
-        String key = uploadToken.getBlobId();
-        DataIdentifier blobId = new DataIdentifier(getIdentifierName(key));
-        try {
-            if (uploadToken.getUploadId().isPresent()) {
-                // An existing upload ID means this is a multi-part upload
-                CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
-                List<BlockEntry> blocks = blob.downloadBlockList(
-                        BlockListingFilter.UNCOMMITTED,
-                        AccessCondition.generateEmptyCondition(),
-                        null,
-                        null);
-                blob.commitBlockList(blocks);
-            }
-            // else do nothing - single put is already complete
-
-            if (! exists(blobId)) {
-            //if (! getAzureContainer().getBlockBlobReference(blobId).exists()) {
-                throw new DataRecordUploadException(
-                        String.format("Unable to finalize direct write of binary %s", blobId));
-            }
-        }
-        catch (URISyntaxException | StorageException e) {
-            throw new DataRecordUploadException(
-                    String.format("Unable to finalize direct write of binary %s", blobId));
-        }
-
-        return getRecord(blobId);
-    }
-
-    private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
+    private URI createPresignedURI(@NotNull final DataIdentifier identifier,
+                                   @NotNull final EnumSet<SharedAccessBlobPermissions> permissions,
                                    int expirySeconds,
-                                   SharedAccessBlobHeaders optionalHeaders) {
-        return createPresignedURI(key, permissions, expirySeconds, Maps.newHashMap(), optionalHeaders);
-    }
+                                   @NotNull final Map<String, String> additionalQueryParams,
+                                   @Nullable final SharedAccessBlobHeaders optionalHeaders) {
+        String key = getKeyName(identifier);
 
-    private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
-                                   int expirySeconds,
-                                   Map<String, String> additionalQueryParams) {
-        return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null);
-    }
-
-    private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
-                                   int expirySeconds,
-                                   Map<String, String> additionalQueryParams,
-                                   SharedAccessBlobHeaders optionalHeaders) {
         SharedAccessBlobPolicy policy = new SharedAccessBlobPolicy();
         Date expiry = Date.from(Instant.now().plusSeconds(expirySeconds));
         policy.setSharedAccessExpiryTime(expiry);
@@ -794,6 +555,83 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
         }
 
         return presignedURI;
+    }
+
+    @Nullable
+    @Override
+    public DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes, int maxNumberOfURIs) {
+        verifyDirectUpload(maxUploadSizeInBytes,
+                maxNumberOfURIs,
+                MAX_SINGLE_PUT_UPLOAD_SIZE,
+                MAX_BINARY_UPLOAD_SIZE);
+
+        List<URI> uploadPartURIs = Lists.newArrayList();
+        DataIdentifier newIdentifier = generateSafeRandomIdentifier();
+        String uploadId = null;
+
+        if (getHttpUploadURIExpirySeconds() > 0) {
+            // Always do multi-part uploads for Azure, even for small binaries.
+            //
+            // This is because Azure requires a unique header, "x-ms-blob-type=BlockBlob", to be
+            // set but only for single-put uploads, not multi-part.
+            // This would require clients to know not only the type of service provider being used
+            // but also the type of upload (single-put vs multi-part), which breaks abstraction.
+            // Instead we can insist that clients always do multi-part uploads to Azure, even
+            // if the multi-part upload consists of only one upload part.  This doesn't require
+            // additional work on the part of the client since the "complete" request must always
+            // be sent regardless, but it helps us avoid the client having to know what type
+            // of provider is being used, or us having to instruct the client to use specific
+            // types of headers, etc.
+
+            // Azure doesn't use upload IDs like AWS does
+            // Generate a fake one for compatibility - we use them to determine whether we are
+            // doing multi-part or single-put upload
+            uploadId = Base64.encode(UUID.randomUUID().toString());
+
+            long numParts = getNumUploadParts(maxUploadSizeInBytes,
+                    maxNumberOfURIs,
+                    MAX_ALLOWABLE_UPLOAD_URIS,
+                    MIN_MULTIPART_UPLOAD_PART_SIZE,
+                    MAX_MULTIPART_UPLOAD_PART_SIZE);
+
+            Map<String, String> presignedURIRequestParams = Maps.newHashMap();
+            presignedURIRequestParams.put("comp", "block");
+            for (long blockId = 1; blockId <= numParts; ++blockId) {
+                presignedURIRequestParams.put("blockId",
+                        Base64.encode(String.format("%06d", blockId)));
+                uploadPartURIs.add(createPresignedPutURI(newIdentifier, presignedURIRequestParams));
+            }
+        }
+
+        return createDataRecordUpload(getKeyName(newIdentifier),
+                uploadId,
+                MIN_MULTIPART_UPLOAD_PART_SIZE,
+                MAX_MULTIPART_UPLOAD_PART_SIZE,
+                uploadPartURIs);
+    }
+
+    @Override
+    protected void completeMultiPartUpload(@NotNull final DataRecordUploadToken uploadToken, @NotNull final String key)
+            throws DataRecordUploadException, DataStoreException {
+        try {
+            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+            List<BlockEntry> blocks = blob.downloadBlockList(
+                    BlockListingFilter.UNCOMMITTED,
+                    AccessCondition.generateEmptyCondition(),
+                    null,
+                    null);
+            blob.commitBlockList(blocks);
+        }
+        catch (URISyntaxException | StorageException e) {
+            throw new DataRecordUploadException(
+                    String.format("Unable to finalize direct write of binary %s", key));
+        }
+    }
+
+    @Override
+    protected void completeSinglePutUpload(@NotNull final DataRecordUploadToken uploadToken, @NotNull final String key)
+            throws DataRecordUploadException, DataStoreException {
+        // No-op - nothing to do for single-put uploads on azure
     }
 
     private static class AzureBlobInfo {
