@@ -42,11 +42,9 @@ import com.microsoft.azure.storage.blob.CloudBlobContainer;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 
-public final class Utils extends org.apache.jackrabbit.oak.blob.cloud.Utils {
+public final class Utils {
 
     public static final String DEFAULT_CONFIG_FILE = "azure.properties";
-
-    public static final String DASH = "-";
 
     /**
      * private constructor so that class cannot initialized from outside.

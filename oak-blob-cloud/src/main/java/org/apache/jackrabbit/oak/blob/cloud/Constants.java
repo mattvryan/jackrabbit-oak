@@ -19,7 +19,8 @@
 
 package org.apache.jackrabbit.oak.blob.cloud;
 
-public class Utils {
+public class Constants {
+    public static final String DOT = ".";
     public static final String DASH = "-";
     public static final String SEPARATOR = "/";
     public static final String META_DIR_NAME = "META";

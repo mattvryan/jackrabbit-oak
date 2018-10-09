@@ -17,6 +17,8 @@
 
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.DOT;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -42,7 +44,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Amazon S3 utilities.
  */
-public final class Utils extends org.apache.jackrabbit.oak.blob.cloud.Utils {
+public final class Utils {
 
     private static final Logger LOG = LoggerFactory.getLogger(Utils.class);
 
@@ -62,9 +64,6 @@ public final class Utils extends org.apache.jackrabbit.oak.blob.cloud.Utils {
 
     public static final String S3 = "s3";
 
-    public static final String DOT = ".";
-
-    public static final String DASH = "-";
 
     /**
      * private constructor so that class cannot initialized from outside.

@@ -19,6 +19,9 @@
 
 package org.apache.jackrabbit.oak.blob.cloud;
 
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.DASH;
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.META_KEY_PREFIX;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -91,16 +94,16 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
      */
     protected static String getKeyName(DataIdentifier identifier) {
         String key = identifier.toString();
-        return key.substring(0, 4) + Utils.DASH + key.substring(4);
+        return key.substring(0, 4) + DASH + key.substring(4);
     }
 
     /**
      * Get data identifier from key.
      */
     protected static String getIdentifierName(String key) {
-        if (!key.contains(Utils.DASH)) {
+        if (!key.contains(DASH)) {
             return null;
-        } else if (key.contains(Utils.META_KEY_PREFIX)) {
+        } else if (key.contains(META_KEY_PREFIX)) {
             return key;
         }
         return key.substring(0, 4) + key.substring(5);
@@ -460,12 +463,12 @@ public abstract class AbstractCloudBackend extends AbstractSharedBackend impleme
     }
 
     protected static String addMetaKeyPrefix(String key) {
-        return Utils.META_KEY_PREFIX + key;
+        return META_KEY_PREFIX + key;
     }
 
     protected static String stripMetaKeyPrefix(String name) {
-        if (name.startsWith(Utils.META_KEY_PREFIX)) {
-            return name.substring(Utils.META_KEY_PREFIX.length());
+        if (name.startsWith(META_KEY_PREFIX)) {
+            return name.substring(META_KEY_PREFIX.length());
         }
         return name;
     }
