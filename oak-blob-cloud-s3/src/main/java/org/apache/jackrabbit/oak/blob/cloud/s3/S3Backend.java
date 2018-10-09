@@ -19,6 +19,8 @@ package org.apache.jackrabbit.oak.blob.cloud.s3;
 
 import static com.google.common.collect.Iterables.filter;
 import static java.lang.Thread.currentThread;
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.DASH;
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.META_KEY_PREFIX;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -672,7 +674,7 @@ public class S3Backend extends AbstractCloudBackend {
                         new Predicate<S3ObjectSummary>() {
                             @Override
                             public boolean apply(S3ObjectSummary input) {
-                                return !input.getKey().startsWith(Utils.META_KEY_PREFIX);
+                                return !input.getKey().startsWith(META_KEY_PREFIX);
                             }
                         }));
 
@@ -851,7 +853,7 @@ public class S3Backend extends AbstractCloudBackend {
             return oldKey;
         }
         String key = oldKey.substring(KEY_PREFIX.length());
-        return key.substring(0, 4) + Utils.DASH + key.substring(4);
+        return key.substring(0, 4) + DASH + key.substring(4);
     }
 
     /**

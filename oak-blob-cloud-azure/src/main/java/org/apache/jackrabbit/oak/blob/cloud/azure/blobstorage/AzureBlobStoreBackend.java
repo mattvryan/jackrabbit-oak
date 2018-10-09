@@ -20,6 +20,7 @@
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import static java.lang.Thread.currentThread;
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.META_DIR_NAME;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -402,7 +403,7 @@ public class AzureBlobStoreBackend extends AbstractCloudBackend {
     protected List<DataRecord> getAllObjectMetadataRecords(@NotNull final String prefix) {
         final List<DataRecord> records = Lists.newArrayList();
         try {
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(Utils.META_DIR_NAME);
+            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
             for (ListBlobItem item : metaDir.listBlobs(prefix)) {
                 if (item instanceof CloudBlob) {
                     CloudBlob blob = (CloudBlob) item;
