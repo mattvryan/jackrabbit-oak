@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.blob.cloud.s3;
+package org.apache.jackrabbit.oak.blob.cloud;
 
 import java.util.Dictionary;
 import java.util.Hashtable;
@@ -34,27 +34,32 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 
 @Component(componentAbstract = true)
-public abstract class AbstractS3DataStoreService extends AbstractDataStoreService {
+public abstract class AbstractCloudDataStoreService extends AbstractDataStoreService {
     private static final String DESCRIPTION = "oak.datastore.description";
 
     private ServiceRegistration delegateReg;
+
+    protected abstract DataStore createDataStoreInstance();
 
     @Override
     protected DataStore createDataStore(ComponentContext context, Map<String, Object> config) {
         Properties properties = new Properties();
         properties.putAll(config);
 
-        S3DataStore dataStore = new S3DataStore();
-        dataStore.setStatisticsProvider(getStatisticsProvider());
-        dataStore.setProperties(properties);
+        DataStore dataStore = createDataStoreInstance();
+        if (dataStore instanceof CloudDataStore) {
+            CloudDataStore cds = (CloudDataStore) dataStore;
+            cds.setStatisticsProvider(getStatisticsProvider());
+            cds.setProperties(properties);
+        }
 
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_PID, dataStore.getClass().getName());
         props.put(DESCRIPTION, getDescription());
 
         delegateReg = context.getBundleContext().registerService(new String[] {
-            AbstractSharedCachingDataStore.class.getName(),
-            AbstractSharedCachingDataStore.class.getName()
+                AbstractSharedCachingDataStore.class.getName(),
+                AbstractSharedCachingDataStore.class.getName()
         }, dataStore , props);
 
         return dataStore;
@@ -65,10 +70,5 @@ public abstract class AbstractS3DataStoreService extends AbstractDataStoreServic
             delegateReg.unregister();
         }
         super.deactivate();
-    }
-
-    @Override
-    protected String[] getDescription() {
-        return new String[] {"type=S3"};
     }
 }

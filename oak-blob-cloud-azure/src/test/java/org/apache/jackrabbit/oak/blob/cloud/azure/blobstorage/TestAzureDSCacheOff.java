@@ -29,9 +29,9 @@ import org.slf4j.LoggerFactory;
  * src/test/resources/azure.properties
 
  */
-public class TestAzureDsCacheOff extends TestAzureDS {
+public class TestAzureDSCacheOff extends TestAzureDS {
 
-    protected static final Logger LOG = LoggerFactory.getLogger(TestAzureDsCacheOff.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(TestAzureDSCacheOff.class);
 
     @Override
     @Before

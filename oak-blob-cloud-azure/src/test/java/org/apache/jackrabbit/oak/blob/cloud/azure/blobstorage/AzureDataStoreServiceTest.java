@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -19,17 +19,34 @@
 
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
-import org.apache.jackrabbit.core.data.DataStore;
-import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getAzureConfig;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.isAzureConfigured;
+import static org.junit.Assume.assumeTrue;
 
-public abstract class AbstractAzureDataStoreService extends AbstractCloudDataStoreService {
+import java.util.Properties;
+
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreServiceTest;
+import org.junit.BeforeClass;
+
+public class AzureDataStoreServiceTest extends AbstractCloudDataStoreServiceTest {
     @Override
-    protected DataStore createDataStoreInstance() {
-        return new AzureDataStore();
+    protected boolean isServiceConfigured() {
+        return isAzureConfigured();
+    }
+
+    @BeforeClass
+    public static void checkAssumptions() {
+        assumeTrue(isAzureConfigured());
     }
 
     @Override
-    protected String[] getDescription() {
-        return new String[] {"type=AzureBlob"};
+    protected Properties getServiceConfig() {
+        return getAzureConfig();
+    }
+
+    @Override
+    protected AbstractCloudDataStoreService getServiceInstance() {
+        return new AzureDataStoreService();
     }
 }

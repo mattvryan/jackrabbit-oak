@@ -17,6 +17,8 @@
 
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
+import static org.apache.jackrabbit.oak.blob.cloud.Constants.DOT;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -24,22 +26,20 @@ import java.io.InputStream;
 import java.util.Map;
 import java.util.Properties;
 
-import com.google.common.collect.Maps;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.Protocol;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Regions;
-import com.amazonaws.services.s3.model.Region;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.util.StringUtils;
+import com.google.common.collect.Maps;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Amazon S3 utilities.
@@ -64,9 +64,6 @@ public final class Utils {
 
     public static final String S3 = "s3";
 
-    public static final String DOT = ".";
-
-    public static final String DASH = "-";
 
     /**
      * private constructor so that class cannot initialized from outside.

@@ -16,20 +16,39 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package org.apache.jackrabbit.oak.blob.cloud.s3;
 
-package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
+import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getS3Config;
+import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.isS3Configured;
+import static org.junit.Assume.assumeTrue;
 
-import org.apache.jackrabbit.core.data.DataStore;
+import java.util.Properties;
+
 import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreServiceTest;
+import org.junit.BeforeClass;
 
-public abstract class AbstractAzureDataStoreService extends AbstractCloudDataStoreService {
+/**
+ * Tests the registration of the S3DataStore.
+ */
+public class S3DataStoreServiceTest extends AbstractCloudDataStoreServiceTest {
     @Override
-    protected DataStore createDataStoreInstance() {
-        return new AzureDataStore();
+    protected boolean isServiceConfigured() {
+        return isS3Configured();
+    }
+
+    @BeforeClass
+    public static void assumptions() {
+        assumeTrue(isS3Configured());
     }
 
     @Override
-    protected String[] getDescription() {
-        return new String[] {"type=AzureBlob"};
+    protected Properties getServiceConfig() {
+        return getS3Config();
+    }
+
+    @Override
+    protected AbstractCloudDataStoreService getServiceInstance() {
+        return new S3DataStoreService();
     }
 }

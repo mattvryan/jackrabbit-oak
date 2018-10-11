@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -16,36 +16,31 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.jackrabbit.oak.blob.cloud.s3;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Map;
+package org.apache.jackrabbit.oak.blob.cloud;
 
-import com.google.common.collect.Maps;
-import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
-import org.apache.jackrabbit.oak.stats.StatisticsProvider;
-import org.apache.sling.testing.mock.osgi.junit.OsgiContext;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.TemporaryFolder;
-
-import static com.google.common.collect.Maps.newHashMap;
-import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.isS3Configured;
 import static org.apache.sling.testing.mock.osgi.MockOsgi.activate;
 import static org.apache.sling.testing.mock.osgi.MockOsgi.deactivate;
 import static org.apache.sling.testing.mock.osgi.MockOsgi.injectServices;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assume.assumeTrue;
 
-/**
- * Tests the registration of the S3DataStore.
- */
-public class S3DataStoreServiceTest {
+import java.io.File;
+import java.io.IOException;
+import java.util.Map;
+import java.util.Properties;
 
+import com.google.common.collect.Maps;
+import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
+import org.apache.sling.testing.mock.osgi.junit.OsgiContext;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.ExpectedException;
+import org.junit.rules.TemporaryFolder;
+
+public abstract class AbstractCloudDataStoreServiceTest {
     @Rule
     public OsgiContext context = new OsgiContext();
 
@@ -55,37 +50,30 @@ public class S3DataStoreServiceTest {
     @Rule
     public TemporaryFolder folder = new TemporaryFolder(new File("target"));
 
-    @BeforeClass
-    public static void assumptions() {
-        assumeTrue(isS3Configured());
-    }
-
     @Before
     public void setUp() {
         context.registerService(StatisticsProvider.class, StatisticsProvider.NOOP);
     }
 
+    private AbstractCloudDataStoreService service;
 
     @Test
-    public void testDefaultS3Implementation() throws IOException {
-        registerBlobStore();
+    public void testDefaultImplementation() throws IOException {
+        assumeTrue(isServiceConfigured());
+
+        Map<String, String> props = Maps.newHashMap();
+        props.putAll(Maps.fromProperties(getServiceConfig()));
+        props.put("repository.home", folder.newFolder().getAbsolutePath());
+        service = getServiceInstance();
+        injectServices(service, context.bundleContext());
+        activate(service, context.bundleContext(), props);
+
         assertNotNull(context.getService(AbstractSharedCachingDataStore.class));
 
-        unregisterBlobStore();
-    }
-
-    private S3DataStoreService service;
-
-    private void registerBlobStore() throws IOException {
-        Map<String, Object> properties = newHashMap();
-        properties.putAll(Maps.fromProperties(S3DataStoreUtils.getS3Config()));
-        properties.put("repository.home", folder.newFolder().getAbsolutePath());
-        service = new S3DataStoreService();
-        injectServices(service, context.bundleContext());
-        activate(service, context.bundleContext(), properties);
-    }
-
-    private void unregisterBlobStore() {
         deactivate(service, context.bundleContext());
     }
+
+    abstract protected boolean isServiceConfigured();
+    abstract protected AbstractCloudDataStoreService getServiceInstance();
+    abstract protected Properties getServiceConfig();
 }
