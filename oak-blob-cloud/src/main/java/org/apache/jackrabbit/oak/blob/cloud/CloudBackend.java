@@ -35,14 +35,21 @@ public interface CloudBackend {
     void setProperties(@NotNull final Properties properties);
 
     void setHttpUploadURIExpirySeconds(int seconds);
+
     void setBinaryTransferAccelerationEnabled(boolean enabled);
+
     void setHttpDownloadURIExpirySeconds(int seconds);
+
     void setHttpDownloadURICacheSize(int maxSize);
 
     @Nullable DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes,
                                                   int maxNumberOfURIs);
+
     @NotNull DataRecord completeHttpUpload(@NotNull String uploadTokenStr)
             throws DataRecordUploadException, DataStoreException;
+
     @Nullable URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
                                         @NotNull DataRecordDownloadOptions downloadOptions);
+
+    @NotNull byte[] getOrCreateReferenceKey() throws DataStoreException;
 }

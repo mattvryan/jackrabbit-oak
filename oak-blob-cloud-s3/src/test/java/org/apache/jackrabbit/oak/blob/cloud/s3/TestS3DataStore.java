@@ -62,7 +62,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Simple tests for S3DataStore.
+ * Additional tests for S3DataStore.
  */
 @RunWith(Parameterized.class)
 public class TestS3DataStore {
@@ -146,7 +146,7 @@ public class TestS3DataStore {
         byte[] refDirectFromBackend = IOUtils.toByteArray(refRec.getStream());
         LOG.warn("Ref direct from backend {}", refDirectFromBackend);
         assertTrue("refKey in memory not equal to the metadata record",
-            Arrays.equals(refKey, refDirectFromBackend));
+                Arrays.equals(refKey, refDirectFromBackend));
     }
 
     @Test

@@ -16,29 +16,33 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
-import java.util.Date;
-import java.util.List;
-import java.util.Properties;
-
-import javax.jcr.RepositoryException;
-
-import org.apache.jackrabbit.core.data.DataStore;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreTest;
-import org.junit.After;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.mockito.internal.matchers.Equals;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.deleteBucket;
 import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getFixtures;
 import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getS3Config;
 import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getS3DataStore;
 import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.isS3Configured;
 import static org.junit.Assume.assumeTrue;
+
+import java.util.Date;
+import java.util.List;
+import java.util.Properties;
+import java.util.Set;
+
+import javax.jcr.RepositoryException;
+
+import com.google.common.collect.Sets;
+import org.apache.commons.lang3.time.DateUtils;
+import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreTest;
+import org.apache.jackrabbit.oak.blob.cloud.CloudDataStore;
+import org.jetbrains.annotations.NotNull;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Test {@link S3DataStore} with S3Backend and local cache on.
@@ -48,15 +52,14 @@ import static org.junit.Assume.assumeTrue;
  * src/test/resources/aws.properties
  */
 @RunWith(Parameterized.class)
-public class TestS3Ds extends AbstractDataStoreTest {
+public class TestS3Ds extends AbstractCloudDataStoreTest {
 
     protected static final Logger LOG = LoggerFactory.getLogger(TestS3Ds.class);
 
-    private Date startTime = null;
+    private static final Set<String> createdBuckets = Sets.newHashSet();
+    private static Date startTime = null;
 
-    protected Properties props;
-
-    protected String bucket;
+    protected String bucket = null;
 
     @Parameterized.Parameter
     public String s3Class;
@@ -68,37 +71,34 @@ public class TestS3Ds extends AbstractDataStoreTest {
 
     @BeforeClass
     public static void assumptions() {
+        startTime = DateUtils.addSeconds(new Date(), -60);
         assumeTrue(isS3Configured());
     }
 
     @Override
     @Before
     public void setUp() throws Exception {
-        props = getS3Config();
-        startTime = new Date();
-        bucket =
-            String.valueOf(randomGen.nextInt(9999)) + "-" + String.valueOf(randomGen.nextInt(9999))
-                + "-test";
-        props.setProperty(S3Constants.S3_BUCKET, bucket);
-        props.setProperty("secret", "123456");
         super.setUp();
+        bucket = container;
+        createdBuckets.add(bucket);
     }
 
-    @Override
-    @After
-    public void tearDown() {
-        try {
-            super.tearDown();
-            S3DataStoreUtils.deleteBucket(bucket, startTime);
-        } catch (Exception ignore) {
-
+    @AfterClass
+    public static void cleanupBuckets() {
+        for (final String bucket : createdBuckets) {
+            try {
+                deleteBucket(bucket, startTime);
+            }
+            catch (Exception ignore) { }
         }
     }
 
+    @Override
     protected DataStore createDataStore() throws RepositoryException {
-        DataStore s3ds = null;
+        CloudDataStore s3ds = null;
         try {
             s3ds = getS3DataStore(s3Class, props, dataStoreDir);
+            //s3ds = getDataStoreInstance(props, dataStoreDir);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -113,5 +113,26 @@ public class TestS3Ds extends AbstractDataStoreTest {
 
     @Override
     public void testDeleteAllOlderThan() {
+    }
+
+
+    //--- AbstractCloudDataStoreTest ---
+
+    @Override
+    protected boolean isDataStoreConfigured() {
+        return isS3Configured();
+    }
+
+    @NotNull
+    @Override
+    protected Properties getDataStoreConfig(@NotNull final String containerName) {
+        Properties props = getS3Config();
+        props.setProperty(S3Constants.S3_BUCKET, containerName);
+        return props;
+    }
+
+    @Override
+    protected void deleteContainer(@NotNull final String containerName) throws Exception {
+        deleteBucket(containerName, startTime);
     }
 }

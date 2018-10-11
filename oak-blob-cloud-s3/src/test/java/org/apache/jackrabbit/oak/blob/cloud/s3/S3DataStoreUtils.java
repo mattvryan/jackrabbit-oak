@@ -18,6 +18,8 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.s3;
 
+import static com.google.common.base.StandardSystemProperty.USER_HOME;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -45,12 +47,11 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.oak.blob.cloud.CloudDataStore;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static com.google.common.base.StandardSystemProperty.USER_HOME;
 
 /**
  * Extension to {@link DataStoreUtils} to enable S3 extensions for cleaning and initialization.
@@ -133,13 +134,11 @@ public class S3DataStoreUtils extends DataStoreUtils {
         return props;
     }
 
-    public static DataStore getS3DataStore(String className, Properties props, String homeDir) throws Exception {
-        DataStore ds = Class.forName(className).asSubclass(DataStore.class).newInstance();
+    public static CloudDataStore getS3DataStore(String className, Properties props, String homeDir) throws Exception {
+        CloudDataStore ds = Class.forName(className).asSubclass(CloudDataStore.class).newInstance();
         PropertiesUtil.populate(ds, Utils.asMap(props), false);
         // Set the props object
-        if (S3.getName().equals(className)) {
-            ((S3DataStore) ds).setProperties(props);
-        }
+        ds.setProperties(props);
         ds.init(homeDir);
 
         return ds;

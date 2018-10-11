@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -16,10 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.jackrabbit.oak.blob.cloud.s3;
 
-import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.getS3Config;
-import static org.apache.jackrabbit.oak.blob.cloud.s3.S3DataStoreUtils.isS3Configured;
+package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
+
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getAzureConfig;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.isAzureConfigured;
 import static org.junit.Assume.assumeTrue;
 
 import java.util.Properties;
@@ -28,27 +29,24 @@ import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
 import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreServiceTest;
 import org.junit.BeforeClass;
 
-/**
- * Tests the registration of the S3DataStore.
- */
-public class S3DataStoreServiceTest extends AbstractCloudDataStoreServiceTest {
+public class AzureDataStoreServiceTest extends AbstractCloudDataStoreServiceTest {
     @Override
     protected boolean isServiceConfigured() {
-        return isS3Configured();
+        return isAzureConfigured();
     }
 
     @BeforeClass
-    public static void assumptions() {
-        assumeTrue(isS3Configured());
+    public static void checkAssumptions() {
+        assumeTrue(isAzureConfigured());
     }
 
     @Override
     protected Properties getServiceConfig() {
-        return getS3Config();
+        return getAzureConfig();
     }
 
     @Override
     protected AbstractCloudDataStoreService getServiceInstance() {
-        return new S3DataStoreService();
+        return new AzureDataStoreService();
     }
 }

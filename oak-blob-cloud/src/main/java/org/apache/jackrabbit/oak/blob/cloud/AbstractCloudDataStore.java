@@ -53,6 +53,7 @@ public abstract class AbstractCloudDataStore extends AbstractSharedCachingDataSt
         this.properties = properties;
     }
 
+    @Override
     public SharedBackend getBackend() {
         return backend;
     }
