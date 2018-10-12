@@ -36,9 +36,7 @@
 
   <properties>
     <skip.deployment>true</skip.deployment>
-    <slf4j.version>1.7.21</slf4j.version>
-    <slf4j.api.version>1.7.21</slf4j.api.version>
-    <spring.boot.version>1.5.12.RELEASE</spring.boot.version>
+    <spring.boot.version>1.5.16.RELEASE</spring.boot.version>
   </properties>
 
   <dependencyManagement>
@@ -188,12 +186,10 @@
     <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
-      <version>1.1.7</version>
     </dependency>
     <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-core</artifactId>
-      <version>1.1.7</version>
     </dependency>
 
     <!-- Required for Felix WebConsole -->

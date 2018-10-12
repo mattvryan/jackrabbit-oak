@@ -29,9 +29,7 @@ import org.apache.lucene.util.Version;
 
 /**
  * Base class for decomposition token filters.
- * <p>
- *
- * <a name="version"></a>
+ * <p id="version">
  * You must specify the required {@link Version} compatibility when creating
  * CompoundWordTokenFilterBase:
  * <ul>
@@ -152,7 +150,11 @@ public abstract class CompoundWordTokenFilterBase extends TokenFilter {
     public final CharSequence txt;
     public final int startOffset, endOffset;
 
-    /** Construct the compound token based on a slice of the current {@link CompoundWordTokenFilterBase#termAtt}. */
+    /** Construct the compound token based on a slice of the current {@link CompoundWordTokenFilterBase#termAtt}.
+     *
+     * @param offset  the initial offset
+     * @param length  the token length
+     * */
     public CompoundToken(int offset, int length) {
       this.txt = CompoundWordTokenFilterBase.this.termAtt.subSequence(offset, offset + length);
       

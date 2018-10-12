@@ -124,7 +124,8 @@ import com.google.common.collect.Sets;
  * derived from an Oak path, and the value is a serialization of a
  * {@link Document} (or a part of one). Additional fields are used for queries,
  * debugging, and concurrency control:
- * <table style="text-align: left;" summary="">
+ * <table style="text-align: left;">
+ * <caption></caption>
  * <thead>
  * <tr>
  * <th>Column</th>
@@ -359,7 +360,7 @@ public class RDBDocumentStore implements DocumentStore {
     @Override
     public <T extends Document> T createOrUpdate(Collection<T> collection, UpdateOp update) {
         UpdateUtils.assertUnconditional(update);
-        return internalCreateOrUpdate(collection, update, true, false);
+        return internalCreateOrUpdate(collection, update, update.isNew(), false, RETRIES);
     }
 
     @Override
@@ -423,6 +424,12 @@ public class RDBDocumentStore implements DocumentStore {
         for (UpdateOp updateOp : updateOps) {
             UpdateOp conflictedOp = operationsToCover.remove(updateOp.getId());
             if (conflictedOp != null) {
+                if (collection == Collection.NODES) {
+                    LOG.debug("update conflict on {}, invalidating cache and retrying...", updateOp.getId());
+                    nodesCache.invalidate(updateOp.getId());
+                } else {
+                    LOG.debug("update conflict on {}, retrying...", updateOp.getId());
+                }
                 results.put(conflictedOp, createOrUpdate(collection, updateOp));
             } else if (duplicates.contains(updateOp)) {
                 results.put(updateOp, createOrUpdate(collection, updateOp));
@@ -521,11 +528,15 @@ public class RDBDocumentStore implements DocumentStore {
             for (UpdateOp update : updates) {
                 String id = update.getId();
                 T modifiedDoc = collection.newDocument(this);
-                if (oldDocs.containsKey(id)) {
-                    oldDocs.get(id).deepCopy(modifiedDoc);
+                T oldDoc = oldDocs.get(id);
+                if (oldDoc != null) {
+                    oldDoc.deepCopy(modifiedDoc);
                 }
                 UpdateUtils.applyChanges(modifiedDoc, update);
-                docsToUpdate.add(modifiedDoc);
+                if (oldDoc != null || update.isNew()) {
+                    // only create if updateOp allows it
+                    docsToUpdate.add(modifiedDoc);
+                }
                 keysToUpdate.add(id);
             }
 
@@ -567,7 +578,7 @@ public class RDBDocumentStore implements DocumentStore {
 
     @Override
     public <T extends Document> T findAndUpdate(Collection<T> collection, UpdateOp update) {
-        return internalCreateOrUpdate(collection, update, false, true);
+        return internalCreateOrUpdate(collection, update, false, true, RETRIES);
     }
 
     @Override
@@ -1538,14 +1549,12 @@ public class RDBDocumentStore implements DocumentStore {
 
     @Nullable
     private <T extends Document> T internalCreateOrUpdate(Collection<T> collection, UpdateOp update, boolean allowCreate,
-            boolean checkConditions) {
+            boolean checkConditions, int retries) {
         T oldDoc = readDocumentCached(collection, update.getId(), Integer.MAX_VALUE);
 
         if (oldDoc == null) {
-            if (!allowCreate) {
+            if (!allowCreate || !update.isNew()) {
                 return null;
-            } else if (!update.isNew()) {
-                throw new DocumentStoreException("Document does not exist: " + update.getId());
             }
             T doc = collection.newDocument(this);
             if (checkConditions && !checkConditions(doc, update.getConditions())) {
@@ -1574,15 +1583,19 @@ public class RDBDocumentStore implements DocumentStore {
                     LOG.error("insert failed, but document " + update.getId() + " is not present, aborting", ex);
                     throw (ex);
                 }
-                return internalUpdate(collection, update, oldDoc, checkConditions, RETRIES);
+                return internalUpdate(collection, update, oldDoc, checkConditions, retries);
             }
         } else {
-            T result = internalUpdate(collection, update, oldDoc, checkConditions, RETRIES);
+            T result = internalUpdate(collection, update, oldDoc, checkConditions, retries);
             if (allowCreate && result == null) {
-                // TODO OAK-2655 need to implement some kind of retry
-                LOG.error("update of " + update.getId() + " failed, race condition?");
-                throw new DocumentStoreException("update of " + update.getId() + " failed, race condition?", null,
-                        DocumentStoreException.Type.TRANSIENT);
+                if (retries > 0) {
+                    result = internalCreateOrUpdate(collection, update, allowCreate, checkConditions, retries - 1);
+                }
+                else {
+                  LOG.error("update of " + update.getId() + " failed, race condition?");
+                  throw new DocumentStoreException("update of " + update.getId() + " failed, race condition?", null,
+                          DocumentStoreException.Type.TRANSIENT);
+                }
             }
             return result;
         }
@@ -1615,7 +1628,17 @@ public class RDBDocumentStore implements DocumentStore {
                             if (lastmodcount == newmodcount) {
                                 // cached copy did not change so it probably was
                                 // updated by a different instance, get a fresh one
+                                LOG.debug("suspect update from different instance (current modcount: {}), refetching: {}...",
+                                        newmodcount, update.getId());
+                                if (collection == Collection.NODES) {
+                                    nodesCache.invalidate(update.getId());
+                                }
                                 oldDoc = readDocumentUncached(collection, update.getId(), null);
+                                if (oldDoc == null) {
+                                    LOG.debug("after refetch: {} is gone", update.getId());
+                                } else {
+                                    LOG.debug("after refetch: modcount for {} is {}", update.getId(), modcountOf(oldDoc));
+                                }
                             }
                         }
 

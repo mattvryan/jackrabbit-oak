@@ -35,7 +35,7 @@
   <description>Web application that hosts and serves a Jackrabbit Oak content repository</description>
 
   <properties>
-    <tomcat.version>7.0.90</tomcat.version>
+    <tomcat.version>7.0.91</tomcat.version>
     <skip.deployment>true</skip.deployment>
   </properties>
 
@@ -179,7 +179,7 @@
     <dependency>
       <groupId>net.sourceforge.htmlunit</groupId>
       <artifactId>htmlunit</artifactId>
-      <version>2.28</version>
+      <version>2.33</version>
       <scope>test</scope>
       <exclusions>
         <exclusion>
