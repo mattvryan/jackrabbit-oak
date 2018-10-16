@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -17,14 +17,9 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
+package org.apache.jackrabbit.oak.blob.cloud;
 
-import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudBackend;
-import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStore;
+import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 
-public class AzureDataStore extends AbstractCloudDataStore {
-    @Override
-    protected AbstractCloudBackend createBackendInstance() {
-        return new AzureBlobStoreBackend();
-    }
+public abstract class AbstractCloudBackend extends AbstractSharedBackend implements CloudBackend {
 }

@@ -76,11 +76,12 @@ import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudBackend;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadToken;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadToken;
 import org.apache.jackrabbit.oak.spi.blob.AbstractDataRecord;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 import org.apache.jackrabbit.util.Base64;
@@ -88,7 +89,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class AzureBlobStoreBackend extends AbstractSharedBackend {
+public class AzureBlobStoreBackend extends AbstractCloudBackend {
 
     private static final Logger LOG = LoggerFactory.getLogger(AzureBlobStoreBackend.class);
 
@@ -742,11 +743,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return name;
     }
 
-    void setHttpDownloadURIExpirySeconds(int seconds) {
+    public void setHttpDownloadURIExpirySeconds(int seconds) {
         httpDownloadURIExpirySeconds = seconds;
     }
 
-    void setHttpDownloadURICacheSize(int maxSize) {
+    public void setHttpDownloadURICacheSize(int maxSize) {
         // max size 0 or smaller is used to turn off the cache
         if (maxSize > 0) {
             LOG.info("presigned GET URI cache enabled, maxSize = {} items, expiry = {} seconds", maxSize, httpDownloadURIExpirySeconds / 2);
@@ -760,8 +761,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         }
     }
 
-    URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
-                              @NotNull DataRecordDownloadOptions downloadOptions) {
+    public URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
+                                     @NotNull DataRecordDownloadOptions downloadOptions) {
         URI uri = null;
         if (httpDownloadURIExpirySeconds > 0) {
             if (null != httpDownloadURICache) {
@@ -795,7 +796,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return uri;
     }
 
-    void setHttpUploadURIExpirySeconds(int seconds) { httpUploadURIExpirySeconds = seconds; }
+    public void setHttpUploadURIExpirySeconds(int seconds) { httpUploadURIExpirySeconds = seconds; }
+
+    public void setBinaryTransferAccelerationEnabled(boolean enabled) {
+        // No-op - not supported in Azure Blob Storage
+    }
 
     private DataIdentifier generateSafeRandomIdentifier() {
         return new DataIdentifier(
@@ -806,7 +811,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         );
     }
 
-    DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes, int maxNumberOfURIs) {
+    public DataRecordUpload initiateHttpUpload(long maxUploadSizeInBytes, int maxNumberOfURIs) {
         List<URI> uploadPartURIs = Lists.newArrayList();
         long minPartSize = MIN_MULTIPART_UPLOAD_PART_SIZE;
         long maxPartSize = MAX_MULTIPART_UPLOAD_PART_SIZE;
@@ -918,7 +923,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return null;
     }
 
-    DataRecord completeHttpUpload(@NotNull String uploadTokenStr)
+    public DataRecord completeHttpUpload(@NotNull String uploadTokenStr)
             throws DataRecordUploadException, DataStoreException {
 
         if (Strings.isNullOrEmpty(uploadTokenStr)) {
