@@ -22,6 +22,7 @@ import java.util.Properties;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.oak.blob.cloud.CloudDataStore;
 import org.apache.jackrabbit.oak.plugins.blob.AbstractSharedCachingDataStore;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
@@ -36,7 +37,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Amazon S3 data store extending from {@link AbstractSharedCachingDataStore}.
  */
-public class S3DataStore extends AbstractSharedCachingDataStore implements ConfigurableDataRecordAccessProvider {
+public class S3DataStore extends AbstractSharedCachingDataStore implements ConfigurableDataRecordAccessProvider, CloudDataStore {
 
     protected Properties properties;
 
@@ -61,7 +62,8 @@ public class S3DataStore extends AbstractSharedCachingDataStore implements Confi
     /**
      * Properties required to configure the S3Backend
      */
-    public void setProperties(Properties properties) {
+    @Override
+    public void setProperties(@NotNull Properties properties) {
         this.properties = properties;
     }
 

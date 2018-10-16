@@ -3,7 +3,7 @@
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
+ * to You under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
@@ -17,19 +17,15 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
+package org.apache.jackrabbit.oak.blob.cloud;
+
+import java.util.Properties;
 
 import org.apache.jackrabbit.core.data.DataStore;
-import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
+import org.jetbrains.annotations.NotNull;
 
-public abstract class AbstractAzureDataStoreService extends AbstractCloudDataStoreService {
-    @Override
-    protected DataStore createDataStoreInstance() {
-        return new AzureDataStore();
-    }
-
-    @Override
-    protected String[] getDescription() {
-        return new String[] {"type=AzureBlob"};
-    }
+public interface CloudDataStore extends DataStore {
+    void setStatisticsProvider(@NotNull StatisticsProvider statisticsProvider);
+    void setProperties(@NotNull Properties properties);
 }

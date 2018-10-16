@@ -17,19 +17,21 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
+package org.apache.jackrabbit.oak.blob.cloud.s3;
 
+import org.apache.felix.scr.annotations.Component;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.oak.blob.cloud.AbstractCloudDataStoreService;
 
-public abstract class AbstractAzureDataStoreService extends AbstractCloudDataStoreService {
+@Component(componentAbstract = true)
+public abstract class AbstractS3DataStoreService extends AbstractCloudDataStoreService {
     @Override
     protected DataStore createDataStoreInstance() {
-        return new AzureDataStore();
+        return new S3DataStore();
     }
 
     @Override
     protected String[] getDescription() {
-        return new String[] {"type=AzureBlob"};
+        return new String[] {"type=S3"};
     }
 }
