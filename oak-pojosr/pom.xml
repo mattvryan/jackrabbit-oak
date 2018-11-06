@@ -271,7 +271,7 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>oak-api</artifactId>
-      <version>${project.version}</version>
+      <version>${oak-api.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
