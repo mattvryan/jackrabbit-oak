@@ -21,10 +21,10 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>org.apache</groupId>
-    <artifactId>apache</artifactId>
-    <version>18</version>
-    <relativePath />
+    <groupId>org.apache.jackrabbit</groupId>
+    <artifactId>oak-parent-standalone</artifactId>
+    <version>2.0</version>
+    <relativePath>../oak-parent-standalone/pom.xml</relativePath>
   </parent>
 
   <groupId>org.apache.jackrabbit</groupId>
@@ -75,9 +75,6 @@
    <!-- whether skip the surefire unit testing during the integration testing. 
       Override with -Dsurefire.skip.ut=true when needed -->
     <surefire.skip.ut>false</surefire.skip.ut>
-
-   <!-- Trying to make oak-api independent for now -->
-   <oak-api.version>2.0-SNAPSHOT</oak-api.version>
   </properties>
 
   <prerequisites>

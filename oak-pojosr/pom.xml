@@ -270,8 +270,8 @@
     <!-- Test dependencies -->
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
-      <artifactId>oak-api</artifactId>
-      <version>${oak-api.version}</version>
+      <artifactId>oak-api-standalone</artifactId>
+      <version>${oak-api-standalone.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

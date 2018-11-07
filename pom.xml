@@ -36,9 +36,10 @@
   </properties>
 
   <modules>
+    <module>oak-parent-standalone</module>
     <module>oak-parent</module>
     <module>oak-commons</module>
-    <module>oak-api</module>
+    <module>oak-api-standalone</module>
     <module>oak-core-spi</module>
     <module>oak-store-spi</module>
     <module>oak-query-spi</module>

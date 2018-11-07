@@ -103,8 +103,8 @@
     <!-- Dependencies to other Oak components -->
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
-      <artifactId>oak-api</artifactId>
-      <version>${project.version}</version>
+      <artifactId>oak-api-standalone</artifactId>
+      <version>${oak-api-standalone.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
