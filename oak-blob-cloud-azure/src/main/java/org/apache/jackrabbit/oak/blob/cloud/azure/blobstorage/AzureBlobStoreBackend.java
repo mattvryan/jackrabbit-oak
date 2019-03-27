@@ -113,6 +113,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     private Integer requestTimeout;
     private int httpDownloadURIExpirySeconds = 0; // disabled by default
     private int httpUploadURIExpirySeconds = 0; // disabled by default
+    private String blobStorageUploadDomain;
+    private String blobStorageDownloadDomain;
 
     private Cache<DataIdentifier, URI> httpDownloadURICache;
 
@@ -188,6 +190,12 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                         this.setHttpDownloadURICacheSize(0); // default
                     }
                 }
+
+                String defaultBlobStorageDomainName = String.format("%s.blob.core.windows.net",
+                        properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME));
+                this.blobStorageUploadDomain = defaultBlobStorageDomainName;
+                this.blobStorageDownloadDomain = properties.getProperty(AzureConstants.AZURE_CDN_DOMAIN_NAME,
+                        defaultBlobStorageDomainName);
             }
             catch (StorageException e) {
                 throw new DataStoreException(e);
@@ -786,7 +794,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 uri = createPresignedURI(key,
                         EnumSet.of(SharedAccessBlobPermissions.READ),
                         httpDownloadURIExpirySeconds,
-                        headers);
+                        headers,
+                        blobStorageDownloadDomain);
                 if (uri != null && httpDownloadURICache != null) {
                     httpDownloadURICache.put(identifier, uri);
                 }
@@ -888,7 +897,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             for (long blockId = 1; blockId <= numParts; ++blockId) {
                 presignedURIRequestParams.put("blockId",
                         Base64.encode(String.format("%06d", blockId)));
-                uploadPartURIs.add(createPresignedURI(key, perms, httpUploadURIExpirySeconds, presignedURIRequestParams));
+                uploadPartURIs.add(createPresignedURI(key, perms, httpUploadURIExpirySeconds, presignedURIRequestParams,
+                        blobStorageUploadDomain));
             }
         }
 
@@ -959,22 +969,25 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     private URI createPresignedURI(String key,
                                    EnumSet<SharedAccessBlobPermissions> permissions,
                                    int expirySeconds,
-                                   SharedAccessBlobHeaders optionalHeaders) {
-        return createPresignedURI(key, permissions, expirySeconds, Maps.newHashMap(), optionalHeaders);
-    }
-
-    private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
-                                   int expirySeconds,
-                                   Map<String, String> additionalQueryParams) {
-        return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null);
+                                   SharedAccessBlobHeaders optionalHeaders,
+                                   String blobStorageDomain) {
+        return createPresignedURI(key, permissions, expirySeconds, Maps.newHashMap(), optionalHeaders, blobStorageDomain);
     }
 
     private URI createPresignedURI(String key,
                                    EnumSet<SharedAccessBlobPermissions> permissions,
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams,
-                                   SharedAccessBlobHeaders optionalHeaders) {
+                                   String blobStorageDomain) {
+        return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null, blobStorageDomain);
+    }
+
+    private URI createPresignedURI(String key,
+                                   EnumSet<SharedAccessBlobPermissions> permissions,
+                                   int expirySeconds,
+                                   Map<String, String> additionalQueryParams,
+                                   SharedAccessBlobHeaders optionalHeaders,
+                                   String blobStorageDomain) {
         SharedAccessBlobPolicy policy = new SharedAccessBlobPolicy();
         Date expiry = Date.from(Instant.now().plusSeconds(expirySeconds));
         policy.setSharedAccessExpiryTime(expiry);
@@ -998,8 +1011,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                     null);
             // Shared access signature is returned encoded already.
 
-            String uriString = String.format("https://%s.blob.core.windows.net/%s/%s?%s",
-                    accountName,
+            String uriString = String.format("https://%s/%s/%s?%s",
+                    blobStorageDomain,
                     containerName,
                     key,
                     sharedAccessSignature);

@@ -18,12 +18,18 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import static org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils.randomStream;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Date;
 import java.util.Map;
 import java.util.Properties;
 
@@ -35,6 +41,7 @@ import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.AbstractDataRecordAccessProviderTest;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
@@ -43,24 +50,30 @@ import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assume.assumeTrue;
-
 public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessProviderTest {
     @ClassRule
     public static TemporaryFolder homeDir = new TemporaryFolder(new File("target"));
 
     private static AzureDataStore dataStore;
+    private static Properties props;
 
     @BeforeClass
     public static void setupDataStore() throws Exception {
         assumeTrue(AzureDataStoreUtils.isAzureConfigured());
-        Properties props = AzureDataStoreUtils.getAzureConfig();
+        props = AzureDataStoreUtils.getAzureConfig();
         props.setProperty("cacheSize", "0");
-        dataStore = (AzureDataStore) AzureDataStoreUtils
-            .getAzureDataStore(props, homeDir.newFolder().getAbsolutePath());
-        dataStore.setDirectDownloadURIExpirySeconds(expirySeconds);
-        dataStore.setDirectUploadURIExpirySeconds(expirySeconds);
+        dataStore = createDataStore(props);
+    }
+
+    private static AzureDataStore createDataStore(Properties props) throws Exception {
+        return createDataStore(props, homeDir.newFolder().getAbsolutePath(), expirySeconds, expirySeconds);
+    }
+
+    private static AzureDataStore createDataStore(Properties props, String homeDirPath, int downloadExpirySeconds, int uploadExpirySeconds) throws Exception {
+        AzureDataStore ds = (AzureDataStore) AzureDataStoreUtils.getAzureDataStore(props, homeDirPath);
+        ds.setDirectDownloadURIExpirySeconds(downloadExpirySeconds);
+        ds.setDirectUploadURIExpirySeconds(uploadExpirySeconds);
+        return ds;
     }
 
     @Override
@@ -147,5 +160,32 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
         // expectedNumURIs still 50000, Azure limit
         upload = ds.initiateDataRecordUpload(uploadSize, -1);
         assertEquals(expectedNumURIs, upload.getUploadURIs().size());
+    }
+
+    @Test
+    public void testDownloadURIHostname() throws DataStoreException {
+        ConfigurableDataRecordAccessProvider ds = getDataStore();
+        DataIdentifier id = ((AzureDataStore) ds).addRecord(randomStream(new Date().toInstant().getNano(), 1024)).getIdentifier();
+        URI uri = ds.getDownloadURI(id, DataRecordDownloadOptions.DEFAULT);
+        ((AzureDataStore) ds).deleteRecord(id);
+        String expectedHost = String.format("%s.blob.core.windows.net", props.getProperty("accessKey"));
+        assertTrue(expectedHost.equals(uri.getHost()));
+    }
+
+    @Test
+    public void testDownloadURICDNHostname() throws Exception {
+        Properties cdnProps = new Properties();
+        for (String propName : props.stringPropertyNames()) {
+            cdnProps.setProperty(propName, props.getProperty(propName));
+        }
+        String expectedHost = "notarealcdn.azureedge.net";
+        cdnProps.setProperty(AzureConstants.AZURE_CDN_DOMAIN_NAME, expectedHost);
+
+        ConfigurableDataRecordAccessProvider ds = createDataStore(cdnProps);
+        DataIdentifier id = ((AzureDataStore) ds).addRecord(randomStream(new Date().toInstant().getNano(), 1024)).getIdentifier();
+        URI uri = ds.getDownloadURI(id, DataRecordDownloadOptions.DEFAULT);
+        ((AzureDataStore) ds).deleteRecord(id);
+
+        assertTrue(String.format("%s expected, but got %s", expectedHost, uri.getHost()), expectedHost.equals(uri.getHost()));
     }
 }

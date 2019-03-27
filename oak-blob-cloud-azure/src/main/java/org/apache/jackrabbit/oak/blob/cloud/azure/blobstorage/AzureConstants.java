@@ -90,5 +90,11 @@ public final class AzureConstants {
      */
     public static final String PRESIGNED_HTTP_DOWNLOAD_URI_CACHE_MAX_SIZE = "presignedHttpDownloadURICacheMaxSize";
 
+    /**
+     * Optional domain name for Azure CDN to use in signed URIs instead of default domain.
+     * Only set this value if an Azure CDN has been configured for the storage account.
+     */
+    public static final String AZURE_CDN_DOMAIN_NAME = "cdnDomain";
+
     private AzureConstants() { }
 }
