@@ -196,6 +196,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 this.blobStorageUploadDomain = defaultBlobStorageDomainName;
                 this.blobStorageDownloadDomain = properties.getProperty(AzureConstants.AZURE_CDN_DOMAIN_NAME,
                         defaultBlobStorageDomainName);
+                if (Strings.isNullOrEmpty(blobStorageDownloadDomain)) {
+                    blobStorageDownloadDomain = defaultBlobStorageDomainName;
+                }
             }
             catch (StorageException e) {
                 throw new DataStoreException(e);
