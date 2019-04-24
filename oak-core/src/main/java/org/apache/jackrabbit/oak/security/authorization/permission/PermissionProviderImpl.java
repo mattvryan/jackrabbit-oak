@@ -88,12 +88,12 @@ public class PermissionProviderImpl implements PermissionProvider, AccessControl
     @NotNull
     @Override
     public Set<String> getPrivileges(@Nullable Tree tree) {
-        return getCompiledPermissions().getPrivileges(PermissionUtil.getReadOnlyTree(tree, immutableRoot));
+        return getCompiledPermissions().getPrivileges(PermissionUtil.getReadOnlyTreeOrNull(tree, immutableRoot));
     }
 
     @Override
     public boolean hasPrivileges(@Nullable Tree tree, @NotNull String... privilegeNames) {
-        return getCompiledPermissions().hasPrivileges(PermissionUtil.getReadOnlyTree(tree, immutableRoot), privilegeNames);
+        return getCompiledPermissions().hasPrivileges(PermissionUtil.getReadOnlyTreeOrNull(tree, immutableRoot), privilegeNames);
     }
 
     @NotNull
@@ -172,8 +172,8 @@ public class PermissionProviderImpl implements PermissionProvider, AccessControl
         return cp;
     }
 
-    protected PermissionStore getPermissionStore(Root root, String workspaceName,
-            RestrictionProvider restrictionProvider) {
+    @NotNull
+    protected PermissionStore getPermissionStore(@NotNull Root root, @NotNull String workspaceName, @NotNull RestrictionProvider restrictionProvider) {
         return new PermissionStoreImpl(root, workspaceName, restrictionProvider);
     }
 

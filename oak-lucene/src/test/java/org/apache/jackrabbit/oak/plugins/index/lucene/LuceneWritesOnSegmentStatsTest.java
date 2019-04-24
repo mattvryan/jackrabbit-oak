@@ -235,8 +235,9 @@ public class LuceneWritesOnSegmentStatsTest extends AbstractQueryTest {
 
                 @Override
                 public Directory wrapForWrite(LuceneIndexDefinition definition,
-                                              Directory remote, boolean reindexMode, String dirName) throws IOException {
-                    Directory ret = super.wrapForWrite(definition, remote, reindexMode, dirName);
+                                              Directory remote, boolean reindexMode, String dirName,
+                                              COWDirectoryTracker cowDirectoryTracker) throws IOException {
+                    Directory ret = super.wrapForWrite(definition, remote, reindexMode, dirName, cowDirectoryTracker);
                     cowDir = getFSDirPath(ret);
                     return ret;
                 }

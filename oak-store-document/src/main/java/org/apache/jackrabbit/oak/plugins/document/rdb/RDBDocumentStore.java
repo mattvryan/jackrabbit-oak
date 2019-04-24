@@ -429,10 +429,10 @@ public class RDBDocumentStore implements DocumentStore {
             UpdateOp conflictedOp = operationsToCover.remove(updateOp.getId());
             if (conflictedOp != null) {
                 if (collection == Collection.NODES) {
-                    LOG.debug("update conflict on {}, invalidating cache and retrying...", updateOp.getId());
+                    LOG.debug("createOrUpdate: update conflict on {}, invalidating cache and retrying...", updateOp.getId());
                     nodesCache.invalidate(updateOp.getId());
                 } else {
-                    LOG.debug("update conflict on {}, retrying...", updateOp.getId());
+                    LOG.debug("createOrUpdate: update conflict on {}, retrying...", updateOp.getId());
                 }
                 results.put(conflictedOp, createOrUpdate(collection, updateOp));
             } else if (duplicates.contains(updateOp)) {
@@ -524,7 +524,16 @@ public class RDBDocumentStore implements DocumentStore {
                 missingDocs.add(op.getId());
             }
         }
-        oldDocs.putAll(readDocumentsUncached(collection, missingDocs));
+
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("bulkUpdate: cached docs to be updated: {}", dumpKeysAndModcounts(oldDocs));
+        }
+
+        Map<String, T> freshDocs = readDocumentsUncached(collection, missingDocs);
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("bulkUpdate: fresh docs to be updated: {}", dumpKeysAndModcounts(freshDocs));
+        }
+        oldDocs.putAll(freshDocs);
 
         try (CacheChangesTracker tracker = obtainTracker(collection, Sets.union(oldDocs.keySet(), missingDocs) )) {
             List<T> docsToUpdate = new ArrayList<T>(updates.size());
@@ -553,6 +562,10 @@ public class RDBDocumentStore implements DocumentStore {
 
                 Set<String> failedUpdates = Sets.difference(keysToUpdate, successfulUpdates);
                 oldDocs.keySet().removeAll(failedUpdates);
+
+                if (LOG.isTraceEnabled()) {
+                    LOG.trace("bulkUpdate: success for {}, failure for {}", successfulUpdates, failedUpdates);
+                }
 
                 if (collection == Collection.NODES) {
                     List<NodeDocument> docsToCache = new ArrayList<>();
@@ -937,9 +950,11 @@ public class RDBDocumentStore implements DocumentStore {
 
     private DocumentStoreStatsCollector stats;
 
+    private boolean readOnly;
+
     // VERSION column mapping in queries used by RDBVersionGCSupport
     public static String VERSIONPROP = "__version";
-    
+
     // set of supported indexed properties
     private static final Set<String> INDEXEDPROPERTIES = new HashSet<String>(Arrays.asList(new String[] { MODIFIED,
             NodeDocument.HAS_BINARY_FLAG, NodeDocument.DELETED_ONCE, NodeDocument.SD_TYPE, NodeDocument.SD_MAX_REV_TIME_IN_SECS, VERSIONPROP }));
@@ -966,6 +981,8 @@ public class RDBDocumentStore implements DocumentStore {
         this.stats = builder.getDocumentStoreStatsCollector();
 
         this.callStack = LOG.isDebugEnabled() ? new Exception("call stack of RDBDocumentStore creation") : null;
+
+        this.readOnly = builder.getReadOnlyMode();
 
         this.ch = new RDBConnectionHandler(ds);
         Connection con = this.ch.getRWConnection();
@@ -1302,16 +1319,21 @@ public class RDBDocumentStore implements DocumentStore {
             closeResultSet(checkResultSet);
             boolean dbWasChanged = false;
 
-            if (!hasVersionColumn && upgradeToSchema >= 1) {
-                dbWasChanged |= upgradeTable(con, tableName, 1);
+            if (this.readOnly) {
+                LOG.debug("Skipping table update code because store is initialized in readOnly mode");
             }
+            else {
+                if (!hasVersionColumn && upgradeToSchema >= 1) {
+                    dbWasChanged |= upgradeTable(con, tableName, 1);
+                }
 
-            if (!hasSDTypeColumn && upgradeToSchema >= 2) {
-                dbWasChanged |= upgradeTable(con, tableName, 2);
-            }
+                if (!hasSDTypeColumn && upgradeToSchema >= 2) {
+                    dbWasChanged |= upgradeTable(con, tableName, 2);
+                }
 
-            if (!indexOn.contains("MODIFIED") && col == Collection.NODES) {
-                dbWasChanged |= addModifiedIndex(con, tableName);
+                if (!indexOn.contains("MODIFIED") && col == Collection.NODES) {
+                    dbWasChanged |= addModifiedIndex(con, tableName);
+                }
             }
 
             tablesPresent.add(tableName);
@@ -1322,6 +1344,12 @@ public class RDBDocumentStore implements DocumentStore {
         } catch (SQLException ex) {
             // table does not appear to exist
             con.rollback();
+
+            LOG.debug("trying to read from '" + tableName + "'", ex);
+            if (this.readOnly) {
+                throw new SQLException("Would like to create table '" + tableName
+                        + "', but RDBDocumentStore has been initialized in 'readonly' mode");
+            }
 
             try {
                 creatStatement = con.createStatement();
@@ -1349,7 +1377,7 @@ public class RDBDocumentStore implements DocumentStore {
                 getTableMetaData(con, col, tmd);
             }
             catch (SQLException ex2) {
-                LOG.error("Failed to create table " + tableName + " in " + dbname, ex2);
+                LOG.error("Failed to create table '" + tableName + "' in '" + dbname + "'", ex2);
                 throw ex2;
             }
         }
@@ -1439,6 +1467,10 @@ public class RDBDocumentStore implements DocumentStore {
             closeResultSet(checkResultSet);
             closeStatement(checkStatement);
         }
+    }
+
+    public boolean isReadOnly() {
+        return readOnly;
     }
 
     @Override
@@ -2272,6 +2304,23 @@ public class RDBDocumentStore implements DocumentStore {
                 }
             }
             return false;
+        }
+    }
+
+    @NotNull
+    private static <T extends Document> String dumpKeysAndModcounts(Map<String, T> docs) {
+        if (docs.isEmpty()) {
+            return "-";
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<String, T> e : docs.entrySet()) {
+                Long mc = e.getValue().getModCount();
+                if (sb.length() != 0) {
+                    sb.append(", ");
+                }
+                sb.append(String.format("%s (%s)", e.getKey(), mc == null ? "" : mc.toString()));
+            }
+            return sb.toString();
         }
     }
 

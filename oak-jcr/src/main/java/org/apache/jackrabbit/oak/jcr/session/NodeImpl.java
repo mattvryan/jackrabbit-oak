@@ -93,6 +93,7 @@ import org.apache.jackrabbit.oak.plugins.identifier.IdentifierManager;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyStates;
 import org.apache.jackrabbit.oak.spi.nodetype.EffectiveNodeType;
 import org.apache.jackrabbit.oak.plugins.tree.factories.RootFactory;
+import org.apache.jackrabbit.oak.spi.nodetype.NodeTypeConstants;
 import org.apache.jackrabbit.oak.spi.security.authorization.permission.Permissions;
 import org.apache.jackrabbit.oak.plugins.tree.TreeUtil;
 import org.apache.jackrabbit.value.ValueHelper;
@@ -107,6 +108,13 @@ import org.slf4j.LoggerFactory;
  * @param <T> the delegate type
  */
 public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Node, JackrabbitNode {
+
+    /**
+     * Use an zero length MVP to check read permission on jcr:mixinTypes (OAK-7652)
+     */
+    private static final PropertyState EMPTY_MIXIN_TYPES = PropertyStates.createProperty(
+            JcrConstants.JCR_MIXINTYPES, Collections.emptyList(), Type.NAMES);
+
 
     /**
      * The maximum returned value for {@link NodeIterator#getSize()}. If there
@@ -1305,11 +1313,8 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     }
 
     private boolean canReadMixinTypes(@NotNull Tree tree) throws RepositoryException {
-        // OAK-7652: use an zero length MVP to check read permission on jcr:mixinTypes
-        PropertyState mixinTypes = PropertyStates.createProperty(
-                JcrConstants.JCR_MIXINTYPES, Collections.emptyList(), Type.NAMES);
         return sessionContext.getAccessManager().hasPermissions(
-                tree, mixinTypes, Permissions.READ_PROPERTY);
+                tree, EMPTY_MIXIN_TYPES, Permissions.READ_PROPERTY);
     }
 
     private EffectiveNodeType getEffectiveNodeType() throws RepositoryException {
@@ -1359,6 +1364,11 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
         PropertyState state = PropertyStates.createProperty(
                 JCR_PRIMARYTYPE, getOakName(nodeTypeName), NAME);
         dlg.setProperty(state, true, true);
+
+        Tree typeRoot = sessionDelegate.getRoot().getTree(NodeTypeConstants.NODE_TYPES_PATH);
+        TreeUtil.autoCreateItems(
+                dlg.getTree(), typeRoot.getChild(nodeTypeName), typeRoot, sessionDelegate.getAuthInfo().getUserID());
+
         dlg.setOrderableChildren(nt.hasOrderableChildNodes());
     }
 

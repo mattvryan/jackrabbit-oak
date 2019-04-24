@@ -167,7 +167,9 @@ public final class LoginModuleImpl extends AbstractLoginModule {
                 } else if (userId != null) {
                     principals.addAll(getPrincipals(userId));
                 }
-                subject.getPublicCredentials().add(credentials);
+                if (credentials != null) {
+                    subject.getPublicCredentials().add(credentials);
+                }
                 setAuthInfo(createAuthInfo(principals), subject);
             } else {
                 log.debug("Could not add information to read only subject {}", subject);
@@ -201,27 +203,16 @@ public final class LoginModuleImpl extends AbstractLoginModule {
         }
 
         String uid = null;
-        if (credentials != null) {
-            if (credentials instanceof SimpleCredentials) {
-                uid = ((SimpleCredentials) credentials).getUserID();
-            } else if (credentials instanceof GuestCredentials) {
-                uid = getAnonymousId();
-            } else if (credentials instanceof ImpersonationCredentials) {
-                Credentials bc = ((ImpersonationCredentials) credentials).getBaseCredentials();
-                if (bc instanceof SimpleCredentials) {
-                    uid = ((SimpleCredentials) bc).getUserID();
-                }
-            } else {
-                try {
-                    NameCallback callback = new NameCallback("User-ID: ");
-                    callbackHandler.handle(new Callback[] { callback });
-                    uid = callback.getName();
-                } catch (IOException | UnsupportedCallbackException e) {
-                    onError();
-                    log.error(e.getMessage(), e);
-                }
+        if (credentials instanceof SimpleCredentials) {
+            uid = ((SimpleCredentials) credentials).getUserID();
+        } else if (credentials instanceof GuestCredentials) {
+            uid = getAnonymousId();
+        } else if (credentials instanceof ImpersonationCredentials) {
+            Credentials bc = ((ImpersonationCredentials) credentials).getBaseCredentials();
+            if (bc instanceof SimpleCredentials) {
+                uid = ((SimpleCredentials) bc).getUserID();
             }
-        }
+        } // null or other (unsupported) type of credentials (see SUPPORTED_CREDENTIALS)
 
         if (uid == null) {
             uid = getSharedLoginName();
@@ -229,6 +220,7 @@ public final class LoginModuleImpl extends AbstractLoginModule {
         return uid;
     }
 
+    @Nullable
     private String getAnonymousId() {
         SecurityProvider sp = getSecurityProvider();
         if (sp == null) {

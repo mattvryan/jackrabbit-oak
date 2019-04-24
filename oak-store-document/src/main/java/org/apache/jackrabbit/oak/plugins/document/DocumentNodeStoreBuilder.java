@@ -16,7 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -98,20 +98,9 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
             "oak.documentMK.manyChildren", 50);
 
     /**
-     * Enable or disable the LIRS cache (null to use the default setting for this configuration).
+     * Whether to use the CacheLIRS (default) or the Guava cache implementation.
      */
-    private static final Boolean LIRS_CACHE;
-
-    static {
-        String s = System.getProperty("oak.documentMK.lirsCache");
-        LIRS_CACHE = s == null ? null : Boolean.parseBoolean(s);
-    }
-
-    /**
-     * Enable fast diff operations.
-     */
-    static final boolean FAST_DIFF = Boolean.parseBoolean(
-            System.getProperty("oak.documentMK.fastDiff", "true"));
+    private static final boolean LIRS_CACHE = !Boolean.getBoolean("oak.documentMK.guavaCache");
 
     /**
      * Number of content updates that need to happen before the updates
@@ -151,8 +140,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     private CacheStats blobStoreCacheStats;
     private DocumentStoreStatsCollector documentStoreStatsCollector;
     private DocumentNodeStoreStatsCollector nodeStoreStatsCollector;
-    private Map<CacheType, PersistentCacheStats> persistentCacheStats =
-            new EnumMap<CacheType, PersistentCacheStats>(CacheType.class);
+    private Map<String, PersistentCacheStats> persistentCacheStats = new HashMap<>();
     private boolean bundlingDisabled;
     private JournalPropertyHandlerFactory journalPropertyHandlerFactory =
             new JournalPropertyHandlerFactory();
@@ -161,7 +149,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     private long maxRevisionAgeMillis = DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS;
     private GCMonitor gcMonitor = new LoggingGCMonitor(
             LoggerFactory.getLogger(VersionGarbageCollector.class));
-    private Predicate<String> nodeCachePredicate = Predicates.alwaysTrue();
+    private Predicate<Path> nodeCachePredicate = Predicates.alwaysTrue();
 
     /**
      * @return a new {@link DocumentNodeStoreBuilder}.
@@ -479,7 +467,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     }
 
     @NotNull
-    public Map<CacheType, PersistentCacheStats> getPersistenceCacheStats() {
+    public Map<String, PersistentCacheStats> getPersistenceCacheStats() {
         return persistentCacheStats;
     }
 
@@ -591,11 +579,11 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
         return buildCache(CacheType.NODE, getNodeCacheSize(), store, null);
     }
 
-    public Cache<PathRev, DocumentNodeState.Children> buildChildrenCache(DocumentNodeStore store) {
+    public Cache<NamePathRev, DocumentNodeState.Children> buildChildrenCache(DocumentNodeStore store) {
         return buildCache(CacheType.CHILDREN, getChildrenCacheSize(), store, null);
     }
 
-    public Cache<PathRev, StringValue> buildMemoryDiffCache() {
+    public Cache<CacheValue, StringValue> buildMemoryDiffCache() {
         return buildCache(CacheType.DIFF, getMemoryDiffCacheSize(), null, null);
     }
 
@@ -621,12 +609,29 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
         return new NodeDocumentCache(nodeDocumentsCache, nodeDocumentsCacheStats, prevDocumentsCache, prevDocumentsCacheStats, locks);
     }
 
+    /**
+     * @deprecated Use {@link #setNodeCachePathPredicate(Predicate)} instead.
+     */
+    @Deprecated
     public T setNodeCachePredicate(Predicate<String> p){
+        this.nodeCachePredicate = input -> input != null && p.apply(input.toString());
+        return thisBuilder();
+    }
+
+    /**
+     * @deprecated Use {@link #getNodeCachePathPredicate()} instead.
+     */
+    @Deprecated
+    public Predicate<String> getNodeCachePredicate() {
+        return input -> input != null && nodeCachePredicate.apply(Path.fromString(input));
+    }
+
+    public T setNodeCachePathPredicate(Predicate<Path> p){
         this.nodeCachePredicate = p;
         return thisBuilder();
     }
 
-    public Predicate<String> getNodeCachePredicate() {
+    public Predicate<Path> getNodeCachePathPredicate() {
         return nodeCachePredicate;
     }
 
@@ -654,7 +659,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
             }
             PersistentCacheStats stats = PersistentCache.getPersistentCacheStats(cache);
             if (stats != null) {
-                persistentCacheStats.put(cacheType, stats);
+                persistentCacheStats.put(cacheType.name(), stats);
             }
         }
         return cache;
@@ -694,15 +699,8 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
             String module,
             long maxWeight,
             final Set<EvictionListener<K, V>> listeners) {
-        // by default, use the LIRS cache when using the persistent cache,
-        // but don't use it otherwise
-        boolean useLirs = persistentCacheURI != null;
-        // allow to override this by using the system property
-        if (LIRS_CACHE != null) {
-            useLirs = LIRS_CACHE;
-        }
         // do not use LIRS cache when maxWeight is zero (OAK-6953)
-        if (useLirs && maxWeight > 0) {
+        if (LIRS_CACHE && maxWeight > 0) {
             return CacheLIRS.<K, V>newBuilder().
                     module(module).
                     weigher(new Weigher<K, V>() {

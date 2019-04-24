@@ -82,10 +82,13 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
     }
 
     /**
-     * @return  {@link org.apache.jackrabbit.oak.api.Tree} instance where the node types
-     * are stored or {@code null} if none.
+     * Returns the {@link Tree} instance where the node types are stored. This
+     * method never returns {@code null} and may return a {@code Tree} that
+     * does not exist (see {@link Tree#exists()} when there are no types stored.
+     *
+     * @return {@link Tree} instance where the node types are stored.
      */
-    @Nullable
+    @NotNull
     protected abstract Tree getTypes();
 
     /**
@@ -125,6 +128,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
     public static ReadOnlyNodeTypeManager getInstance(final Root root,
                                                       final NamePathMapper namePathMapper) {
         return new ReadOnlyNodeTypeManager() {
+            @NotNull
             @Override
             protected Tree getTypes() {
                 return root.getTree(NODE_TYPES_PATH);
@@ -142,8 +146,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
 
     @Override
     public boolean hasNodeType(String name) throws RepositoryException {
-        Tree types = getTypes();
-        return types != null && types.hasChild(getOakName(name));
+        return getTypes().hasChild(getOakName(name));
     }
 
     @Override
@@ -155,11 +158,9 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
     public NodeTypeIterator getAllNodeTypes() throws RepositoryException {
         List<NodeType> list = Lists.newArrayList();
         Tree types = getTypes();
-        if (types != null) {
-            NamePathMapper mapper = getNamePathMapper();
-            for (Tree type : types.getChildren()) {
-                list.add(new NodeTypeImpl(type, mapper));
-            }
+        NamePathMapper mapper = getNamePathMapper();
+        for (Tree type : types.getChildren()) {
+            list.add(new NodeTypeImpl(type, mapper));
         }
         return new NodeTypeIteratorAdapter(list);
     }
@@ -249,7 +250,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
     //------------------------------------------< EffectiveNodeTypeProvider >---
 
     @Override
-    public boolean isNodeType(Tree tree, String oakNtName) {
+    public boolean isNodeType(@NotNull Tree tree, @NotNull String oakNtName) {
         // shortcuts for common cases
         if (JcrConstants.NT_BASE.equals(oakNtName)) {
             return true;
@@ -284,8 +285,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
     }
 
     @Override
-    public boolean isNodeType(@Nullable String primaryTypeName, @NotNull Iterator<String> mixinTypes,
-                              @NotNull String nodeTypeName) throws NoSuchNodeTypeException, RepositoryException {
+    public boolean isNodeType(@Nullable String primaryTypeName, @NotNull Iterator<String> mixinTypes, @NotNull String nodeTypeName) {
         // shortcut
         if (JcrConstants.NT_BASE.equals(nodeTypeName)) {
             return true;
@@ -318,7 +318,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
     }
 
     @Override
-    public boolean isNodeType(String typeName, String superName) {
+    public boolean isNodeType(@NotNull String typeName, @NotNull String superName) {
         return isa(getTypes(), typeName, superName);
     }
 
@@ -330,8 +330,9 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
      * @return all types of the given node
      * @throws RepositoryException if the type information can not be accessed
      */
+    @NotNull
     @Override
-    public EffectiveNodeType getEffectiveNodeType(Node node)
+    public EffectiveNodeType getEffectiveNodeType(@NotNull Node node)
             throws RepositoryException {
         NodeTypeImpl primary = (NodeTypeImpl) node.getPrimaryNodeType(); // FIXME
         NodeType[] mixins = node.getMixinNodeTypes();
@@ -342,8 +343,9 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
         return new EffectiveNodeTypeImpl(primary, mixinImpls, this);
     }
 
+    @NotNull
     @Override
-    public EffectiveNodeType getEffectiveNodeType(Tree tree) throws RepositoryException {
+    public EffectiveNodeType getEffectiveNodeType(@NotNull Tree tree) throws RepositoryException {
         NodeTypeImpl primaryType;
         PropertyState jcrPrimaryType = tree.getProperty(JCR_PRIMARYTYPE);
         if (jcrPrimaryType != null) {
@@ -385,8 +387,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
 
     @NotNull
     @Override
-    public NodeDefinition getDefinition(
-            @NotNull Tree parent, @NotNull Tree targetNode)
+    public NodeDefinition getDefinition(@NotNull Tree parent, @NotNull Tree targetNode)
             throws RepositoryException {
         checkNotNull(parent);
         checkNotNull(targetNode);
@@ -398,8 +399,7 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
 
     @NotNull
     @Override
-    public PropertyDefinition getDefinition(
-            Tree parent, PropertyState property, boolean exactTypeMatch)
+    public PropertyDefinition getDefinition(@NotNull Tree parent, @NotNull PropertyState property, boolean exactTypeMatch)
             throws RepositoryException {
         Type<?> type = property.getType();
         EffectiveNodeType effective = getEffectiveNodeType(parent);
@@ -409,13 +409,12 @@ public abstract class ReadOnlyNodeTypeManager implements NodeTypeManager, Effect
 
     //-----------------------------------------------------------< internal >---
 
-    NodeTypeImpl internalGetNodeType(String oakName) throws NoSuchNodeTypeException {
+    @NotNull
+    NodeTypeImpl internalGetNodeType(@NotNull String oakName) throws NoSuchNodeTypeException {
         Tree types = getTypes();
-        if (types != null) {
-            Tree type = types.getChild(oakName);
-            if (type.exists()) {
-                return new NodeTypeImpl(type, getNamePathMapper());
-            }
+        Tree type = types.getChild(oakName);
+        if (type.exists()) {
+            return new NodeTypeImpl(type, getNamePathMapper());
         }
         throw new NoSuchNodeTypeException(getNamePathMapper().getJcrName(oakName));
     }

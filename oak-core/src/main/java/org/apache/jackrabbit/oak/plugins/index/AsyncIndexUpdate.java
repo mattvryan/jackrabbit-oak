@@ -661,6 +661,7 @@ public class AsyncIndexUpdate implements Runnable, Closeable {
         }
         keep.add(cp);
         keep.addAll(indexStats.tempCps);
+        log.debug("Getting checkpoint info for {}", cp);
         Map<String, String> info = store.checkpointInfo(cp);
         String value = info.get("created");
         if (value != null) {
@@ -685,6 +686,8 @@ public class AsyncIndexUpdate implements Runnable, Closeable {
                     }
                 }
             }
+        } else {
+            log.info("Checkpoint Info : '{}' for the checkpoint - {} ; keep -- {}", info, cp, keep);
         }
     }
 
@@ -713,6 +716,7 @@ public class AsyncIndexUpdate implements Runnable, Closeable {
         // task will take care of it
         taskSplitter.maybeSplit(beforeCheckpoint, callback.lease);
         IndexUpdate indexUpdate = null;
+        boolean indexingFailed = true;
         try {
             NodeBuilder builder = store.getRoot().builder();
 
@@ -768,6 +772,8 @@ public class AsyncIndexUpdate implements Runnable, Closeable {
             }
             mergeWithConcurrencyCheck(store, validatorProviders, builder, beforeCheckpoint,
                     callback.lease, name);
+            indexingFailed = false;
+
             if (indexUpdate.isReindexingPerformed()) {
                 log.info("[{}] Reindexing completed for indexes: {} in {} ({} ms)",
                         name, indexUpdate.getReindexStats(), 
@@ -778,7 +784,7 @@ public class AsyncIndexUpdate implements Runnable, Closeable {
             corruptIndexHandler.markWorkingIndexes(indexUpdate.getUpdatedIndexPaths());
         } finally {
             if (indexUpdate != null) {
-                if (updatePostRunStatus) {
+                if ( !indexingFailed ) {
                     indexUpdate.commitProgress(IndexCommitCallback.IndexProgress.COMMIT_SUCCEDED);
                 } else {
                     indexUpdate.commitProgress(IndexCommitCallback.IndexProgress.COMMIT_FAILED);

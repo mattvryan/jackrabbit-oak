@@ -19,6 +19,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -247,6 +248,11 @@ public final class NodeDocument extends Document {
      * in the document
      */
     public static final String SD_MAX_REV_TIME_IN_SECS = "_sdMaxRevTime";
+
+    /**
+     * The path prefix for previous documents.
+     */
+    private static final Path PREVIOUS_PREFIX = new Path("p");
 
     /**
      * Return time in seconds with 5 second resolution
@@ -496,18 +502,17 @@ public final class NodeDocument extends Document {
      * @return the path of the main document.
      */
     @NotNull
-    public String getMainPath() {
-        String p = getPath();
+    public Path getMainPath() {
+        String p = getPathString();
         if (p.startsWith("p")) {
             p = PathUtils.getAncestorPath(p, 2);
             if (p.length() == 1) {
-                return "/";
+                return Path.ROOT;
             } else {
-                return p.substring(1);
+                p = p.substring(1);
             }
-        } else {
-            return p;
         }
+        return Path.fromString(p);
     }
 
     /**
@@ -551,8 +556,8 @@ public final class NodeDocument extends Document {
     /**
      * Purge the  uncommitted revisions of this document with the
      * local cluster node id as returned by the {@link RevisionContext}. These
-     * are the {@link #REVISIONS} entries where {@link Utils#isCommitted(String)}
-     * returns false.
+     * are the {@link #REVISIONS} and {@link #BRANCH_COMMITS} entries where
+     * {@link Utils#isCommitted(String)} returns false.
      *
      * <p>
      *     <bold>Note</bold> - This method should only be invoked upon startup
@@ -566,15 +571,24 @@ public final class NodeDocument extends Document {
     int purgeUncommittedRevisions(RevisionContext context) {
         // only look at revisions in this document.
         // uncommitted revisions are not split off
-        Map<Revision, String> valueMap = getLocalRevisions();
+        Map<Revision, String> localRevisions = getLocalRevisions();
         UpdateOp op = new UpdateOp(getId(), false);
-        int purgeCount = 0;
-        for (Map.Entry<Revision, String> commit : valueMap.entrySet()) {
+        Set<Revision> uniqueRevisions = new HashSet<>();
+        for (Map.Entry<Revision, String> commit : localRevisions.entrySet()) {
             if (!Utils.isCommitted(commit.getValue())) {
                 Revision r = commit.getKey();
                 if (r.getClusterId() == context.getClusterId()) {
-                    purgeCount++;
-                    op.removeMapEntry(REVISIONS, r);
+                    uniqueRevisions.add(r);
+                    removeRevision(op, r);
+                }
+            }
+        }
+        for (Revision r : getLocalBranchCommits()) {
+            String commitValue = localRevisions.get(r);
+            if (!Utils.isCommitted(commitValue)) {
+                if (r.getClusterId() == context.getClusterId()) {
+                    uniqueRevisions.add(r);
+                    removeBranchCommit(op, r);
                 }
             }
         }
@@ -582,7 +596,7 @@ public final class NodeDocument extends Document {
         if (op.hasChanges()) {
             store.findAndUpdate(Collection.NODES, op);
         }
-        return purgeCount;
+        return uniqueRevisions.size();
     }
 
     /**
@@ -647,7 +661,7 @@ public final class NodeDocument extends Document {
      * @return the commit root path or <code>null</code>.
      */
     @Nullable
-    public String getCommitRootPath(Revision revision) {
+    public Path getCommitRootPath(Revision revision) {
         String depth = getCommitRootDepth(revision);
         if (depth != null) {
             return getPathAtDepth(depth);
@@ -917,7 +931,7 @@ public final class NodeDocument extends Document {
             // deleted
             return null;
         }
-        String path = getPath();
+        Path path = getPath();
         List<PropertyState> props = Lists.newArrayList();
         for (String key : keySet()) {
             if (!Utils.isPropertyName(key)) {
@@ -1119,7 +1133,7 @@ public final class NodeDocument extends Document {
      * @return if conflicting change in {@link #DELETED} property is allowed
      */
     private boolean allowConflictingDeleteChange(UpdateOp op) {
-        String path = getPath();
+        String path = getPathString();
         if (!Utils.isHiddenPath(path)) {
             return false;
         }
@@ -1255,7 +1269,7 @@ public final class NodeDocument extends Document {
         if (revision == null) {
             return new PropertyHistory(this, property);
         } else {
-            final String mainPath = getMainPath();
+            final Path mainPath = getMainPath();
             // first try to lookup revision directly
             Map.Entry<Revision, Range> entry = getPreviousRanges().floorEntry(revision);
             if (entry != null) {
@@ -1863,7 +1877,7 @@ public final class NodeDocument extends Document {
         // main document may be stale, evict it from the cache if it is
         // older than one minute. We don't want to invalidate a document
         // too frequently if the document structure is really broken.
-        String path = getMainPath();
+        Path path = getMainPath();
         String id = Utils.getIdFromPath(path);
         NodeDocument doc = store.getIfCached(NODES, id);
         long now = Revision.getCurrentTimestamp();
@@ -1974,7 +1988,7 @@ public final class NodeDocument extends Document {
         if (getLocalRevisions().containsKey(rev)) {
             return this;
         }
-        String commitRootPath;
+        Path commitRootPath;
         String depth = getLocalCommitRoot().get(rev);
         if (depth != null) {
             commitRootPath = getPathAtDepth(depth);
@@ -2004,12 +2018,12 @@ public final class NodeDocument extends Document {
      *              integer.
      */
     @NotNull
-    private String getPathAtDepth(@NotNull String depth) {
+    private Path getPathAtDepth(@NotNull String depth) {
         if (checkNotNull(depth).equals("0")) {
-            return "/";
+            return Path.ROOT;
         }
-        String p = getPath();
-        return PathUtils.getAncestorPath(p, PathUtils.getDepth(p) - Integer.parseInt(depth));
+        Path p = getPath();
+        return p.getAncestor(p.getDepth() - Integer.parseInt(depth));
     }
 
     /**
@@ -2173,7 +2187,13 @@ public final class NodeDocument extends Document {
         return null;
     }
 
-    public String getPath() {
+    @NotNull
+    public Path getPath() {
+        return Path.fromString(getPathString());
+    }
+
+    @NotNull
+    private String getPathString() {
         String p = (String) get(PATH);
         if (p != null) {
             return p;

@@ -23,14 +23,14 @@
   <parent>
     <groupId>org.apache</groupId>
     <artifactId>apache</artifactId>
-    <version>18</version>
+    <version>21</version>
     <relativePath />
   </parent>
 
   <groupId>org.apache.jackrabbit</groupId>
   <artifactId>oak-parent</artifactId>
   <name>Oak Parent POM</name>
-  <version>1.12-SNAPSHOT</version>
+  <version>1.14-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <properties>
@@ -44,7 +44,7 @@
     <project.reporting.outputEncoding>
       ${project.build.sourceEncoding}
     </project.reporting.outputEncoding>
-    <jackrabbit.version>2.19.1</jackrabbit.version>
+    <jackrabbit.version>2.18.1</jackrabbit.version>
     <mongo.host>127.0.0.1</mongo.host>
     <mongo.port>27017</mongo.port>
     <mongo.db>MongoMKDB</mongo.db>
@@ -53,7 +53,7 @@
     <mongo.version>3.6</mongo.version>
     <segment.db>SegmentMK</segment.db>
     <lucene.version>4.7.1</lucene.version>
-    <solr.version>5.5.5</solr.version>
+    <solr.version>6.6.6</solr.version>
     <mongo.driver.version>3.8.2</mongo.driver.version>
     <slf4j.api.version>1.7.26</slf4j.api.version>
     <slf4j.version>1.7.26</slf4j.version> <!-- sync with logback version -->
@@ -125,12 +125,11 @@
         </plugin>
         <plugin>
           <artifactId>maven-javadoc-plugin</artifactId>
-          <version>3.0.0</version>
+          <version>3.1.0</version>
           <configuration>
             <source>${java.version}</source>
             <aggregate>true</aggregate>
             <links>
-              <link>https://docs.adobe.com/docs/en/spec/javax.jcr/javadocs/jcr-2.0/</link>
               <link>http://jackrabbit.apache.org/api/trunk/</link>
               <link>https://google.github.io/guava/releases/${guava.version}/api/docs/</link>
             </links>
@@ -187,7 +186,7 @@
                 <failOnWarning>false</failOnWarning>
                 <failOnError>true</failOnError>
                 <!-- Set the comparisonVersion to last release from stable branch-->
-                <comparisonVersion>1.10.2</comparisonVersion>
+                <comparisonVersion>1.12.0</comparisonVersion>
                 <filters>
                   <!-- Disable baseline for explicitly NOT managed packages. See OAK-3842 -->
                   <filter>!org.apache.jackrabbit.oak.spi.blob</filter>
@@ -400,7 +399,7 @@
         <plugin>
           <groupId>org.jacoco</groupId>
           <artifactId>jacoco-maven-plugin</artifactId>
-          <version>0.8.2</version>
+          <version>0.8.3</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -566,7 +565,7 @@
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
-        <version>2.21.0</version>
+        <version>2.25.1</version>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
@@ -677,12 +676,12 @@
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
         <artifactId>httpclient</artifactId>
-        <version>4.5.7</version>
+        <version>4.5.8</version>
       </dependency>
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
         <artifactId>httpclient-osgi</artifactId>
-        <version>4.5.7</version>
+        <version>4.5.8</version>
       </dependency>
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
@@ -697,7 +696,7 @@
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
         <artifactId>httpmime</artifactId>
-        <version>4.5.7</version>
+        <version>4.5.8</version>
       </dependency>
       <dependency>
         <groupId>com.arakelian</groupId>
