@@ -179,7 +179,7 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
             cdnProps.setProperty(propName, props.getProperty(propName));
         }
         String expectedHost = "notarealcdn.azureedge.net";
-        cdnProps.setProperty(AzureConstants.AZURE_CDN_DOMAIN_NAME, expectedHost);
+        cdnProps.setProperty(AzureConstants.AZURE_CDN_DOWNLOAD_DOMAIN_NAME, expectedHost);
 
         ConfigurableDataRecordAccessProvider ds = createDataStore(cdnProps);
         DataIdentifier id = ((AzureDataStore) ds).addRecord(randomStream(new Date().toInstant().getNano(), 1024)).getIdentifier();
@@ -187,5 +187,15 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
         ((AzureDataStore) ds).deleteRecord(id);
 
         assertTrue(String.format("%s expected, but got %s", expectedHost, uri.getHost()), expectedHost.equals(uri.getHost()));
+    }
+
+    @Test
+    public void testUploadURIHostname() throws DataStoreException, DataRecordUploadException {
+        ConfigurableDataRecordAccessProvider ds = getDataStore();
+        DataRecordUpload uploadContext = ds.initiateDataRecordUpload(ONE_MB, 1);
+        String expectedHost = String.format("%s.blob.core.windows.net", props.getProperty("accessKey"));
+        for (URI uri : uploadContext.getUploadURIs()) {
+            assertTrue(expectedHost.equals(uri.getHost()));
+        }
     }
 }
