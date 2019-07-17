@@ -739,6 +739,10 @@ public class S3Backend extends AbstractSharedBackend {
             // feature disabled
             return null;
         }
+        
+        // When running unit test from Maven, it doesn't always honor the @NotNull decorators
+        if (null == identifier) throw new NullPointerException("identifier");
+        if (null == downloadOptions) throw new NullPointerException("downloadOptions");
 
         try {
             if (! exists(identifier)) {
