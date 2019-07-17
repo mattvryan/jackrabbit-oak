@@ -765,6 +765,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
                               @NotNull DataRecordDownloadOptions downloadOptions) {
         URI uri = null;
+
+        // When running unit test from Maven, it doesn't always honor the @NotNull decorators
+        if (null == identifier) throw new NullPointerException("identifier");
+        if (null == downloadOptions) throw new NullPointerException("downloadOptions");
+        
         if (httpDownloadURIExpirySeconds > 0) {
 
             // Check if this identifier exists.  If not, we want to return null
