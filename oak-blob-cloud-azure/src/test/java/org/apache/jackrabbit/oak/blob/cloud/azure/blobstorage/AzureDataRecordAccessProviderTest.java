@@ -57,7 +57,7 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
     public static void setupDataStore() throws Exception {
         assumeTrue(AzureDataStoreUtils.isAzureConfigured());
         dataStore = (AzureDataStore) AzureDataStoreUtils
-            .getAzureDataStore(getProperties(), homeDir.newFolder().getAbsolutePath());
+                .getAzureDataStore(getProperties(), homeDir.newFolder().getAbsolutePath());
         dataStore.setDirectDownloadURIExpirySeconds(expirySeconds);
         dataStore.setDirectUploadURIExpirySeconds(expirySeconds);
     }
