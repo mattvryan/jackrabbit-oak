@@ -813,9 +813,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     headers.setContentDisposition(contentDisposition);
                 }
 
-                String domain = properties.getProperty(AzureConstants.PRESIGNED_HTTP_DOWNLOAD_URI_DOMAIN_OVERRIDE, null);
-                if (Strings.isNullOrEmpty(domain)) {
-                    domain = getDefaultBlobStorageDomain();
+                String domain = getDirectDownloadBlobStorageDomain();
+                if (null == domain) {
+                    throw new NullPointerException("Could not determine domain for direct download");
                 }
 
                 uri = createPresignedURI(key,
@@ -918,9 +918,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             }
 
             String key = getKeyName(newIdentifier);
-            String domain = properties.getProperty(AzureConstants.PRESIGNED_HTTP_UPLOAD_URI_DOMAIN_OVERRIDE, null);
+            String domain = getDirectUploadBlobStorageDomain();
             if (null == domain) {
-                getDefaultBlobStorageDomain();
+                throw new NullPointerException("Could not determine domain for direct upload");
             }
 
             EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
@@ -1033,6 +1033,22 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return null;
         }
         return String.format("%s.blob.core.windows.net", accountName);
+    }
+
+    private String getDirectDownloadBlobStorageDomain() {
+        String domain = properties.getProperty(AzureConstants.PRESIGNED_HTTP_DOWNLOAD_URI_DOMAIN_OVERRIDE, null);
+        if (Strings.isNullOrEmpty(domain)) {
+            domain = getDefaultBlobStorageDomain();
+        }
+        return domain;
+    }
+
+    private String getDirectUploadBlobStorageDomain() {
+        String domain = properties.getProperty(AzureConstants.PRESIGNED_HTTP_UPLOAD_URI_DOMAIN_OVERRIDE, null);
+        if (null == domain) {
+            getDefaultBlobStorageDomain();
+        }
+        return domain;
     }
 
     private URI createPresignedURI(String key,
