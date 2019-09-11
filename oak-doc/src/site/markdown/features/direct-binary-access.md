@@ -243,16 +243,21 @@ Oak can be configured to make use of CDNs if desired.  Configuring a CDN for use
 ## Preconditions
 
 The following conditions must be true to leverage a CDN:
+
 * You must be using `AzureDataStore`.  (`S3DataStore` will be supported at a future date but is not currently supported.)
 * You must have Direct Binary Access enabled - CDNs only offer a benefit with direct access URIs.
 * You must have a CDN configured that uses your cloud blob storage container as the origin.
 
 ## Configuration
 
+Add one or both of the following configuration options to the data store configuration file:
+
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `presignedHttpDownloadURIDomainOverride`   | String  | null     | When this property is set, the domain provided will be used for direct download URIs instead of the default direct download domain. |
 | `presignedHttpUploadURIDomainOverride` | String  | null     | When this property is set, the domain provided will be used for direct upload URIs instead of the default direct upload domain. |
+
+When set, the property value should be a valid fully-qualified domain name, e.g. "mycdndomain.azureedge.net".
 
 ## Uses
 
