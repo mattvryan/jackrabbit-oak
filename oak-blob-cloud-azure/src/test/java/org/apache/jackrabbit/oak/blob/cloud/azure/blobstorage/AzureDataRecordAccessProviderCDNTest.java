@@ -71,7 +71,7 @@ public class AzureDataRecordAccessProviderCDNTest extends AzureDataRecordAccessP
     public static void setupDataStore() throws Exception {
         assumeTrue(cdnSetupNotice, isCDNConfigured());
         cdnDataStore = AzureDataStoreUtils.setupDirectAccessDataStore(homeDir,
-                expirySeconds, expirySeconds, new Properties());
+                expirySeconds, expirySeconds);
     }
 
     private static boolean isCDNConfigured() {
