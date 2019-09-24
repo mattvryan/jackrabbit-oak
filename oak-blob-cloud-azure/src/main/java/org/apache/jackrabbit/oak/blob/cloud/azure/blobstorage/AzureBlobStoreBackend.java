@@ -34,6 +34,7 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.security.InvalidKeyException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.Date;
 import java.util.EnumSet;
@@ -48,6 +49,7 @@ import java.util.concurrent.TimeUnit;
 import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
+import com.azure.storage.blob.BlobProperties;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
@@ -368,25 +370,20 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
-            blob.downloadAttributes();
+            BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+            BlobProperties properties = blob.getProperties();
             AzureBlobStoreDataRecord record = new AzureBlobStoreDataRecord(
                     this,
-                    connectionString,
-                    containerName,
-                    new DataIdentifier(getIdentifierName(blob.getName())),
-                    blob.getProperties().getLastModified().getTime(),
-                    blob.getProperties().getLength());
+                    containerClient,
+                    identifier,
+                    blob.getProperties().lastModified(),
+                    blob.getProperties().blobSize());
             LOG.debug("Data record read for blob. identifier={} duration={} record={}",
                       key, (System.currentTimeMillis() - start), record);
             return record;
         }
         catch (StorageException e) {
             LOG.info("Error getting data record for blob. identifier={}", key, e);
-            throw new DataStoreException(String.format("Cannot retrieve blob. identifier=%s", key), e);
-        }
-        catch (URISyntaxException e) {
-            LOG.debug("Error getting data record for blob. identifier={}", key, e);
             throw new DataStoreException(String.format("Cannot retrieve blob. identifier=%s", key), e);
         } finally {
             if (contextClassLoader != null) {
@@ -1182,22 +1179,20 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     }
 
     static class AzureBlobStoreDataRecord extends AbstractDataRecord {
-        final String connectionString;
-        final String containerName;
-        final long lastModified;
+        final ContainerClient client;
+        final OffsetDateTime lastModified;
         final long length;
         final boolean isMeta;
 
-        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, String connectionString, String containerName,
-                                        DataIdentifier key, long lastModified, long length) {
-            this(backend, connectionString, containerName, key, lastModified, length, false);
+        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, ContainerClient client,
+                                        DataIdentifier key, OffsetDateTime lastModified, long length) {
+            this(backend, client, key, lastModified, length, false);
         }
 
-        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, String connectionString, String containerName,
-                                        DataIdentifier key, long lastModified, long length, boolean isMeta) {
+        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, ContainerClient client,
+                                        DataIdentifier key, OffsetDateTime lastModified, long length, boolean isMeta) {
             super(backend, key);
-            this.connectionString = connectionString;
-            this.containerName = containerName;
+            this.client = client;
             this.lastModified = lastModified;
             this.length = length;
             this.isMeta = isMeta;
@@ -1211,7 +1206,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         @Override
         public InputStream getStream() throws DataStoreException {
             String id = getKeyName(getIdentifier());
-            CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
             if (isMeta) {
                 id = addMetaKeyPrefix(getIdentifier().toString());
             }
@@ -1223,15 +1217,15 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 }
             }
             try {
-                return container.getBlockBlobReference(id).openInputStream();
-            } catch (StorageException | URISyntaxException e) {
+                return client.getBlockBlobClient(id).openInputStream();
+            } catch (StorageException e) {
                 throw new DataStoreException(e);
             }
         }
 
         @Override
         public long getLastModified() {
-            return lastModified;
+            return lastModified.toEpochSecond();
         }
 
         @Override
@@ -1239,8 +1233,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return "AzureBlobStoreDataRecord{" +
                    "identifier=" + getIdentifier() +
                    ", length=" + length +
-                   ", lastModified=" + lastModified +
-                   ", containerName='" + containerName + '\'' +
+                   ", lastModified=" + lastModified.toString() +
                    '}';
         }
     }
