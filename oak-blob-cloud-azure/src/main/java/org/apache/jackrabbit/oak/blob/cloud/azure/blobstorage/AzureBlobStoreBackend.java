@@ -45,7 +45,7 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import com.azure.core.http.policy.RetryPolicy;
+import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
 import com.azure.storage.blob.BlobServiceClient;
@@ -270,14 +270,12 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             long len = file.length();
             LOG.debug("Blob write started. identifier={} length={}", key, len);
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+            BlockBlobClient blob = containerClient.getBlockBlobClient(key);
             if (!blob.exists()) {
-                BlobRequestOptions options = new BlobRequestOptions();
-                options.setConcurrentRequestCount(concurrentRequestCount);
                 boolean useBufferedStream = len < BUFFERED_STREAM_THRESHHOLD;
                 final InputStream in = useBufferedStream  ? new BufferedInputStream(new FileInputStream(file)) : new FileInputStream(file);
                 try {
-                    blob.upload(in, len, null, options, null);
+                    blob.upload(in, len);
                     LOG.debug("Blob created. identifier={} length={} duration={} buffered={}", key, len, (System.currentTimeMillis() - start), useBufferedStream);
                     if (LOG_STREAMS_UPLOAD.isDebugEnabled()) {
                         // Log message, with exception so we can get a trace to see where the call came from
@@ -289,22 +287,24 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 return;
             }
 
-            blob.downloadAttributes();
-            if (blob.getProperties().getLength() != len) {
+            if (blob.getProperties().blobSize() != len) {
                 throw new DataStoreException("Length Collision. identifier=" + key +
                                              " new length=" + len +
-                                             " old length=" + blob.getProperties().getLength());
+                                             " old length=" + blob.getProperties().blobSize());
             }
-            LOG.trace("Blob already exists. identifier={} lastModified={}", key, blob.getProperties().getLastModified().getTime());
-            blob.startCopy(blob);
+            LOG.trace("Blob already exists. identifier={} lastModified={}", key, blob.getProperties().lastModified().toString());
+            //blob.startCopy(blob);
+            Response rsp = blob.copyFromURLWithResponse(blob.getBlobUrl(),
+                    null, null, null,
+                    null, null, Context.NONE);
             //TODO: better way of updating lastModified (use custom metadata?)
-            if (!waitForCopy(blob)) {
+            if (rsp.statusCode() < 400) {
                 throw new DataStoreException(
-                    String.format("Cannot update lastModified for blob. identifier=%s status=%s",
-                                  key, blob.getCopyState().getStatusDescription()));
+                    String.format("Cannot update lastModified for blob. identifier=%s status=%d",
+                                  key, rsp.statusCode());
             }
             LOG.debug("Blob updated. identifier={} lastModified={} duration={}", key,
-                      blob.getProperties().getLastModified().getTime(), (System.currentTimeMillis() - start));
+                      blob.getProperties().lastModified().toString(), (System.currentTimeMillis() - start));
         }
         catch (StorageException e) {
             LOG.info("Error writing blob. identifier={}", key, e);
