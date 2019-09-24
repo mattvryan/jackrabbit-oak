@@ -45,6 +45,14 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import com.azure.core.http.policy.RetryPolicy;
+import com.azure.core.http.rest.VoidResponse;
+import com.azure.core.util.Context;
+import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.StorageException;
+import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.base.Charsets;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
@@ -53,34 +61,15 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.microsoft.azure.storage.AccessCondition;
-import com.microsoft.azure.storage.RequestOptions;
-import com.microsoft.azure.storage.ResultContinuation;
-import com.microsoft.azure.storage.ResultSegment;
-import com.microsoft.azure.storage.RetryPolicy;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.BlobListingDetails;
-import com.microsoft.azure.storage.blob.BlobRequestOptions;
-import com.microsoft.azure.storage.blob.BlockEntry;
-import com.microsoft.azure.storage.blob.BlockListingFilter;
-import com.microsoft.azure.storage.blob.CloudBlob;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
-import com.microsoft.azure.storage.blob.CloudBlockBlob;
-import com.microsoft.azure.storage.blob.CopyStatus;
-import com.microsoft.azure.storage.blob.ListBlobItem;
-import com.microsoft.azure.storage.blob.SharedAccessBlobHeaders;
-import com.microsoft.azure.storage.blob.SharedAccessBlobPermissions;
-import com.microsoft.azure.storage.blob.SharedAccessBlobPolicy;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadToken;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadToken;
 import org.apache.jackrabbit.oak.spi.blob.AbstractDataRecord;
 import org.apache.jackrabbit.oak.spi.blob.AbstractSharedBackend;
 import org.apache.jackrabbit.util.Base64;
@@ -109,10 +98,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     private Properties properties;
     private String containerName;
-    private String connectionString;
+    private ContainerClient containerClient;
+
     private int concurrentRequestCount = 1;
-    private RetryPolicy retryPolicy;
-    private Integer requestTimeout;
     private int httpDownloadURIExpirySeconds = 0; // disabled by default
     private int httpUploadURIExpirySeconds = 0; // disabled by default
     private boolean createBlobContainer = true;
@@ -124,18 +112,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     public void setProperties(final Properties properties) {
         this.properties = properties;
-    }
-
-    protected CloudBlobContainer getAzureContainer() throws DataStoreException {
-        CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
-        RequestOptions requestOptions = container.getServiceClient().getDefaultRequestOptions();
-        if (retryPolicy != null) {
-            requestOptions.setRetryPolicyFactory(retryPolicy);
-        }
-        if (requestTimeout != null) {
-            requestOptions.setTimeoutIntervalInMs(requestTimeout);
-        }
-        return container;
     }
 
     @Override
@@ -157,21 +133,57 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             try {
                 Utils.setProxyIfNeeded(properties);
-                containerName = (String) properties.get(AzureConstants.AZURE_BLOB_CONTAINER_NAME);
                 createBlobContainer = PropertiesUtil.toBoolean(properties.getProperty(AzureConstants.AZURE_CREATE_CONTAINER), true);
-                connectionString = Utils.getConnectionStringFromProperties(properties);
                 concurrentRequestCount = PropertiesUtil.toInteger(properties.get(AzureConstants.AZURE_BLOB_CONCURRENT_REQUESTS_PER_OPERATION), 1);
                 LOG.info("Using concurrentRequestsPerOperation={}", concurrentRequestCount);
-                retryPolicy = Utils.getRetryPolicy((String)properties.get(AzureConstants.AZURE_BLOB_MAX_REQUEST_RETRY));
-                if (properties.getProperty(AzureConstants.AZURE_BLOB_REQUEST_TIMEOUT) != null) {
-                    requestTimeout = PropertiesUtil.toInteger(properties.getProperty(AzureConstants.AZURE_BLOB_REQUEST_TIMEOUT), RetryPolicy.DEFAULT_CLIENT_RETRY_COUNT);
-                }
                 presignedDownloadURIVerifyExists =
                         PropertiesUtil.toBoolean(properties.get(AzureConstants.PRESIGNED_HTTP_DOWNLOAD_URI_VERIFY_EXISTS), true);
 
-                CloudBlobContainer azureContainer = getAzureContainer();
 
-                if (createBlobContainer && azureContainer.createIfNotExists()) {
+                String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, null);
+                if (Strings.isNullOrEmpty(accountName)) {
+                    throw new DataStoreException(String.format("%s - %s '%s'",
+                            "Unable to initialize Azure Data Store",
+                            "missing required configuration parameter",
+                            AzureConstants.AZURE_STORAGE_ACCOUNT_NAME
+                    ));
+                }
+                String accountKey = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY, null);
+                if (Strings.isNullOrEmpty(accountKey)) {
+                    throw new DataStoreException(String.format("%s - %s '%s'",
+                            "Unable to initialize Azure Data Store",
+                            "missing required configuration parameter",
+                            AzureConstants.AZURE_STORAGE_ACCOUNT_KEY
+                    ));
+                }
+                containerName = properties.getProperty(AzureConstants.AZURE_BLOB_CONTAINER_NAME, null);
+                if (Strings.isNullOrEmpty(containerName)) {
+                    throw new DataStoreException(String.format("%s - %s '%s'",
+                            "Unable to initialize Azure Data Store",
+                            "missing required configuration parameter",
+                            AzureConstants.AZURE_BLOB_CONTAINER_NAME
+                    ));
+                }
+
+                SharedKeyCredential credential = new SharedKeyCredential(accountName, accountKey);
+                BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
+                        .endpoint(String.format("https://%s", getDefaultBlobStorageDomain()))
+                        .credential(credential)
+                        .buildClient();
+                containerClient = blobServiceClient.getContainerClient(containerName);
+
+                if (createBlobContainer && ! containerClient.exists()) {
+                    VoidResponse rsp = containerClient.createWithResponse(null, null, null, Context.NONE);
+                    if (rsp.statusCode() != 201) {
+                        String errorMessage = String.format("%s - %s %d.  Container Name='%s'",
+                                "Unable to initialize Azure Data Store",
+                                "container does not exist and creation attempt failed with status",
+                                rsp.statusCode(),
+                                containerName
+                        );
+                        LOG.error(errorMessage);
+                        throw new DataStoreException(errorMessage);
+                    }
                     LOG.info("New container created. containerName={}", containerName);
                 } else {
                     LOG.info("Reusing existing container. containerName={}", containerName);
@@ -196,7 +208,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     }
                 }
             }
-            catch (StorageException e) {
+            catch (Exception e) {
                 throw new DataStoreException(e);
             }
         }
@@ -1007,6 +1019,15 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         }
 
         return record;
+    }
+
+    private String getDefaultBlobStorageDomain() {
+        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, "");
+        if (Strings.isNullOrEmpty(accountName)) {
+            LOG.warn("Can't generate presigned URI - Azure account name not found in properties");
+            return null;
+        }
+        return String.format("%s.blob.core.windows.net", accountName);
     }
 
     private URI createPresignedURI(String key,
