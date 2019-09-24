@@ -462,16 +462,23 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            boolean result = getAzureContainer().getBlockBlobReference(key).deleteIfExists();
-            LOG.debug("Blob {}. identifier={} duration={}",
-                    result ? "deleted" : "delete requested, but it does not exist (perhaps already deleted)",
-                    key, (System.currentTimeMillis() - start));
+            VoidResponse rsp = containerClient.getBlockBlobClient(key).deleteWithResponse(null, null, null, Context.NONE);
+            if (rsp.statusCode() < 400) {
+                LOG.debug("Blob deleted. identifier={} duration={}", key,
+                        (System.currentTimeMillis() - start));
+            }
+            else if (rsp.statusCode() == 404) {
+                LOG.debug("Blob delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
+                        key,
+                        (System.currentTimeMillis() - start));
+            }
+            else {
+                LOG.warn("Blob delete failed - status={}. identifier={} duration={}", rsp.statusCode(), key,
+                        (System.currentTimeMillis() - start));
+            }
         }
         catch (StorageException e) {
             LOG.info("Error deleting blob. identifier={}", key, e);
-            throw new DataStoreException(e);
-        }
-        catch (URISyntaxException e) {
             throw new DataStoreException(e);
         } finally {
             if (contextClassLoader != null) {
