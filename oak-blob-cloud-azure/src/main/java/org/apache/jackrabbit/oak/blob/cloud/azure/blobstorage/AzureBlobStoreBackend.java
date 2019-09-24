@@ -50,6 +50,7 @@ import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
 import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
@@ -227,12 +228,14 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(
                     getClass().getClassLoader());
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
-            if (!blob.exists()) {
+
+            BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+            if (! blob.exists()) {
                 throw new DataStoreException(String.format("Trying to read missing blob. identifier=%s", key));
             }
 
             InputStream is = blob.openInputStream();
+
             LOG.debug("Got input stream for blob. identifier={} duration={}", key, (System.currentTimeMillis() - start));
             if (LOG_STREAMS_DOWNLOAD.isDebugEnabled()) {
                 // Log message, with exception so we can get a trace to see where the call came from
@@ -242,10 +245,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         }
         catch (StorageException e) {
             LOG.info("Error reading blob. identifier=%s", key);
-            throw new DataStoreException(String.format("Cannot read blob. identifier=%s", key), e);
-        }
-        catch (URISyntaxException e) {
-            LOG.debug("Error reading blob. identifier=%s", key);
             throw new DataStoreException(String.format("Cannot read blob. identifier=%s", key), e);
         } finally {
             if (contextClassLoader != null) {
