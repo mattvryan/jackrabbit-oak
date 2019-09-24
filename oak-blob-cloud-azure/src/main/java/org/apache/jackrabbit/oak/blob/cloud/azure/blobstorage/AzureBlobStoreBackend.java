@@ -301,7 +301,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             if (rsp.statusCode() < 400) {
                 throw new DataStoreException(
                     String.format("Cannot update lastModified for blob. identifier=%s status=%d",
-                                  key, rsp.statusCode());
+                                  key, rsp.statusCode()));
             }
             LOG.debug("Blob updated. identifier={} lastModified={} duration={}", key,
                       blob.getProperties().lastModified().toString(), (System.currentTimeMillis() - start));
@@ -310,32 +310,14 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             LOG.info("Error writing blob. identifier={}", key, e);
             throw new DataStoreException(String.format("Cannot write blob. identifier=%s", key), e);
         }
-        catch (URISyntaxException | IOException e) {
+        catch (IOException e) {
             LOG.debug("Error writing blob. identifier={}", key, e);
             throw new DataStoreException(String.format("Cannot write blob. identifier=%s", key), e);
-        } catch (InterruptedException e) {
-            LOG.debug("Error writing blob. identifier={}", key, e);
-            throw new DataStoreException(String.format("Cannot copy blob. identifier=%s", key), e);
         } finally {
             if (null != contextClassLoader) {
                 Thread.currentThread().setContextClassLoader(contextClassLoader);
             }
         }
-    }
-
-    private static boolean waitForCopy(CloudBlob blob) throws StorageException, InterruptedException {
-        boolean continueLoop = true;
-        CopyStatus status = CopyStatus.PENDING;
-        while (continueLoop) {
-            blob.downloadAttributes();
-            status = blob.getCopyState().getStatus();
-            continueLoop = status == CopyStatus.PENDING;
-            // Sleep if retry is needed
-            if (continueLoop) {
-                Thread.sleep(500);
-            }
-        }
-        return status == CopyStatus.SUCCESS;
     }
 
     @Override
