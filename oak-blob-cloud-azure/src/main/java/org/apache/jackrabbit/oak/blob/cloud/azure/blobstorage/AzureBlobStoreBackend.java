@@ -433,7 +433,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            boolean exists =getAzureContainer().getBlockBlobReference(key).exists();
+            boolean exists = containerClient.getBlockBlobClient(key).exists();
             LOG.debug("Blob exists={} identifier={} duration={}", exists, key, (System.currentTimeMillis() - start));
             return exists;
         }
