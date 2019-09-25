@@ -926,13 +926,16 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             }
 
             String key = getKeyName(newIdentifier);
-            EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
+            BlobSASPermission permission = new BlobSASPermission().write(true);
+//            EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
             Map<String, String> presignedURIRequestParams = Maps.newHashMap();
             presignedURIRequestParams.put("comp", "block");
             for (long blockId = 1; blockId <= numParts; ++blockId) {
                 presignedURIRequestParams.put("blockId",
                         Base64.encode(String.format("%06d", blockId)));
-                uploadPartURIs.add(createPresignedURI(key, perms, httpUploadURIExpirySeconds, presignedURIRequestParams));
+                uploadPartURIs.add(
+                        createPresignedURI(key, containerClient.getBlockBlobClient(key),
+                                permission, httpUploadURIExpirySeconds, presignedURIRequestParams));
             }
         }
 
@@ -1032,12 +1035,12 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return String.format("%s.blob.core.windows.net", accountName);
     }
 
-    private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
-                                   int expirySeconds,
-                                   SharedAccessBlobHeaders optionalHeaders) {
-        return createPresignedURI(key, permissions, expirySeconds, Maps.newHashMap(), optionalHeaders);
-    }
+//    private URI createPresignedURI(String key,
+//                                   EnumSet<SharedAccessBlobPermissions> permissions,
+//                                   int expirySeconds,
+//                                   SharedAccessBlobHeaders optionalHeaders) {
+//        return createPresignedURI(key, permissions, expirySeconds, Maps.newHashMap(), optionalHeaders);
+//    }
 
     private URI createPresignedURI(String key,
                                    BlockBlobClient blobClient,
@@ -1046,14 +1049,22 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                    String contentTypeHeader,
                                    String contentDispositionHeader,
                                    int expirySeconds) {
-        return createPresignedURI(blobClient, permission, cacheControlHeader, contentTypeHeader, contentDispositionHeader, expirySeconds, Maps.newHashMap());
+        return createPresignedURI(key, blobClient, permission, cacheControlHeader, contentTypeHeader, contentDispositionHeader, expirySeconds, Maps.newHashMap());
     }
 
+//    private URI createPresignedURI(String key,
+//                                   EnumSet<SharedAccessBlobPermissions> permissions,
+//                                   int expirySeconds,
+//                                   Map<String, String> additionalQueryParams) {
+//        return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null);
+//    }
+
     private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
+                                   BlockBlobClient blobClient,
+                                   BlobSASPermission permission,
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams) {
-        return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null);
+        return createPresignedURI(key, blobClient, permission, null, null, null, expirySeconds, additionalQueryParams);
     }
 
 //    private URI createPresignedURI(String key,
