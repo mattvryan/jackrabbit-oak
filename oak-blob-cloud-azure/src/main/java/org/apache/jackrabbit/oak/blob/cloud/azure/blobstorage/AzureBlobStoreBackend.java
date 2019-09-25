@@ -1032,13 +1032,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return String.format("%s.blob.core.windows.net", accountName);
     }
 
-//    private URI createPresignedURI(String key,
-//                                   EnumSet<SharedAccessBlobPermissions> permissions,
-//                                   int expirySeconds,
-//                                   SharedAccessBlobHeaders optionalHeaders) {
-//        return createPresignedURI(key, permissions, expirySeconds, Maps.newHashMap(), optionalHeaders);
-//    }
-
     private URI createPresignedURI(String key,
                                    BlockBlobClient blobClient,
                                    BlobSASPermission permission,
@@ -1049,13 +1042,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return createPresignedURI(key, blobClient, permission, cacheControlHeader, contentTypeHeader, contentDispositionHeader, expirySeconds, Maps.newHashMap());
     }
 
-//    private URI createPresignedURI(String key,
-//                                   EnumSet<SharedAccessBlobPermissions> permissions,
-//                                   int expirySeconds,
-//                                   Map<String, String> additionalQueryParams) {
-//        return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null);
-//    }
-
     private URI createPresignedURI(String key,
                                    BlockBlobClient blobClient,
                                    BlobSASPermission permission,
@@ -1064,11 +1050,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         return createPresignedURI(key, blobClient, permission, null, null, null, expirySeconds, additionalQueryParams);
     }
 
-//    private URI createPresignedURI(String key,
-//                                   EnumSet<SharedAccessBlobPermissions> permissions,
-//                                   int expirySeconds,
-//                                   Map<String, String> additionalQueryParams,
-//                                   SharedAccessBlobHeaders optionalHeaders) {
     private URI createPresignedURI(String key,
                                    BlockBlobClient blobClient,
                                    BlobSASPermission permission,
@@ -1078,17 +1059,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams) {
         OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
-
-//        SharedAccessBlobPolicy policy = new SharedAccessBlobPolicy();
-//        Date expiry = Date.from(Instant.now().plusSeconds(expirySeconds));
-//        policy.setSharedAccessExpiryTime(expiry);
-//        policy.setPermissions(permissions);
-
-//        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, "");
-//        if (Strings.isNullOrEmpty(accountName)) {
-//            LOG.warn("Can't generate presigned URI - Azure account name not found in properties");
-//            return null;
-//        }
 
         try {
             // URI class will re-encode this signature
@@ -1120,35 +1090,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     blobUrl.getPath(),
                     signature,
                     null);
-
-//            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
-//            String sharedAccessSignature =
-//                    null == optionalHeaders ?
-//                            blob.generateSharedAccessSignature(policy,
-//                                    null) :
-//                            blob.generateSharedAccessSignature(policy,
-//                                    optionalHeaders,
-//                                    null);
-            // Shared access signature is returned encoded already.
-
-//            String uriString = String.format("https://%s.blob.core.windows.net/%s/%s?%s",
-//                    accountName,
-//                    containerName,
-//                    key,
-//                    sharedAccessSignature);
-
-//            if (! additionalQueryParams.isEmpty()) {
-//                StringBuilder builder = new StringBuilder();
-//                for (Map.Entry<String, String> e : additionalQueryParams.entrySet()) {
-//                    builder.append("&");
-//                    builder.append(URLEncoder.encode(e.getKey(), Charsets.UTF_8.name()));
-//                    builder.append("=");
-//                    builder.append(URLEncoder.encode(e.getValue(), Charsets.UTF_8.name()));
-//                }
-//                uriString += builder.toString();
-//            }
-//
-//            presignedURI = new URI(uriString);
         }
         catch (URISyntaxException | UnsupportedEncodingException e) {
             LOG.error("Can't generate a presigned URI for key {}", key, e);
@@ -1229,6 +1170,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     return false;
                 }
                 firstCall = false;
+
                 ResultSegment<ListBlobItem> results = container.listBlobsSegmented(null, false, EnumSet.noneOf(BlobListingDetails.class), null, resultContinuation, null, null);
                 resultContinuation = results.getContinuationToken();
                 for (ListBlobItem item : results.getResults()) {
