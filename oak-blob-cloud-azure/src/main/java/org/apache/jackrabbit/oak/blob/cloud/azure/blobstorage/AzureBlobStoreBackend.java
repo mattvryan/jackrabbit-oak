@@ -31,12 +31,13 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.security.InvalidKeyException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collection;
-import java.util.Date;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
@@ -46,19 +47,16 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
 import com.azure.storage.blob.BlobProperties;
+import com.azure.storage.blob.BlobSASPermission;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
-import com.azure.storage.blob.models.BlobItem;
-import com.azure.storage.blob.models.Block;
-import com.azure.storage.blob.models.DeleteSnapshotsOptionType;
 import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
@@ -804,24 +802,35 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 }
 
                 String key = getKeyName(identifier);
-                SharedAccessBlobHeaders headers = new SharedAccessBlobHeaders();
-                headers.setCacheControl(String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds));
+                BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+                BlobSASPermission permission = new BlobSASPermission().read(true);
 
+                String cacheControl = String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds);
                 String contentType = downloadOptions.getContentTypeHeader();
-                if (! Strings.isNullOrEmpty(contentType)) {
-                    headers.setContentType(contentType);
-                }
+                String contentDisposition = downloadOptions.getContentDispositionHeader();
 
-                String contentDisposition =
-                        downloadOptions.getContentDispositionHeader();
-                if (! Strings.isNullOrEmpty(contentDisposition)) {
-                    headers.setContentDisposition(contentDisposition);
-                }
+                uri = createPresignedURI(key, blob, permission,
+                        cacheControl, contentType, contentDisposition,
+                        httpDownloadURIExpirySeconds);
 
-                uri = createPresignedURI(key,
-                        EnumSet.of(SharedAccessBlobPermissions.READ),
-                        httpDownloadURIExpirySeconds,
-                        headers);
+//                SharedAccessBlobHeaders headers = new SharedAccessBlobHeaders();
+//                headers.setCacheControl(String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds));
+//
+//                String contentType = downloadOptions.getContentTypeHeader();
+//                if (! Strings.isNullOrEmpty(contentType)) {
+//                    headers.setContentType(contentType);
+//                }
+//
+//                String contentDisposition =
+//                        downloadOptions.getContentDispositionHeader();
+//                if (! Strings.isNullOrEmpty(contentDisposition)) {
+//                    headers.setContentDisposition(contentDisposition);
+//                }
+//
+//                uri = createPresignedURI(key,
+//                        EnumSet.of(SharedAccessBlobPermissions.READ),
+//                        httpDownloadURIExpirySeconds,
+//                        headers);
                 if (uri != null && httpDownloadURICache != null) {
                     httpDownloadURICache.put(identifier, uri);
                 }
@@ -1031,77 +1040,121 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     }
 
     private URI createPresignedURI(String key,
+                                   BlockBlobClient blobClient,
+                                   BlobSASPermission permission,
+                                   String cacheControlHeader,
+                                   String contentTypeHeader,
+                                   String contentDispositionHeader,
+                                   int expirySeconds) {
+        return createPresignedURI(blobClient, permission, cacheControlHeader, contentTypeHeader, contentDispositionHeader, expirySeconds, Maps.newHashMap());
+    }
+
+    private URI createPresignedURI(String key,
                                    EnumSet<SharedAccessBlobPermissions> permissions,
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams) {
         return createPresignedURI(key, permissions, expirySeconds, additionalQueryParams, null);
     }
 
+//    private URI createPresignedURI(String key,
+//                                   EnumSet<SharedAccessBlobPermissions> permissions,
+//                                   int expirySeconds,
+//                                   Map<String, String> additionalQueryParams,
+//                                   SharedAccessBlobHeaders optionalHeaders) {
     private URI createPresignedURI(String key,
-                                   EnumSet<SharedAccessBlobPermissions> permissions,
+                                   BlockBlobClient blobClient,
+                                   BlobSASPermission permission,
+                                   String cacheControlHeader,
+                                   String contentTypeHeader,
+                                   String contentDispositionHeader,
                                    int expirySeconds,
-                                   Map<String, String> additionalQueryParams,
-                                   SharedAccessBlobHeaders optionalHeaders) {
-        SharedAccessBlobPolicy policy = new SharedAccessBlobPolicy();
-        Date expiry = Date.from(Instant.now().plusSeconds(expirySeconds));
-        policy.setSharedAccessExpiryTime(expiry);
-        policy.setPermissions(permissions);
+                                   Map<String, String> additionalQueryParams) {
+        OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
 
-        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, "");
-        if (Strings.isNullOrEmpty(accountName)) {
-            LOG.warn("Can't generate presigned URI - Azure account name not found in properties");
-            return null;
-        }
+//        SharedAccessBlobPolicy policy = new SharedAccessBlobPolicy();
+//        Date expiry = Date.from(Instant.now().plusSeconds(expirySeconds));
+//        policy.setSharedAccessExpiryTime(expiry);
+//        policy.setPermissions(permissions);
 
-        URI presignedURI = null;
+//        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, "");
+//        if (Strings.isNullOrEmpty(accountName)) {
+//            LOG.warn("Can't generate presigned URI - Azure account name not found in properties");
+//            return null;
+//        }
+
         try {
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
-            String sharedAccessSignature =
-                    null == optionalHeaders ?
-                            blob.generateSharedAccessSignature(policy,
-                                    null) :
-                            blob.generateSharedAccessSignature(policy,
-                                    optionalHeaders,
-                                    null);
-            // Shared access signature is returned encoded already.
+            // URI class will re-encode this signature
+            String signature = URLDecoder.decode(blobClient.generateSAS(
+                    null,
+                    permission,
+                    expiry,
+                    null,
+                    null,
+                    null,
+                    null,
+                    Strings.isNullOrEmpty(cacheControlHeader) ? null : cacheControlHeader,
+                    Strings.isNullOrEmpty(contentDispositionHeader) ? null : contentDispositionHeader,
+                    null,
+                    null,
+                    Strings.isNullOrEmpty(contentTypeHeader) ? null : contentTypeHeader
+            ), "UTF-8");
 
-            String uriString = String.format("https://%s.blob.core.windows.net/%s/%s?%s",
-                    accountName,
-                    containerName,
-                    key,
-                    sharedAccessSignature);
-
-            if (! additionalQueryParams.isEmpty()) {
-                StringBuilder builder = new StringBuilder();
-                for (Map.Entry<String, String> e : additionalQueryParams.entrySet()) {
-                    builder.append("&");
-                    builder.append(URLEncoder.encode(e.getKey(), Charsets.UTF_8.name()));
-                    builder.append("=");
-                    builder.append(URLEncoder.encode(e.getValue(), Charsets.UTF_8.name()));
-                }
-                uriString += builder.toString();
+            for (Map.Entry<String, String> p : additionalQueryParams.entrySet()) {
+                signature = signature + "&" + p.getKey() + "=" + p.getValue();
             }
 
-            presignedURI = new URI(uriString);
+            URL blobUrl = blobClient.getBlobUrl();
+            return new URI(
+                    blobUrl.getProtocol(),
+                    blobUrl.getUserInfo(),
+                    blobUrl.getHost(),
+                    blobUrl.getPort(),
+                    blobUrl.getPath(),
+                    signature,
+                    null);
+
+//            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
+//            String sharedAccessSignature =
+//                    null == optionalHeaders ?
+//                            blob.generateSharedAccessSignature(policy,
+//                                    null) :
+//                            blob.generateSharedAccessSignature(policy,
+//                                    optionalHeaders,
+//                                    null);
+            // Shared access signature is returned encoded already.
+
+//            String uriString = String.format("https://%s.blob.core.windows.net/%s/%s?%s",
+//                    accountName,
+//                    containerName,
+//                    key,
+//                    sharedAccessSignature);
+
+//            if (! additionalQueryParams.isEmpty()) {
+//                StringBuilder builder = new StringBuilder();
+//                for (Map.Entry<String, String> e : additionalQueryParams.entrySet()) {
+//                    builder.append("&");
+//                    builder.append(URLEncoder.encode(e.getKey(), Charsets.UTF_8.name()));
+//                    builder.append("=");
+//                    builder.append(URLEncoder.encode(e.getValue(), Charsets.UTF_8.name()));
+//                }
+//                uriString += builder.toString();
+//            }
+//
+//            presignedURI = new URI(uriString);
         }
-        catch (DataStoreException e) {
-            LOG.error("No connection to Azure Blob Storage", e);
-        }
-        catch (URISyntaxException | InvalidKeyException | UnsupportedEncodingException e) {
+        catch (URISyntaxException | UnsupportedEncodingException e) {
             LOG.error("Can't generate a presigned URI for key {}", key, e);
         }
         catch (StorageException e) {
             LOG.error("Azure request to create presigned Azure Blob Storage {} URI failed. " +
                             "Key: {}, Error: {}, HTTP Code: {}, Azure Error Code: {}",
-                    permissions.contains(SharedAccessBlobPermissions.READ) ? "GET" :
-                            (permissions.contains(SharedAccessBlobPermissions.WRITE) ? "PUT" : ""),
+                    permission.read() ? "GET" :
+                            (permission.write() ? "PUT" : ""),
                     key,
                     e.getMessage(),
-                    e.getHttpStatusCode(),
-                    e.getErrorCode());
+                    e.statusCode(),
+                    e.errorCode());
         }
-
-        return presignedURI;
     }
 
     private static class AzureBlobInfo {
