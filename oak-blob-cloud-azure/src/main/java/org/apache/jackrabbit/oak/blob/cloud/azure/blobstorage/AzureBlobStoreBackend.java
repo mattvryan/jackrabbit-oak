@@ -57,6 +57,7 @@ import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
 import com.azure.storage.blob.models.BlobItem;
 import com.azure.storage.blob.models.Block;
+import com.azure.storage.blob.models.DeleteSnapshotsOptionType;
 import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
@@ -636,19 +637,25 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(addMetaKeyPrefix(name));
-            boolean result = blob.deleteIfExists();
-            LOG.debug("Metadata record {}. metadataName={} duration={}",
-                    result ? "deleted" : "delete requested, but it does not exist (perhaps already deleted)",
-                    name, (System.currentTimeMillis() - start));
-            return result;
+            BlockBlobClient blob = containerClient.getBlockBlobClient(addMetaKeyPrefix(name));
+            VoidResponse rsp = blob.deleteWithResponse(null, null, null, Context.NONE);
+            if (rsp.statusCode() < 400) {
+                LOG.debug("Metadata record deleted. identifier={} duration={}", name,
+                        (System.currentTimeMillis() - start));
+            }
+            else if (rsp.statusCode() == 404) {
+                LOG.debug("Metadata record delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
+                        name,
+                        (System.currentTimeMillis() - start));
+            }
+            else {
+                LOG.warn("Metadata record delete failed - status={}. identifier={} duration={}", rsp.statusCode(), name,
+                        (System.currentTimeMillis() - start));
+            }
 
         }
         catch (StorageException e) {
             LOG.info("Error deleting metadata record. metadataName={}", name, e);
-        }
-        catch (DataStoreException | URISyntaxException e) {
-            LOG.debug("Error deleting metadata record. metadataName={}", name, e);
         }
         finally {
             if (contextClassLoader != null) {
