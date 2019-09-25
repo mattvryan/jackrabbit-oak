@@ -538,15 +538,15 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     private void addMetadataRecordImpl(final InputStream input, String name, long recordLength) throws DataStoreException {
         try {
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
-            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
+            String metaName = addMetaKeyPrefix(name);
+            BlockBlobClient blob = containerClient.getBlockBlobClient(metaName);
             blob.upload(input, recordLength);
         }
         catch (StorageException e) {
             LOG.info("Error adding metadata record. metadataName={} length={}", name, recordLength, e);
             throw new DataStoreException(e);
         }
-        catch (URISyntaxException |  IOException e) {
+        catch (IOException e) {
             throw new DataStoreException(e);
         }
     }
