@@ -54,6 +54,7 @@ import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.Block;
 import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.base.Charsets;
@@ -558,21 +559,19 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
-            CloudBlockBlob blob = metaDir.getBlockBlobReference(name);
+            String metaName = addMetaKeyPrefix(name);
+            BlockBlobClient blob = containerClient.getBlockBlobClient(metaName);
             if (!blob.exists()) {
                 LOG.warn("Trying to read missing metadata. metadataName={}", name);
                 return null;
             }
-            blob.downloadAttributes();
-            long lastModified = blob.getProperties().getLastModified().getTime();
-            long length = blob.getProperties().getLength();
+            BlobProperties properties = blob.getProperties();
             AzureBlobStoreDataRecord record =  new AzureBlobStoreDataRecord(this,
-                                                connectionString,
-                                                containerName, new DataIdentifier(name),
-                                                lastModified,
-                                                length,
-                                                true);
+                    containerClient,
+                    new DataIdentifier(name),
+                    properties.lastModified(),
+                    properties.blobSize(),
+                    true);
             LOG.debug("Metadata record read. metadataName={} duration={} record={}", name, (System.currentTimeMillis() - start), record);
             return record;
 
