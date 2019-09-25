@@ -708,12 +708,13 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-            CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(addMetaKeyPrefix(name));
+
+            BlockBlobClient blob = containerClient.getBlockBlobClient(addMetaKeyPrefix(name));
             boolean exists = blob.exists();
             LOG.debug("Metadata record {} exists {}. duration={}", name, exists, (System.currentTimeMillis() - start));
             return exists;
         }
-        catch (DataStoreException | StorageException | URISyntaxException e) {
+        catch (StorageException e) {
             LOG.debug("Error checking existence of metadata record = {}", name, e);
         }
         finally {
