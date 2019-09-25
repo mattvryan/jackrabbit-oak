@@ -33,8 +33,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
-import java.security.InvalidKeyException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -57,10 +55,12 @@ import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.Block;
+import com.azure.storage.blob.models.BlockList;
+import com.azure.storage.blob.models.BlockListType;
 import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
-import com.google.common.base.Charsets;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import com.google.common.cache.Cache;
@@ -987,24 +987,21 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             // record doesn't exist - so this means we are safe to do the complete request
             try {
                 if (uploadToken.getUploadId().isPresent()) {
-                    CloudBlockBlob blob = getAzureContainer().getBlockBlobReference(key);
-                    // An existing upload ID means this is a multi-part upload
-                    List<BlockEntry> blocks = blob.downloadBlockList(
-                            BlockListingFilter.UNCOMMITTED,
-                            AccessCondition.generateEmptyCondition(),
-                            null,
-                            null);
-                    blob.commitBlockList(blocks);
+                    BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+                    BlockList blockList = blob.listBlocks(BlockListType.UNCOMMITTED);
+                    List<String> blockIds = Lists.newArrayList();
                     long size = 0L;
-                    for (BlockEntry block : blocks) {
-                        size += block.getSize();
+                    for (Block block : blockList.uncommittedBlocks()) {
+                        blockIds.add(block.name());
+                        size += block.size();
                     }
+                    blob.commitBlockList(blockIds);
+
                     record = new AzureBlobStoreDataRecord(
                             this,
-                            connectionString,
-                            containerName,
+                            containerClient,
                             blobId,
-                            blob.getProperties().getLastModified().getTime(),
+                            blob.getProperties().lastModified(),
                             size);
                 }
                 else {
@@ -1015,7 +1012,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                     blobId)
                     );
                 }
-            } catch (URISyntaxException | StorageException e2) {
+            } catch (StorageException e2) {
                 throw new DataRecordUploadException(
                         String.format("Unable to finalize direct write of binary %s", blobId),
                         e
