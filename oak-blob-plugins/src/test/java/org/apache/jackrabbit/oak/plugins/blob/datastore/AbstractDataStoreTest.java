@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import javax.jcr.RepositoryException;
 
@@ -366,28 +367,18 @@ public abstract class AbstractDataStoreTest {
      * are returned.
      */
     protected void doGetAllIdentifiersTest() throws Exception {
-        List<DataIdentifier> list = new ArrayList<DataIdentifier>();
-        Random random = randomGen;
-        byte[] data = new byte[dataLength];
-        random.nextBytes(data);
-        DataRecord rec = ds.addRecord(new ByteArrayInputStream(data));
-        list.add(rec.getIdentifier());
+        Set<DataIdentifier> ids = Sets.newHashSet();
 
-        data = new byte[dataLength];
-        random.nextBytes(data);
-        rec = ds.addRecord(new ByteArrayInputStream(data));
-        list.add(rec.getIdentifier());
-
-        data = new byte[dataLength];
-        random.nextBytes(data);
-        rec = ds.addRecord(new ByteArrayInputStream(data));
-        list.add(rec.getIdentifier());
+        // We need to do a sizeable number of these to make sure that batched listings work
+        for (int i=0; i<10000; i++) {
+            ids.add(ds.addRecord(new RandomInputStream(System.currentTimeMillis(), dataLength)).getIdentifier());
+        }
 
         Iterator<DataIdentifier> itr = Sets.newHashSet(ds.getAllIdentifiers()).iterator();
         while (itr.hasNext()) {
-            assertTrue("record found on list", list.remove(itr.next()));
+            assertTrue("record found on list", ids.remove(itr.next()));
         }
-        Assert.assertEquals(0, list.size());
+        Assert.assertEquals(0, ids.size());
     }
 
     /**
