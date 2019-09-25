@@ -45,6 +45,7 @@ import java.util.Properties;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import com.azure.core.http.rest.Response;
@@ -675,24 +676,24 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
-            int total = 0;
-            for (ListBlobItem item : metaDir.listBlobs(prefix)) {
-                if (item instanceof CloudBlob) {
-                    if (((CloudBlob)item).deleteIfExists()) {
-                        total++;
-                    }
-                }
-            }
+            String metaPrefix = addMetaKeyPrefix(prefix);
+            final AtomicInteger total = new AtomicInteger(0);
+            containerClient.listBlobsFlat(new ListBlobsOptions().prefix(metaPrefix), null)
+                    .forEach(
+                            blobItem -> {
+                                if (400 > containerClient
+                                        .getBlockBlobClient(blobItem.name())
+                                        .deleteWithResponse(null, null, null, Context.NONE)
+                                    .statusCode()) total.getAndIncrement();
+                            }
+                    );
+
             LOG.debug("Metadata records deleted. recordsDeleted={} metadataFolder={} duration={}",
-                    total, prefix, (System.currentTimeMillis() - start));
+                    total.get(), prefix, (System.currentTimeMillis() - start));
 
         }
         catch (StorageException e) {
             LOG.info("Error deleting all metadata records. metadataFolder={}", prefix, e);
-        }
-        catch (DataStoreException | URISyntaxException e) {
-            LOG.debug("Error deleting all metadata records. metadataFolder={}", prefix, e);
         }
         finally {
             if (null != contextClassLoader) {
