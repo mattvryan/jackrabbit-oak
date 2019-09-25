@@ -45,6 +45,7 @@ import java.util.Properties;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
@@ -54,7 +55,9 @@ import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.BlobItem;
 import com.azure.storage.blob.models.Block;
+import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.base.Charsets;
@@ -599,27 +602,24 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            CloudBlobDirectory metaDir = getAzureContainer().getDirectoryReference(META_DIR_NAME);
-            for (ListBlobItem item : metaDir.listBlobs(prefix)) {
-                if (item instanceof CloudBlob) {
-                    CloudBlob blob = (CloudBlob) item;
-                    records.add(new AzureBlobStoreDataRecord(
-                        this,
-                        connectionString,
-                        containerName,
-                        new DataIdentifier(stripMetaKeyPrefix(blob.getName())),
-                        blob.getProperties().getLastModified().getTime(),
-                        blob.getProperties().getLength(),
-                        true));
-                }
-            }
+            String metaPrefix = addMetaKeyPrefix(prefix);
+            final AzureBlobStoreBackend backend = this;
+            containerClient.listBlobsFlat(new ListBlobsOptions().prefix(metaPrefix), null)
+                    .forEach(
+                            blobItem -> records.add(new AzureBlobStoreDataRecord(
+                                    backend,
+                                    containerClient,
+                                    new DataIdentifier(stripMetaKeyPrefix(blobItem.name())),
+                                    blobItem.properties().lastModified(),
+                                    blobItem.properties().contentLength(),
+                                    true
+                            ))
+                    );
+
             LOG.debug("Metadata records read. recordsRead={} metadataFolder={} duration={}", records.size(), prefix, (System.currentTimeMillis() - start));
         }
         catch (StorageException e) {
             LOG.info("Error reading all metadata records. metadataFolder={}", prefix, e);
-        }
-        catch (DataStoreException | URISyntaxException e) {
-            LOG.debug("Error reading all metadata records. metadataFolder={}", prefix, e);
         }
         finally {
             if (null != contextClassLoader) {
