@@ -28,6 +28,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -536,7 +537,14 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             String metaName = addMetaKeyPrefix(name);
             BlockBlobClient blob = containerClient.getBlockBlobClient(metaName);
-            blob.upload(input, recordLength);
+            if (-1 == recordLength) {
+                try (OutputStream blobStream = blob.getBlobOutputStream()) {
+                    IOUtils.copy(input, blobStream);
+                }
+            }
+            else {
+                blob.upload(input, recordLength);
+            }
         }
         catch (StorageException e) {
             LOG.info("Error adding metadata record. metadataName={} length={}", name, recordLength, e);
@@ -625,6 +633,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     public boolean deleteMetadataRecord(String name) {
         long start = System.currentTimeMillis();
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        boolean success = false;
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
@@ -633,11 +642,13 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             if (rsp.statusCode() < 400) {
                 LOG.debug("Metadata record deleted. identifier={} duration={}", name,
                         (System.currentTimeMillis() - start));
+                success = true;
             }
             else if (rsp.statusCode() == 404) {
                 LOG.debug("Metadata record delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
                         name,
                         (System.currentTimeMillis() - start));
+                success = true;
             }
             else {
                 LOG.warn("Metadata record delete failed - status={}. identifier={} duration={}", rsp.statusCode(), name,
@@ -653,7 +664,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 Thread.currentThread().setContextClassLoader(contextClassLoader);
             }
         }
-        return false;
+        return success;
     }
 
     @Override
