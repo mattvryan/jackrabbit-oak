@@ -18,13 +18,13 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import static com.google.common.base.StandardSystemProperty.USER_HOME;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -33,19 +33,18 @@ import java.util.Properties;
 
 import javax.net.ssl.HttpsURLConnection;
 
+import com.azure.core.http.rest.VoidResponse;
+import com.azure.core.util.Context;
+import com.azure.storage.blob.ContainerClient;
 import com.google.common.base.Predicate;
-import com.google.common.base.StandardSystemProperty;
 import com.google.common.base.Strings;
 import com.google.common.collect.Maps;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static com.google.common.base.StandardSystemProperty.USER_HOME;
 
 /**
  * Extension to {@link DataStoreUtils} to enable Azure extensions for cleaning and initialization.
@@ -133,9 +132,18 @@ public class AzureDataStoreUtils extends DataStoreUtils {
         }
         log.info("Starting to delete container. containerName={}", containerName);
         Properties props = getAzureConfig();
-        CloudBlobContainer container = Utils.getBlobContainer(Utils.getConnectionStringFromProperties(props), containerName);
-        boolean result = container.deleteIfExists();
-        log.info("Container deleted. containerName={} existed={}", containerName, result);
+        ContainerClient container = Utils.getBlobContainer(
+                props.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME),
+                props.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY),
+                containerName);
+        VoidResponse result = container.deleteWithResponse(null, null, Context.NONE);
+        if (result.statusCode() < 400 || result.statusCode() == 404) {
+            log.info("Container deleted. containerName={} existed={}", containerName, result.statusCode() != 404);
+        }
+        else {
+            log.warn("Unable to delete container. containerName={}, status code={}",
+                    containerName, result.statusCode());
+        }
     }
 
     protected static HttpsURLConnection getHttpsConnection(long length, URI uri) throws IOException {
