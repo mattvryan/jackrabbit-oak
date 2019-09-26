@@ -46,6 +46,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.azure.core.http.rest.PagedResponse;
 import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
@@ -55,6 +56,7 @@ import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.BlobItem;
 import com.azure.storage.blob.models.Block;
 import com.azure.storage.blob.models.BlockList;
 import com.azure.storage.blob.models.BlockListType;
@@ -1129,16 +1131,23 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return length;
         }
 
-        public static AzureBlobInfo fromCloudBlob(CloudBlob cloudBlob) {
-            return new AzureBlobInfo(cloudBlob.getName(),
-                                     cloudBlob.getProperties().getLastModified().getTime(),
-                                     cloudBlob.getProperties().getLength());
+//        public static AzureBlobInfo fromCloudBlob(CloudBlob cloudBlob) {
+//            return new AzureBlobInfo(cloudBlob.getName(),
+//                                     cloudBlob.getProperties().getLastModified().getTime(),
+//                                     cloudBlob.getProperties().getLength());
+//        }
+
+        public static AzureBlobInfo fromBlobItem(BlobItem blobItem) {
+            return new AzureBlobInfo(blobItem.name(),
+                    blobItem.properties().lastModified().toEpochSecond(),
+                    blobItem.properties().contentLength());
         }
     }
 
     private class RecordsIterator<T> extends AbstractIterator<T> {
         // Seems to be thread-safe (in 5.0.0)
-        ResultContinuation resultContinuation;
+//        ResultContinuation resultContinuation;
+        String resultContinuation;
         boolean firstCall = true;
         final Function<AzureBlobInfo, T> transformer;
         final Queue<AzureBlobInfo> items = Lists.newLinkedList();
@@ -1164,29 +1173,53 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             try {
                 currentThread().setContextClassLoader(getClass().getClassLoader());
 
-                CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
-                if (!firstCall && (resultContinuation == null || !resultContinuation.hasContinuation())) {
-                    LOG.trace("No more records in container. containerName={}", container);
+                if (!firstCall && (null == resultContinuation)) {
+                    LOG.trace("No more records in container. containerName={}", containerName);
                     return false;
                 }
                 firstCall = false;
 
-                ResultSegment<ListBlobItem> results = container.listBlobsSegmented(null, false, EnumSet.noneOf(BlobListingDetails.class), null, resultContinuation, null, null);
-                resultContinuation = results.getContinuationToken();
-                for (ListBlobItem item : results.getResults()) {
-                    if (item instanceof CloudBlob) {
-                        items.add(AzureBlobInfo.fromCloudBlob((CloudBlob)item));
-                    }
-                }
+                AtomicInteger nResults = new AtomicInteger(0);
+                containerClient.listBlobsFlat()
+                        .streamByPage(resultContinuation)
+                        .forEach(result -> {
+                            nResults.addAndGet(result.value().size());
+                            items.addAll(Lists.transform(
+                                    result.value(),
+                                    blobItem -> AzureBlobInfo.fromBlobItem(blobItem)
+                            ));
+                            resultContinuation = result.nextLink();
+                        });
+
                 LOG.debug("Container records batch read. batchSize={} containerName={} duration={}",
-                          results.getLength(), containerName,  (System.currentTimeMillis() - start));
-                return results.getLength() > 0;
+                        nResults.get(), containerName,  (System.currentTimeMillis() - start));
+                return nResults.get() > 0;
+
+
+//                CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
+//                if (!firstCall && (resultContinuation == null || !resultContinuation.hasContinuation())) {
+//                    LOG.trace("No more records in container. containerName={}", container);
+//                    return false;
+//                }
+//                firstCall = false;
+//
+//                ResultSegment<ListBlobItem> results = container.listBlobsSegmented(null, false, EnumSet.noneOf(BlobListingDetails.class), null, resultContinuation, null, null);
+//                resultContinuation = results.getContinuationToken();
+//                for (ListBlobItem item : results.getResults()) {
+//                    if (item instanceof CloudBlob) {
+//                        items.add(AzureBlobInfo.fromCloudBlob((CloudBlob)item));
+//                    }
+//                }
+//
+//                LOG.debug("Container records batch read. batchSize={} containerName={} duration={}",
+//                        results.getLength(), containerName,  (System.currentTimeMillis() - start));
+//                return results.getLength() > 0;
             }
             catch (StorageException e) {
                 LOG.info("Error listing blobs. containerName={}", containerName, e);
-            }
-            catch (DataStoreException e) {
-                LOG.debug("Cannot list blobs. containerName={}", containerName, e);
+//            }
+//            catch (DataStoreException e) {
+//                LOG.debug("Cannot list blobs. containerName={}", containerName, e);
             } finally {
                 if (contextClassLoader != null) {
                     currentThread().setContextClassLoader(contextClassLoader);
