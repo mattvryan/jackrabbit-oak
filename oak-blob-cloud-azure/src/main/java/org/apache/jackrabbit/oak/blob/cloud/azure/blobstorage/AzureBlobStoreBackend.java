@@ -36,7 +36,6 @@ import java.net.URLDecoder;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +45,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.azure.core.http.rest.PagedResponse;
 import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
@@ -382,7 +380,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     this,
                     containerClient,
                     identifier,
-                    blob.getProperties().lastModified(),
+                    blob.getProperties().lastModified().toEpochSecond(),
                     blob.getProperties().blobSize());
             LOG.debug("Data record read for blob. identifier={} duration={} record={}",
                       key, (System.currentTimeMillis() - start), record);
@@ -421,8 +419,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     public DataRecord apply(AzureBlobInfo input) {
                         return new AzureBlobStoreDataRecord(
                             backend,
-                            connectionString,
-                            containerName,
+                            containerClient,
                             new DataIdentifier(getIdentifierName(input.getName())),
                             input.getLastModified(),
                             input.getLength());
@@ -574,7 +571,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             AzureBlobStoreDataRecord record =  new AzureBlobStoreDataRecord(this,
                     containerClient,
                     new DataIdentifier(name),
-                    properties.lastModified(),
+                    properties.lastModified().toEpochSecond(),
                     properties.blobSize(),
                     true);
             LOG.debug("Metadata record read. metadataName={} duration={} record={}", name, (System.currentTimeMillis() - start), record);
@@ -612,7 +609,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                     backend,
                                     containerClient,
                                     new DataIdentifier(stripMetaKeyPrefix(blobItem.name())),
-                                    blobItem.properties().lastModified(),
+                                    blobItem.properties().lastModified().toEpochSecond(),
                                     blobItem.properties().contentLength(),
                                     true
                             ))
@@ -1003,7 +1000,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                             this,
                             containerClient,
                             blobId,
-                            blob.getProperties().lastModified(),
+                            blob.getProperties().lastModified().toEpochSecond(),
                             size);
                 }
                 else {
@@ -1106,6 +1103,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     e.statusCode(),
                     e.errorCode());
         }
+
+        return null;
     }
 
     private static class AzureBlobInfo {
@@ -1231,17 +1230,17 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     static class AzureBlobStoreDataRecord extends AbstractDataRecord {
         final ContainerClient client;
-        final OffsetDateTime lastModified;
+        final long lastModified;
         final long length;
         final boolean isMeta;
 
         public AzureBlobStoreDataRecord(AbstractSharedBackend backend, ContainerClient client,
-                                        DataIdentifier key, OffsetDateTime lastModified, long length) {
+                                        DataIdentifier key, long lastModified, long length) {
             this(backend, client, key, lastModified, length, false);
         }
 
         public AzureBlobStoreDataRecord(AbstractSharedBackend backend, ContainerClient client,
-                                        DataIdentifier key, OffsetDateTime lastModified, long length, boolean isMeta) {
+                                        DataIdentifier key, long lastModified, long length, boolean isMeta) {
             super(backend, key);
             this.client = client;
             this.lastModified = lastModified;
@@ -1276,7 +1275,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
         @Override
         public long getLastModified() {
-            return lastModified.toEpochSecond();
+            return lastModified;
         }
 
         @Override
@@ -1284,7 +1283,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return "AzureBlobStoreDataRecord{" +
                    "identifier=" + getIdentifier() +
                    ", length=" + length +
-                   ", lastModified=" + lastModified.toString() +
+                   ", lastModified=" + lastModified +
                    '}';
         }
     }
