@@ -50,8 +50,6 @@ import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
 import com.azure.storage.blob.BlobProperties;
 import com.azure.storage.blob.BlobSASPermission;
-import com.azure.storage.blob.BlobServiceClient;
-import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.ContainerClient;
 import com.azure.storage.blob.models.BlobItem;
@@ -60,7 +58,6 @@ import com.azure.storage.blob.models.BlockList;
 import com.azure.storage.blob.models.BlockListType;
 import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.StorageException;
-import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import com.google.common.cache.Cache;
@@ -140,6 +137,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             try {
                 Utils.setProxyIfNeeded(properties);
+
                 createBlobContainer = PropertiesUtil.toBoolean(properties.getProperty(AzureConstants.AZURE_CREATE_CONTAINER), true);
                 concurrentRequestCount = PropertiesUtil.toInteger(properties.get(AzureConstants.AZURE_BLOB_CONCURRENT_REQUESTS_PER_OPERATION), 1);
                 LOG.info("Using concurrentRequestsPerOperation={}", concurrentRequestCount);
@@ -172,12 +170,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     ));
                 }
 
-                SharedKeyCredential credential = new SharedKeyCredential(accountName, accountKey);
-                BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
-                        .endpoint(String.format("https://%s", getDefaultBlobStorageDomain()))
-                        .credential(credential)
-                        .buildClient();
-                containerClient = blobServiceClient.getContainerClient(containerName);
+                containerClient = Utils.getBlobContainer(accountName, accountKey, containerName);
 
                 if (createBlobContainer && ! containerClient.exists()) {
                     VoidResponse rsp = containerClient.createWithResponse(null, null, null, Context.NONE);
@@ -1020,15 +1013,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         }
 
         return record;
-    }
-
-    private String getDefaultBlobStorageDomain() {
-        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, "");
-        if (Strings.isNullOrEmpty(accountName)) {
-            LOG.warn("Can't generate presigned URI - Azure account name not found in properties");
-            return null;
-        }
-        return String.format("%s.blob.core.windows.net", accountName);
     }
 
     private URI createPresignedURI(String key,
