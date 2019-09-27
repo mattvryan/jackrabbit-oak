@@ -160,10 +160,10 @@ public abstract class AbstractDataRecordAccessProviderTest {
             URI uri = dataStore.getDownloadURI(record.getIdentifier(), DataRecordDownloadOptions.DEFAULT);
             HttpsURLConnection conn = (HttpsURLConnection) uri.toURL().openConnection();
             conn.setRequestMethod("GET");
-            assertEquals(200, conn.getResponseCode());
 
             testStream.reset();
             assertTrue(Arrays.equals(toByteArray(testStream), toByteArray(conn.getInputStream())));
+            assertEquals(200, conn.getResponseCode());
         }
         finally {
             if (null != record) {
@@ -192,13 +192,14 @@ public abstract class AbstractDataRecordAccessProviderTest {
                                     dispositionType
                             )
                     );
-            URI uri = dataStore.getDownloadURI(record.getIdentifier(),
-                    downloadOptions);
+            URI uri = dataStore.getDownloadURI(record.getIdentifier(), downloadOptions);
 
             HttpsURLConnection conn = (HttpsURLConnection) uri.toURL().openConnection();
             conn.setRequestMethod("GET");
-            assertEquals(200, conn.getResponseCode());
 
+            testStream.reset();
+            assertTrue(Arrays.equals(toByteArray(testStream), toByteArray(conn.getInputStream())));
+            assertEquals(200, conn.getResponseCode());
             assertEquals(mimeType, conn.getHeaderField("Content-Type"));
 //            This proper behavior is disabled due to https://github.com/Azure/azure-sdk-for-java/issues/2900
 //            (see also https://issues.apache.org/jira/browse/OAK-8013).  We can re-enable the full test
@@ -216,9 +217,6 @@ public abstract class AbstractDataRecordAccessProviderTest {
                     ),
                     conn.getHeaderField("Content-Disposition")
             );
-
-            testStream.reset();
-            assertTrue(Arrays.equals(toByteArray(testStream), toByteArray(conn.getInputStream())));
         }
         finally {
             if (null != record) {
