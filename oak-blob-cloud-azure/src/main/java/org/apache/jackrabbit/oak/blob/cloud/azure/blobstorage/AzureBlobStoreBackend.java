@@ -33,7 +33,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -475,8 +475,15 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             }
         }
         catch (StorageException e) {
-            LOG.info("Error deleting blob. identifier={}", key, e);
-            throw new DataStoreException(e);
+            if (e.statusCode() == 404) {
+                LOG.debug("Blob delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
+                        key,
+                        (System.currentTimeMillis() - start));
+            }
+            else {
+                LOG.info("Error deleting blob. identifier={}", key, e);
+                throw new DataStoreException(e);
+            }
         } finally {
             if (contextClassLoader != null) {
                 Thread.currentThread().setContextClassLoader(contextClassLoader);
@@ -1052,15 +1059,16 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                    String contentDispositionHeader,
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams) {
+        OffsetDateTime start = OffsetDateTime.now().minusMinutes(15); // Account for potential time drift between server and cloud service
         OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
 
         try {
             // URI class will re-encode this signature
-            String signature = URLDecoder.decode(blobClient.generateSAS(
+            String signature = blobClient.generateSAS(
                     null,
                     permission,
                     expiry,
-                    null,
+                    start,
                     null,
                     null,
                     null,
@@ -1069,21 +1077,20 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     null,
                     null,
                     Strings.isNullOrEmpty(contentTypeHeader) ? null : contentTypeHeader
-            ), "UTF-8");
+            );
 
             for (Map.Entry<String, String> p : additionalQueryParams.entrySet()) {
-                signature = signature + "&" + p.getKey() + "=" + p.getValue();
+                signature = signature + "&" + URLEncoder.encode(p.getKey(), "UTF-8")
+                        + "=" + URLEncoder.encode(p.getValue(), "UTF-8");
             }
 
             URL blobUrl = blobClient.getBlobUrl();
-            return new URI(
+            URI uri = new URI(String.format("%s://%s%s?%s",
                     blobUrl.getProtocol(),
-                    blobUrl.getUserInfo(),
                     blobUrl.getHost(),
-                    blobUrl.getPort(),
                     blobUrl.getPath(),
-                    signature,
-                    null);
+                    signature));
+            return uri;
         }
         catch (URISyntaxException | UnsupportedEncodingException e) {
             LOG.error("Can't generate a presigned URI for key {}", key, e);
