@@ -572,12 +572,8 @@ public class AzureDataStoreTest {
     @Test
     public void testBackendGetMetadataRecordInvalidName() throws DataStoreException {
         backend.addMetadataRecord(randomStream(0, 10), "testRecord");
-        assertNull(backend.getMetadataRecord("invalid"));
-        for (String name : Lists.newArrayList("", null)) {
-            try {
-                backend.getMetadataRecord(name);
-                fail("Expect to throw");
-            } catch(Exception e) {}
+        for (String name : Lists.newArrayList("invalid", "", null)) {
+            assertNull(backend.getMetadataRecord(name));
         }
 
         backend.deleteMetadataRecord("testRecord");
