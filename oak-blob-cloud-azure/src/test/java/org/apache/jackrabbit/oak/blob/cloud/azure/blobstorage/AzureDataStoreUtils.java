@@ -28,6 +28,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
 
@@ -38,6 +39,7 @@ import com.azure.core.util.Context;
 import com.azure.storage.blob.ContainerClient;
 import com.google.common.base.Predicate;
 import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataStore;
@@ -114,6 +116,24 @@ public class AzureDataStoreUtils extends DataStoreUtils {
             props.putAll(filtered);
         }
         return props;
+    }
+
+    static Iterable<?> getDataStorePropertyFixtures() {
+        Properties propsAccessKey = AzureDataStoreUtils.getAzureConfig();
+        Properties propsSAS = (Properties) propsAccessKey.clone();
+
+        propsAccessKey.remove(AzureConstants.AZURE_SAS);
+        propsSAS.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+
+        Collection<Properties> fixtures = Lists.newArrayList();
+        if (propsAccessKey.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
+            fixtures.add(propsAccessKey);
+        }
+        if (propsSAS.containsKey(AzureConstants.AZURE_SAS)) {
+            fixtures.add(propsSAS);
+        }
+
+        return fixtures;
     }
 
     public static DataStore getAzureDataStore(Properties props, String homeDir) throws Exception {

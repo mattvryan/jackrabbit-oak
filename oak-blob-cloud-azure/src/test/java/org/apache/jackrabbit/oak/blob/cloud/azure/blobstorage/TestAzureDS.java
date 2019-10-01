@@ -18,19 +18,23 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getDataStorePropertyFixtures;
 import static org.junit.Assume.assumeTrue;
-
-import org.apache.jackrabbit.core.data.DataStore;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Properties;
 
 import javax.jcr.RepositoryException;
+
+import org.apache.jackrabbit.core.data.DataStore;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.AbstractDataStoreTest;
+import org.jetbrains.annotations.NotNull;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Test {@link AzureDataStore} with AzureDataStore and local cache on.
@@ -39,11 +43,21 @@ import javax.jcr.RepositoryException;
  * For e.g. -Dconfig=/opt/cq/azure.properties. Sample azure properties located at
  * src/test/resources/azure.properties
  */
+@RunWith(Parameterized.class)
 public class TestAzureDS extends AbstractDataStoreTest {
 
   protected static final Logger LOG = LoggerFactory.getLogger(TestAzureDS.class);
   protected Properties props;
   protected String container;
+
+  @Parameterized.Parameters(name = "{0}")
+  public static Iterable<?> dataStoreProperties() {
+    return getDataStorePropertyFixtures();
+  }
+
+  public TestAzureDS(@NotNull final Properties fixture) {
+    this.props = fixture;
+  }
 
   @BeforeClass
   public static void assumptions() {
@@ -53,7 +67,6 @@ public class TestAzureDS extends AbstractDataStoreTest {
   @Override
   @Before
   public void setUp() throws Exception {
-    props = AzureDataStoreUtils.getAzureConfig();
     container = String.valueOf(randomGen.nextInt(9999)) + "-" + String.valueOf(randomGen.nextInt(9999))
                 + "-test";
     props.setProperty(AzureConstants.AZURE_BLOB_CONTAINER_NAME, container);

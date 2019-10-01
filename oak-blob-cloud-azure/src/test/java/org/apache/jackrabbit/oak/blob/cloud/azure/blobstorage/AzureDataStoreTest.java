@@ -18,6 +18,7 @@ package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import static org.apache.commons.codec.binary.Hex.encodeHexString;
 import static org.apache.commons.io.FileUtils.copyInputStreamToFile;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getDataStorePropertyFixtures;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -40,7 +41,6 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -88,21 +88,7 @@ public class AzureDataStoreTest {
 
     @Parameterized.Parameters(name = "{0}")
     public static Iterable<?> dataStoreProperties() {
-        Properties propsAccessKey = AzureDataStoreUtils.getAzureConfig();
-        Properties propsSAS = (Properties) propsAccessKey.clone();
-
-        propsAccessKey.remove(AzureConstants.AZURE_SAS);
-        propsSAS.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
-
-        Collection<Properties> fixtures = Lists.newArrayList();
-        if (propsAccessKey.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
-            fixtures.add(propsAccessKey);
-        }
-        if (propsSAS.containsKey(AzureConstants.AZURE_SAS)) {
-            fixtures.add(propsSAS);
-        }
-
-        return fixtures;
+        return getDataStorePropertyFixtures();
     }
 
     @Rule
