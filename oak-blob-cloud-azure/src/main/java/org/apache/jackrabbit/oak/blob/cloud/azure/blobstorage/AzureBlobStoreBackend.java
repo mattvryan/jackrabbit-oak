@@ -276,12 +276,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                              " old length=" + blob.getProperties().blobSize());
             }
             LOG.trace("Blob already exists. identifier={} lastModified={}", key, blob.getProperties().lastModified().toString());
-            //blob.startCopy(blob);
-            Response rsp = blob.copyFromURLWithResponse(blob.getBlobUrl(),
-                    null, null, null,
+            Response rsp = blob.startCopyFromURLWithResponse(blob.getBlobUrl(),
+                    null, null, null, null,
                     null, null, Context.NONE);
             //TODO: better way of updating lastModified (use custom metadata?)
-            if (rsp.statusCode() < 400) {
+            if (rsp.statusCode() >= 400) {
                 throw new DataStoreException(
                     String.format("Cannot update lastModified for blob. identifier=%s status=%d",
                                   key, rsp.statusCode()));
