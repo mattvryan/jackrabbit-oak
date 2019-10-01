@@ -145,23 +145,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 presignedDownloadURIVerifyExists =
                         PropertiesUtil.toBoolean(properties.get(AzureConstants.PRESIGNED_HTTP_DOWNLOAD_URI_VERIFY_EXISTS), true);
 
-
-                String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, null);
-                if (Strings.isNullOrEmpty(accountName)) {
-                    throw new DataStoreException(String.format("%s - %s '%s'",
-                            "Unable to initialize Azure Data Store",
-                            "missing required configuration parameter",
-                            AzureConstants.AZURE_STORAGE_ACCOUNT_NAME
-                    ));
-                }
-                String accountKey = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY, null);
-                if (Strings.isNullOrEmpty(accountKey)) {
-                    throw new DataStoreException(String.format("%s - %s '%s'",
-                            "Unable to initialize Azure Data Store",
-                            "missing required configuration parameter",
-                            AzureConstants.AZURE_STORAGE_ACCOUNT_KEY
-                    ));
-                }
                 containerName = properties.getProperty(AzureConstants.AZURE_BLOB_CONTAINER_NAME, null);
                 if (Strings.isNullOrEmpty(containerName)) {
                     throw new DataStoreException(String.format("%s - %s '%s'",
@@ -171,7 +154,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     ));
                 }
 
-                containerClient = Utils.getBlobContainer(accountName, accountKey, containerName);
+                containerClient = Utils.getBlobContainer(properties, containerName);
 
                 if (createBlobContainer && ! containerClient.exists()) {
                     VoidResponse rsp = containerClient.createWithResponse(null, null, null, Context.NONE);

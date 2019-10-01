@@ -132,10 +132,7 @@ public class AzureDataStoreUtils extends DataStoreUtils {
         }
         log.info("Starting to delete container. containerName={}", containerName);
         Properties props = getAzureConfig();
-        ContainerClient container = Utils.getBlobContainer(
-                props.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME),
-                props.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY),
-                containerName);
+        ContainerClient container = Utils.getBlobContainer(props, containerName);
         VoidResponse result = container.deleteWithResponse(null, null, Context.NONE);
         if (result.statusCode() < 400 || result.statusCode() == 404) {
             log.info("Container deleted. containerName={} existed={}", containerName, result.statusCode() != 404);

@@ -40,6 +40,7 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -62,12 +63,15 @@ import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
+import org.jetbrains.annotations.NotNull;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,8 +82,28 @@ import org.slf4j.LoggerFactory;
  * For e.g. -Dconfig=/opt/cq/azure.properties. Sample azure properties located at
  * src/test/resources/azure.properties
  */
+@RunWith(Parameterized.class)
 public class AzureDataStoreTest {
     protected static final Logger LOG = LoggerFactory.getLogger(AzureDataStoreTest.class);
+
+    @Parameterized.Parameters(name = "{0}")
+    public static Iterable<?> dataStoreProperties() {
+        Properties propsAccessKey = AzureDataStoreUtils.getAzureConfig();
+        Properties propsSAS = (Properties) propsAccessKey.clone();
+
+        propsAccessKey.remove(AzureConstants.AZURE_SAS);
+        propsSAS.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+
+        Collection<Properties> fixtures = Lists.newArrayList();
+        if (propsAccessKey.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
+            fixtures.add(propsAccessKey);
+        }
+        if (propsSAS.containsKey(AzureConstants.AZURE_SAS)) {
+            fixtures.add(propsSAS);
+        }
+
+        return fixtures;
+    }
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder(new File("target"));
@@ -96,10 +120,14 @@ public class AzureDataStoreTest {
         assumeTrue(AzureDataStoreUtils.isAzureConfigured());
     }
 
+    public AzureDataStoreTest(@NotNull final Properties fixture) {
+        this.props = fixture;
+    }
+
     @Before
     public void setup() throws IOException, RepositoryException, URISyntaxException, InvalidKeyException {
 
-        props = AzureDataStoreUtils.getAzureConfig();
+        //props = AzureDataStoreUtils.getAzureConfig();
         container = String.valueOf(randomGen.nextInt(9999)) + "-" + String.valueOf(randomGen.nextInt(9999))
                     + "-test";
         props.setProperty(AzureConstants.AZURE_BLOB_CONTAINER_NAME, container);
