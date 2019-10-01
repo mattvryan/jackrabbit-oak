@@ -773,7 +773,16 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         // When running unit test from Maven, it doesn't always honor the @NotNull decorators
         if (null == identifier) throw new NullPointerException("identifier");
         if (null == downloadOptions) throw new NullPointerException("downloadOptions");
-        
+
+        // We allow SAS-based authentication for AzureDataStore, but you cannot
+        // generate signed download URIs if you authenticate this way.
+        // Check here for the AzureConstants.AZURE_STORAGE_ACCOUNT_KEY parameter;
+        // if it does not exist we must have used SAS authentication and therefore
+        // the direct download feature has to be disabled.
+        if (! properties.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
+            return null;  // Feature disabled due to SAS-based authentication
+        }
+
         if (httpDownloadURIExpirySeconds > 0) {
 
             if (null != httpDownloadURICache) {
@@ -806,24 +815,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                         cacheControl, contentType, contentDisposition,
                         httpDownloadURIExpirySeconds);
 
-//                SharedAccessBlobHeaders headers = new SharedAccessBlobHeaders();
-//                headers.setCacheControl(String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds));
-//
-//                String contentType = downloadOptions.getContentTypeHeader();
-//                if (! Strings.isNullOrEmpty(contentType)) {
-//                    headers.setContentType(contentType);
-//                }
-//
-//                String contentDisposition =
-//                        downloadOptions.getContentDispositionHeader();
-//                if (! Strings.isNullOrEmpty(contentDisposition)) {
-//                    headers.setContentDisposition(contentDisposition);
-//                }
-//
-//                uri = createPresignedURI(key,
-//                        EnumSet.of(SharedAccessBlobPermissions.READ),
-//                        httpDownloadURIExpirySeconds,
-//                        headers);
                 if (uri != null && httpDownloadURICache != null) {
                     httpDownloadURICache.put(identifier, uri);
                 }
@@ -871,6 +862,15 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                             maxUploadSizeInBytes,
                             MAX_BINARY_UPLOAD_SIZE)
             );
+        }
+
+        // We allow SAS-based authentication for AzureDataStore, but you cannot
+        // generate signed upload URIs if you authenticate this way.
+        // Check here for the AzureConstants.AZURE_STORAGE_ACCOUNT_KEY parameter;
+        // if it does not exist we must have used SAS authentication and therefore
+        // the direct upload feature has to be disabled.
+        if (! properties.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
+            return null;  // Feature disabled due to SAS-based authentication
         }
 
         DataIdentifier newIdentifier = generateSafeRandomIdentifier();

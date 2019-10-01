@@ -19,6 +19,7 @@
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assume.assumeTrue;
 
 import java.io.File;
@@ -36,8 +37,10 @@ import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.core.data.RandomInputStream;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.AbstractDataRecordAccessProviderTest;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
@@ -168,5 +171,38 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
         // expectedNumURIs still 50000, Azure limit
         upload = ds.initiateDataRecordUpload(uploadSize, -1);
         assertEquals(expectedNumURIs, upload.getUploadURIs().size());
+    }
+
+    @Test
+    public void testGetDownloadURIWithSASAuthIsDisabled() throws Exception {
+        // It is not allowed to generate a signed download URI if the client
+        // uses SAS-based authentication.  This test verifies that SAS-based
+        // authentication will cause the feature to be disabled.
+        Properties props = getProperties();
+        props.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+        if (! props.containsKey(AzureConstants.AZURE_SAS)) {
+            props.put(AzureConstants.AZURE_SAS, "fake-azure-sas");
+        }
+
+        ConfigurableDataRecordAccessProvider ds = createDataStore(props);
+        DataRecord record = doSynchronousAddRecord((AzureDataStore) ds, new RandomInputStream(System.currentTimeMillis(), 20*1024));
+
+        assertNull(ds.getDownloadURI(record.getIdentifier(), DataRecordDownloadOptions.DEFAULT));
+    }
+
+    @Test
+    public void testInitiateDirectUploadWithSASAuthIsDisabled() throws Exception {
+        // It is not allowed to initiate a signed upload if the client
+        // uses SAS-based authentication.  This test verifies that SAS-based
+        // authentication will cause the feature to be disabled.
+        Properties props = getProperties();
+        props.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+        if (! props.containsKey(AzureConstants.AZURE_SAS)) {
+            props.put(AzureConstants.AZURE_SAS, "fake-azure-sas");
+        }
+
+        ConfigurableDataRecordAccessProvider ds = createDataStore(props);
+
+        assertNull(ds.initiateDataRecordUpload(20*1024, 10));
     }
 }
