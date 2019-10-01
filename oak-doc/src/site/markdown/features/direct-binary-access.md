@@ -14,7 +14,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
   -->
-  
+
 # Direct Binary Access
 
 `@since Oak 1.10`
@@ -32,7 +32,7 @@ The following diagram shows the 3 involved parties:  A _remote client_, the Oak-
 ![](direct-binary-access-block-diagram.png)
 
 Further background of the design of this feature can be found [on the wiki](https://jackrabbit.apache.org/archive/wiki/JCR/Direct-Binary-Access_115513390.html).
- 
+
 ## Requirements
 
 To use this feature, Oak must be configured with a [BlobStore](../plugins/blobstore.html) that supports this feature.
@@ -41,6 +41,8 @@ Currently these Blob/DataStores are supported:
 
 * [S3DataStore](../osgi_config.html#Jackrabbit_2_-_S3DataStore)
 * AzureDataStore
+
+Important note:  AzureDataStore allows two forms of authentication - via an account key, and via a shared access signature.  However, it is not possible to generate a valid signed URI when authenticating using a shared access signature.  Therefore if you wish to use the direct binary access feature you must configure your AzureDataStore authentication to use an account key.  The feature is disabled for clients that authenticate using a shared access signature.
 
 ## Configuration
 
@@ -78,7 +80,7 @@ Binary binary = ntResource.getProperty("jcr:data").getBinary();
 
 if (binary instanceof BinaryDownload) {
     BinaryDownload binaryDownload = (BinaryDownload) binary;
-    
+
     BinaryDownloadOptions.BinaryDownloadOptionsBuilder builder = BinaryDownloadOptions.builder()
         // would typically come from a JCR node name
         .withFileName(ntFile.getName())
@@ -88,18 +90,18 @@ if (binary instanceof BinaryDownload) {
     if (ntResource.hasProperty("jcr:encoding")) {
         builder.withCharacterEncoding(ntResource.getProperty("jcr:encoding"));
     }
-    
+
     // if you need to prevent the browser from potentially executing the response
     // (for example js, flash, html), you can enforce a download with this option
     // builder.withDispositionTypeAttachment();
-        
+
     URI uri = binaryDownload.getURI(builder.build());
-    
+
     if (uri == null) {
         // feature not available
         // ...
     }
-    
+
     // use uri in <img src="uri"> or send in response to remote client
     // ...
 }
@@ -107,10 +109,11 @@ if (binary instanceof BinaryDownload) {
 
 Please note that only `Binary` objects returned from `Property.getBinary()`, `Property.getValue().getBinary()` or `Property.getValues() ... getBinary()` will support a functional `BinaryDownload`.
 
-Also note that clients should always check whether the URI returned from the `getURI()` call is null.  A null return value generally indicates that the feature is not available.  But this situation is also possible in two other cases:
+Also note that clients should always check whether the URI returned from the `getURI()` call is null.  A null return value generally indicates that the feature is not available.  But this situation is also possible in three other cases:
 
 * If the binary is stored in-line in the node store.  If the binary is smaller than the minimum upload size, it will be stored in the node store instead of in cloud blob storage, and thus a direct download URI cannot be provided.
 * If the data store implementation is using asynchronous uploads and the binary is still in cache.  If a client adds a binary via the repository (i.e. not using the direct binary upload feature) and then immediately requests a download URI for it, it is possible that the binary is still in cache and not yet uploaded to cloud storage, and thus a direct download URI cannot be provided.
+* If the data store is configured to authenticate using a shared access signature (AzureDataStore only), as it is not possible to generate a signed download URI when authenticating this way.
 
 ### Upload
 
@@ -138,22 +141,22 @@ public class InitiateUploadServlet extends HttpServlet {
 
    public void doPost(HttpServletRequest request, HttpServletResponse response)
                throws IOException, ServletException {
-               
+
         final Session session = // .. retrieve session for request
 
         // allows to limit number of returned URIs in case the response message size is limited
         // use -1 for unlimited
         final int maxURIs = 50;
-        
+
         final String path = request.getParameter("path");
         final long filesize = Long.parseLong(request.getParameter("filesize"));
 
         ValueFactory vf = session.getValueFactory();
         if (vf instanceof JackrabbitValueFactory) {
             JackrabbitValueFactory valueFactory = (JackrabbitValueFactory) vf;
-            
+
             BinaryUpload upload = valueFactory.initiateBinaryUpload(filesize, maxURIs);
-            
+
             if (upload == null) {
                 // feature not available, must pass binary via InputStream through vf.createBinary()
                 // ...
@@ -161,7 +164,7 @@ public class InitiateUploadServlet extends HttpServlet {
                 JSONObject json = new JSONObject();
                 json.put("minPartSize", upload.getMinPartSize());
                 json.put("maxPartSize", upload.getMaxPartSize());
-                
+
                 JSONArray uris = new JSONArray();
                 Iterator<URI> iter = upload.getUploadURIs();
                 while (iter.hasNext()) {
@@ -171,7 +174,7 @@ public class InitiateUploadServlet extends HttpServlet {
 
                 // provide the client with a complete URL to request later, pass through the path
                 json.put("completeURL", "/complete-upload?uploadToken=" + upload.getUploadToken() + "&path=" + path);
-                
+
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
                 response.getWriter().write(json.toString());
@@ -206,31 +209,30 @@ public class CompleteUploadServlet extends HttpServlet {
 
    public void doPost(HttpServletRequest request, HttpServletResponse response)
                throws IOException, ServletException {
-               
+
         final Session session = // .. retrieve session for request
-               
+
         final String path = request.getParameter("path");
         final String uploadToken = request.getParameter("uploadToken");
 
         ValueFactory vf = session.getValueFactory();
         if (vf instanceof JackrabbitValueFactory) {
             JackrabbitValueFactory valueFactory = (JackrabbitValueFactory) vf;
-            
+
             Binary binary = valueFactory.completeBinaryUpload(uploadToken);
-            
+
             Node ntFile = JcrUtils.getOrCreateByPath(path, "nt:file", session);
             Node ntResource = ntFile.addNode("jcr:content", "nt:resource");
-            
+
             ntResource.setProperty("jcr:data", binary);
-            
+
             // also set jcr:mimeType etc.
-            
+
             session.save();
-            
+
         } else {
             // feature not available - not unexpected if initiate-upload worked
         }
     }
 }
 ```
-
