@@ -20,9 +20,9 @@ import static org.apache.jackrabbit.oak.segment.azure.AzureSegmentArchiveReader.
 import static org.apache.jackrabbit.oak.segment.azure.AzureUtilities.getSegmentFileName;
 import static org.apache.jackrabbit.oak.segment.azure.AzureUtilities.readBufferFully;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,12 +30,11 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import com.azure.storage.blob.BlockBlobClient;
+import com.azure.storage.blob.models.Metadata;
 import com.google.common.base.Stopwatch;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
-import com.microsoft.azure.storage.blob.CloudBlockBlob;
-
 import org.apache.jackrabbit.oak.commons.Buffer;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.azure.queue.SegmentWriteAction;
 import org.apache.jackrabbit.oak.segment.azure.queue.SegmentWriteQueue;
 import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitor;
@@ -88,14 +87,17 @@ public class AzureSegmentArchiveWriter implements SegmentArchiveWriter {
         long lsb = indexEntry.getLsb();
         ioMonitor.beforeSegmentWrite(pathAsFile(), msb, lsb, size);
         Stopwatch stopwatch = Stopwatch.createStarted();
-        try {
-            CloudBlockBlob blob = getBlob(getSegmentFileName(indexEntry));
-            blob.setMetadata(AzureBlobMetadata.toSegmentMetadata(indexEntry));
-            blob.uploadFromByteArray(data, offset, size);
-            blob.uploadMetadata();
-        } catch (StorageException e) {
-            throw new IOException(e);
-        }
+//        try {
+//            CloudBlockBlob blob = getBlob(getSegmentFileName(indexEntry));
+//            blob.setMetadata(AzureBlobMetadata.toSegmentMetadata(indexEntry));
+//            blob.uploadFromByteArray(data, offset, size);
+//            blob.uploadMetadata();
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+        BlockBlobClient blob = getBlob(getSegmentFileName(indexEntry));
+        blob.upload(new ByteArrayInputStream(data), size);
+        blob.setMetadata(new Metadata(AzureBlobMetadata.toSegmentMetadata(indexEntry)));
         ioMonitor.afterSegmentWrite(pathAsFile(), msb, lsb, size, stopwatch.elapsed(TimeUnit.NANOSECONDS));
     }
 
@@ -142,11 +144,12 @@ public class AzureSegmentArchiveWriter implements SegmentArchiveWriter {
     }
 
     private void writeDataFile(byte[] data, String extension) throws IOException {
-        try {
-            getBlob(getName() + extension).uploadFromByteArray(data, 0, data.length);
-        } catch (StorageException e) {
-            throw new IOException(e);
-        }
+//        try {
+//            getBlob(getName() + extension).uploadFromByteArray(data, 0, data.length);
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+        getBlob(getName() + extension).upload(new ByteArrayInputStream(data), data.length);
         totalLength += data.length;
         monitor.written(data.length);
     }
@@ -168,11 +171,12 @@ public class AzureSegmentArchiveWriter implements SegmentArchiveWriter {
             q.flush();
             q.close();
         }
-        try {
-            getBlob("closed").uploadFromByteArray(new byte[0], 0, 0);
-        } catch (StorageException e) {
-            throw new IOException(e);
-        }
+//        try {
+//            getBlob("closed").uploadFromByteArray(new byte[0], 0, 0);
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+        getBlob("closed").upload(new ByteArrayInputStream(new byte[0]), 0);
     }
 
     @Override
@@ -200,11 +204,15 @@ public class AzureSegmentArchiveWriter implements SegmentArchiveWriter {
         return new File(archiveDirectory.getUri().getPath());
     }
 
-    private CloudBlockBlob getBlob(String name) throws IOException {
-        try {
-            return archiveDirectory.getBlockBlobReference(name);
-        } catch (URISyntaxException | StorageException e) {
-            throw new IOException(e);
-        }
+//    private CloudBlockBlob getBlob(String name) throws IOException {
+//        try {
+//            return archiveDirectory.getBlockBlobReference(name);
+//        } catch (URISyntaxException | StorageException e) {
+//            throw new IOException(e);
+//        }
+//    }
+
+    private BlockBlobClient getBlob(String name) {
+        return archiveDirectory.getBlobClient(name).asBlockBlobClient();
     }
 }

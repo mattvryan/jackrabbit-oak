@@ -18,9 +18,14 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.CloudStorageAccount;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
+import java.io.IOException;
+import java.util.Properties;
+
+import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.common.credentials.SharedKeyCredential;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentNodeStorePersistence;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
@@ -30,11 +35,6 @@ import org.osgi.service.component.annotations.ConfigurationPolicy;
 import org.osgi.service.component.annotations.Deactivate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
-import java.util.Properties;
 
 @Component(
         configurationPolicy = ConfigurationPolicy.REQUIRE,
@@ -67,30 +67,38 @@ public class AzureSegmentStoreService {
     }
 
     private static SegmentNodeStorePersistence createAzurePersistence(Configuration configuration) throws IOException {
-        try {
-            StringBuilder connectionString = new StringBuilder();
-            if (configuration.connectionURL() == null || configuration.connectionURL().trim().isEmpty()) {
-                connectionString.append("DefaultEndpointsProtocol=https;");
-                connectionString.append("AccountName=").append(configuration.accountName()).append(';');
-                connectionString.append("AccountKey=").append(configuration.accessKey()).append(';');
-            } else {
-                connectionString.append(configuration.connectionURL());
-            }
-            log.info("Connection string: '{}'", connectionString.toString());
-            CloudStorageAccount cloud = CloudStorageAccount.parse(connectionString.toString());
-            CloudBlobContainer container = cloud.createCloudBlobClient().getContainerReference(configuration.containerName());
-            container.createIfNotExists();
+//        try {
+//            StringBuilder connectionString = new StringBuilder();
+//            if (configuration.connectionURL() == null || configuration.connectionURL().trim().isEmpty()) {
+//                connectionString.append("DefaultEndpointsProtocol=https;");
+//                connectionString.append("AccountName=").append(configuration.accountName()).append(';');
+//                connectionString.append("AccountKey=").append(configuration.accessKey()).append(';');
+//            } else {
+//                connectionString.append(configuration.connectionURL());
+//            }
+//            log.info("Connection string: '{}'", connectionString.toString());
+//            CloudStorageAccount cloud = CloudStorageAccount.parse(connectionString.toString());
+//            CloudBlobContainer container = cloud.createCloudBlobClient().getContainerReference(configuration.containerName());
+//            container.createIfNotExists();
+
+            SharedKeyCredential credential = new SharedKeyCredential(configuration.accountName(), configuration.accessKey());
+            BlobServiceClient serviceClient = new BlobServiceClientBuilder()
+                    .endpoint(String.format("https://%s.blob.core.windows.net", configuration.accountName()))
+                    .credential(credential)
+                    .buildClient();
+            ContainerClient containerClient = serviceClient.getContainerClient(configuration.containerName());
 
             String path = configuration.rootPath();
             if (path != null && path.length() > 0 && path.charAt(0) == '/') {
                 path = path.substring(1);
             }
 
-            AzurePersistence persistence = new AzurePersistence(container.getDirectoryReference(path));
+//            AzurePersistence persistence = new AzurePersistence(container.getDirectoryReference(path));
+            AzurePersistence persistence = new AzurePersistence(new CloudBlobDirectory(containerClient, path));
             return persistence;
-        } catch (StorageException | URISyntaxException | InvalidKeyException e) {
-            throw new IOException(e);
-        }
+//        } catch (StorageException | URISyntaxException | InvalidKeyException e) {
+//            throw new IOException(e);
+//        }
     }
 
 }

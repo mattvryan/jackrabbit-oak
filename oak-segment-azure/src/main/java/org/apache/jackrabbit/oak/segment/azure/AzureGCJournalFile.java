@@ -16,60 +16,76 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.google.common.base.Charsets;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudAppendBlob;
-import org.apache.commons.io.IOUtils;
-import org.apache.jackrabbit.oak.segment.spi.persistence.GCJournalFile;
-
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Collections;
 import java.util.List;
 
+import com.azure.storage.blob.AppendBlobClient;
+import com.google.common.base.Charsets;
+import org.apache.commons.io.IOUtils;
+import org.apache.jackrabbit.oak.segment.spi.persistence.GCJournalFile;
+
 public class AzureGCJournalFile implements GCJournalFile {
 
-    private final CloudAppendBlob gcJournal;
+    //private final CloudAppendBlob gcJournal;
 
-    public AzureGCJournalFile(CloudAppendBlob gcJournal) {
+    private final AppendBlobClient gcJournal;
+
+//    public AzureGCJournalFile(CloudAppendBlob gcJournal) {
+//        this.gcJournal = gcJournal;
+//    }
+
+    public AzureGCJournalFile(AppendBlobClient gcJournal) {
         this.gcJournal = gcJournal;
     }
 
     @Override
     public void writeLine(String line) throws IOException {
-        try {
-            if (!gcJournal.exists()) {
-                gcJournal.createOrReplace();
-            }
-            gcJournal.appendText(line + "\n", Charsets.UTF_8.name(), null, null, null);
-        } catch (StorageException e) {
-            throw new IOException(e);
+//        try {
+//            if (!gcJournal.exists()) {
+//                gcJournal.createOrReplace();
+//            }
+//            gcJournal.appendText(line + "\n", Charsets.UTF_8.name(), null, null, null);
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+        if (! gcJournal.exists()) {
+            gcJournal.create();
         }
+        byte[] toAppend = (line + "\n").getBytes(Charsets.UTF_8);
+        gcJournal.appendBlock(new BufferedInputStream(new ByteArrayInputStream(toAppend)), toAppend.length);
     }
 
     @Override
     public List<String> readLines() throws IOException {
-        try {
-            if (!gcJournal.exists()) {
-                return Collections.emptyList();
-            }
-            byte[] data = new byte[(int) gcJournal.getProperties().getLength()];
-            gcJournal.downloadToByteArray(data, 0);
-            return IOUtils.readLines(new ByteArrayInputStream(data), Charset.defaultCharset());
-        } catch (StorageException e) {
-            throw new IOException(e);
+//        try {
+//            if (!gcJournal.exists()) {
+//                return Collections.emptyList();
+//            }
+//            byte[] data = new byte[(int) gcJournal.getProperties().getLength()];
+//            gcJournal.downloadToByteArray(data, 0);
+//            return IOUtils.readLines(new ByteArrayInputStream(data), Charset.defaultCharset());
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+
+        if (! gcJournal.exists()) {
+            return Collections.emptyList();
         }
+        return IOUtils.readLines(gcJournal.openInputStream(), Charset.defaultCharset());
     }
 
     @Override
     public void truncate() throws IOException {
-        try {
+//        try {
             if (gcJournal.exists()) {
                 gcJournal.delete();
             }
-        } catch (StorageException e) {
-            throw new IOException(e);
-        }
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
     }
 }

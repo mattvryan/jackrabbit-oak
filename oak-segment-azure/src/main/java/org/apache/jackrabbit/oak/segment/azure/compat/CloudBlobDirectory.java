@@ -19,5 +19,70 @@
 
 package org.apache.jackrabbit.oak.segment.azure.compat;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Paths;
+import java.time.Duration;
+
+import com.azure.core.http.rest.PagedIterable;
+import com.azure.storage.blob.BlobClient;
+import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.BlobItem;
+import com.azure.storage.blob.models.ListBlobsOptions;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class CloudBlobDirectory {
+    private static Logger LOG = LoggerFactory.getLogger(CloudBlobDirectory.class);
+
+    private final ContainerClient client;
+    private final String directory;
+
+    public CloudBlobDirectory(@NotNull final ContainerClient client, @NotNull final String directory) {
+        this.client = client;
+        this.directory = directory;
+    }
+
+    public ContainerClient client() { return client; }
+    public String directory() { return directory; }
+
+    public PagedIterable<BlobItem> listBlobsFlat() {
+        return listBlobsFlat(new ListBlobsOptions().prefix(directory), null);
+    }
+
+    public PagedIterable<BlobItem> listBlobsFlat(ListBlobsOptions options, Duration duration) {
+        return client.listBlobsHierarchy("/", new ListBlobsOptions().prefix(Paths.get(directory, options.prefix()).toString()), duration);
+    }
+
+    public BlobClient getBlobClient(@NotNull final String blobName) {
+        return client.getBlobClient(Paths.get(directory, blobName).toString());
+    }
+
+    public CloudBlobDirectory getDirectoryReference(@NotNull final String dirName) {
+        return new CloudBlobDirectory(client, Paths.get(directory, dirName).toString());
+    }
+
+    public void deleteBlobIfExists(BlobClient blob) {
+        if (blob.exists()) blob.delete();
+    }
+
+    public URI getUri() {
+        URL containerUrl = client.getContainerUrl();
+        String path = Paths.get(containerUrl.getPath(), directory).toString();
+        try {
+            return new URI(containerUrl.getProtocol(),
+                    containerUrl.getUserInfo(),
+                    containerUrl.getHost(),
+                    containerUrl.getPort(),
+                    path,
+                    containerUrl.getQuery(),
+                    null);
+        }
+        catch (URISyntaxException e) {
+            LOG.warn("Unable to format directory URI", e);
+            return null;
+        }
+    }
 }

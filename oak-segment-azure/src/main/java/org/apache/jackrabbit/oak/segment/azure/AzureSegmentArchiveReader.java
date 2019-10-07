@@ -22,7 +22,6 @@ import static org.apache.jackrabbit.oak.segment.azure.AzureUtilities.readBufferF
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,13 +29,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import com.azure.storage.blob.BlobClient;
+import com.azure.storage.blob.BlobProperties;
+import com.azure.storage.blob.BlockBlobClient;
+import com.azure.storage.blob.models.Metadata;
 import com.google.common.base.Stopwatch;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlob;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
-import com.microsoft.azure.storage.blob.CloudBlockBlob;
-
 import org.apache.jackrabbit.oak.commons.Buffer;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitor;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveEntry;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveReader;
@@ -58,14 +57,25 @@ public class AzureSegmentArchiveReader implements SegmentArchiveReader {
         this.archiveDirectory = archiveDirectory;
         this.ioMonitor = ioMonitor;
         long length = 0;
-        for (CloudBlob blob : AzureUtilities.getBlobs(archiveDirectory)) {
-            Map<String, String> metadata = blob.getMetadata();
-            if (AzureBlobMetadata.isSegment(metadata)) {
-                AzureSegmentArchiveEntry indexEntry = AzureBlobMetadata.toIndexEntry(metadata, (int) blob.getProperties().getLength());
+//        for (CloudBlob blob : AzureUtilities.getBlobs(archiveDirectory)) {
+//            Map<String, String> metadata = blob.getMetadata();
+//            if (AzureBlobMetadata.isSegment(metadata)) {
+//                AzureSegmentArchiveEntry indexEntry = AzureBlobMetadata.toIndexEntry(metadata, (int) blob.getProperties().getLength());
+//                index.put(new UUID(indexEntry.getMsb(), indexEntry.getLsb()), indexEntry);
+//            }
+//            length += blob.getProperties().getLength();
+//        }
+
+        for (BlobClient blob : AzureUtilities.getBlobs(archiveDirectory)) {
+            BlobProperties properties = blob.getProperties();
+            Metadata blobMetadata = properties.metadata();
+            if (AzureBlobMetadata.isSegment(blobMetadata)) {
+                AzureSegmentArchiveEntry indexEntry = AzureBlobMetadata.toIndexEntry(blobMetadata, (int) properties.blobSize());
                 index.put(new UUID(indexEntry.getMsb(), indexEntry.getLsb()), indexEntry);
             }
-            length += blob.getProperties().getLength();
+            length += properties.blobSize();
         }
+
         this.length = length;
     }
 
@@ -142,31 +152,50 @@ public class AzureSegmentArchiveReader implements SegmentArchiveReader {
         return size;
     }
 
+//    private File pathAsFile() {
+//        return new File(archiveDirectory.getUri().getPath());
+//    }
+
     private File pathAsFile() {
         return new File(archiveDirectory.getUri().getPath());
     }
 
-    private CloudBlockBlob getBlob(String name) throws IOException {
-        try {
-            return archiveDirectory.getBlockBlobReference(name);
-        } catch (URISyntaxException | StorageException e) {
-            throw new IOException(e);
-        }
+//    private CloudBlockBlob getBlob(String name) throws IOException {
+//        try {
+//            return archiveDirectory.getBlockBlobReference(name);
+//        } catch (URISyntaxException | StorageException e) {
+//            throw new IOException(e);
+//        }
+//    }
+
+    private BlockBlobClient getBlob(String name) {
+        return archiveDirectory.getBlobClient(name).asBlockBlobClient();
     }
 
+//    private Buffer readBlob(String name) throws IOException {
+//        try {
+//            CloudBlockBlob blob = getBlob(name);
+//            if (!blob.exists()) {
+//                return null;
+//            }
+//            long length = blob.getProperties().getLength();
+//            Buffer buffer = Buffer.allocate((int) length);
+//            AzureUtilities.readBufferFully(blob, buffer);
+//            return buffer;
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+//    }
+
     private Buffer readBlob(String name) throws IOException {
-        try {
-            CloudBlockBlob blob = getBlob(name);
-            if (!blob.exists()) {
-                return null;
-            }
-            long length = blob.getProperties().getLength();
-            Buffer buffer = Buffer.allocate((int) length);
-            AzureUtilities.readBufferFully(blob, buffer);
-            return buffer;
-        } catch (StorageException e) {
-            throw new IOException(e);
+        BlockBlobClient blob = getBlob(name);
+        if (! blob.exists()) {
+            return null;
         }
+        long length = blob.getProperties().blobSize();
+        Buffer buffer = Buffer.allocate((int) length);
+        AzureUtilities.readBufferFully(blob, buffer);
+        return buffer;
     }
 
 }

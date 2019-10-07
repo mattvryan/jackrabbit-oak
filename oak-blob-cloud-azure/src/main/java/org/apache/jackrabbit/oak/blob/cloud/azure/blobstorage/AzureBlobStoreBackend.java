@@ -356,8 +356,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     this,
                     containerClient,
                     identifier,
-                    blob.getProperties().lastModified().toEpochSecond(),
-                    blob.getProperties().blobSize());
+                    properties.lastModified().toEpochSecond(),
+                    properties.blobSize());
             LOG.debug("Data record read for blob. identifier={} duration={} record={}",
                       key, (System.currentTimeMillis() - start), record);
             return record;
@@ -919,7 +919,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             String key = getKeyName(newIdentifier);
             BlobSASPermission permission = new BlobSASPermission().write(true);
-//            EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
             Map<String, String> presignedURIRequestParams = Maps.newHashMap();
             presignedURIRequestParams.put("comp", "block");
             for (long blockId = 1; blockId <= numParts; ++blockId) {
@@ -1045,7 +1044,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
 
         try {
-            // URI class will re-encode this signature
             String signature = blobClient.generateSAS(
                     null,
                     permission,
@@ -1114,12 +1112,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return length;
         }
 
-//        public static AzureBlobInfo fromCloudBlob(CloudBlob cloudBlob) {
-//            return new AzureBlobInfo(cloudBlob.getName(),
-//                                     cloudBlob.getProperties().getLastModified().getTime(),
-//                                     cloudBlob.getProperties().getLength());
-//        }
-
         public static AzureBlobInfo fromBlobItem(BlobItem blobItem) {
             return new AzureBlobInfo(blobItem.name(),
                     blobItem.properties().lastModified().toEpochSecond(),
@@ -1129,7 +1121,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     private class RecordsIterator<T> extends AbstractIterator<T> {
         // Seems to be thread-safe (in 5.0.0)
-//        ResultContinuation resultContinuation;
         String resultContinuation;
         boolean firstCall = true;
         final Function<AzureBlobInfo, T> transformer;
@@ -1178,31 +1169,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                         nResults.get(), containerName,  (System.currentTimeMillis() - start));
                 return nResults.get() > 0;
 
-
-//                CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
-//                if (!firstCall && (resultContinuation == null || !resultContinuation.hasContinuation())) {
-//                    LOG.trace("No more records in container. containerName={}", container);
-//                    return false;
-//                }
-//                firstCall = false;
-//
-//                ResultSegment<ListBlobItem> results = container.listBlobsSegmented(null, false, EnumSet.noneOf(BlobListingDetails.class), null, resultContinuation, null, null);
-//                resultContinuation = results.getContinuationToken();
-//                for (ListBlobItem item : results.getResults()) {
-//                    if (item instanceof CloudBlob) {
-//                        items.add(AzureBlobInfo.fromCloudBlob((CloudBlob)item));
-//                    }
-//                }
-//
-//                LOG.debug("Container records batch read. batchSize={} containerName={} duration={}",
-//                        results.getLength(), containerName,  (System.currentTimeMillis() - start));
-//                return results.getLength() > 0;
             }
             catch (StorageException e) {
                 LOG.info("Error listing blobs. containerName={}", containerName, e);
-//            }
-//            catch (DataStoreException e) {
-//                LOG.debug("Cannot list blobs. containerName={}", containerName, e);
             } finally {
                 if (contextClassLoader != null) {
                     currentThread().setContextClassLoader(contextClassLoader);

@@ -17,23 +17,17 @@
 package org.apache.jackrabbit.oak.segment.azure;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.nio.file.Paths;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.concurrent.TimeUnit;
 
+import com.azure.storage.blob.AppendBlobClient;
+import com.azure.storage.blob.BlockBlobClient;
+import com.azure.storage.blob.models.BlobItem;
 import com.microsoft.azure.storage.OperationContext;
 import com.microsoft.azure.storage.RequestCompletedEvent;
-import com.microsoft.azure.storage.RetryLinearRetry;
 import com.microsoft.azure.storage.StorageEvent;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.BlobListingDetails;
-import com.microsoft.azure.storage.blob.BlobRequestOptions;
-import com.microsoft.azure.storage.blob.CloudAppendBlob;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
-import com.microsoft.azure.storage.blob.CloudBlockBlob;
-import com.microsoft.azure.storage.blob.ListBlobItem;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitor;
 import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitor;
 import org.apache.jackrabbit.oak.segment.spi.monitor.RemoteStoreMonitor;
@@ -63,22 +57,22 @@ public class AzurePersistence implements SegmentNodeStorePersistence {
     public AzurePersistence(CloudBlobDirectory segmentStoreDirectory) {
         this.segmentstoreDirectory = segmentStoreDirectory;
 
-        BlobRequestOptions defaultRequestOptions = segmentStoreDirectory.getServiceClient().getDefaultRequestOptions();
-        if (defaultRequestOptions.getRetryPolicyFactory() == null) {
-            if (RETRY_ATTEMPTS > 0) {
-                defaultRequestOptions.setRetryPolicyFactory(new RetryLinearRetry((int) TimeUnit.SECONDS.toMillis(RETRY_BACKOFF_SECONDS), RETRY_ATTEMPTS));
-            }
-        }
-        if (defaultRequestOptions.getMaximumExecutionTimeInMs() == null) {
-            if (TIMEOUT_EXECUTION > 0) {
-                defaultRequestOptions.setMaximumExecutionTimeInMs((int) TimeUnit.SECONDS.toMillis(TIMEOUT_EXECUTION));
-            }
-        }
-        if (defaultRequestOptions.getTimeoutIntervalInMs() == null) {
-            if (TIMEOUT_INTERVAL > 0) {
-                defaultRequestOptions.setTimeoutIntervalInMs((int) TimeUnit.SECONDS.toMillis(TIMEOUT_INTERVAL));
-            }
-        }
+//        BlobRequestOptions defaultRequestOptions = segmentStoreDirectory.getServiceClient().getDefaultRequestOptions();
+//        if (defaultRequestOptions.getRetryPolicyFactory() == null) {
+//            if (RETRY_ATTEMPTS > 0) {
+//                defaultRequestOptions.setRetryPolicyFactory(new RetryLinearRetry((int) TimeUnit.SECONDS.toMillis(RETRY_BACKOFF_SECONDS), RETRY_ATTEMPTS));
+//            }
+//        }
+//        if (defaultRequestOptions.getMaximumExecutionTimeInMs() == null) {
+//            if (TIMEOUT_EXECUTION > 0) {
+//                defaultRequestOptions.setMaximumExecutionTimeInMs((int) TimeUnit.SECONDS.toMillis(TIMEOUT_EXECUTION));
+//            }
+//        }
+//        if (defaultRequestOptions.getTimeoutIntervalInMs() == null) {
+//            if (TIMEOUT_INTERVAL > 0) {
+//                defaultRequestOptions.setTimeoutIntervalInMs((int) TimeUnit.SECONDS.toMillis(TIMEOUT_INTERVAL));
+//            }
+//        }
     }
 
     @Override
@@ -87,23 +81,33 @@ public class AzurePersistence implements SegmentNodeStorePersistence {
         return new AzureArchiveManager(segmentstoreDirectory, ioMonitor, fileStoreMonitor);
     }
 
+//    @Override
+//    public boolean segmentFilesExist() {
+//        try {
+//            for (ListBlobItem i : segmentstoreDirectory.listBlobs(null, false, EnumSet.noneOf(BlobListingDetails.class), null, null)) {
+//                if (i instanceof CloudBlobDirectory) {
+//                    CloudBlobDirectory dir = (CloudBlobDirectory) i;
+//                    String name = Paths.get(dir.getPrefix()).getFileName().toString();
+//                    if (name.endsWith(".tar")) {
+//                        return true;
+//                    }
+//                }
+//            }
+//            return false;
+//        } catch (StorageException | URISyntaxException e) {
+//            log.error("Can't check if the segment archives exists", e);
+//            return false;
+//        }
+//    }
+
     @Override
     public boolean segmentFilesExist() {
-        try {
-            for (ListBlobItem i : segmentstoreDirectory.listBlobs(null, false, EnumSet.noneOf(BlobListingDetails.class), null, null)) {
-                if (i instanceof CloudBlobDirectory) {
-                    CloudBlobDirectory dir = (CloudBlobDirectory) i;
-                    String name = Paths.get(dir.getPrefix()).getFileName().toString();
-                    if (name.endsWith(".tar")) {
-                        return true;
-                    }
-                }
+        for (BlobItem blobItem : segmentstoreDirectory.listBlobsFlat()) {
+            if (blobItem.name().endsWith(".tar")) {
+                return true;
             }
-            return false;
-        } catch (StorageException | URISyntaxException e) {
-            log.error("Can't check if the segment archives exists", e);
-            return false;
         }
+        return false;
     }
 
     @Override
@@ -129,20 +133,28 @@ public class AzurePersistence implements SegmentNodeStorePersistence {
         }).lock();
     }
 
-    private CloudBlockBlob getBlockBlob(String path) throws IOException {
-        try {
-            return segmentstoreDirectory.getBlockBlobReference(path);
-        } catch (URISyntaxException | StorageException e) {
-            throw new IOException(e);
-        }
+//    private CloudBlockBlob getBlockBlob(String path) throws IOException {
+//        try {
+//            return segmentstoreDirectory.getBlockBlobReference(path);
+//        } catch (URISyntaxException | StorageException e) {
+//            throw new IOException(e);
+//        }
+//    }
+
+    private BlockBlobClient getBlockBlob(String path) {
+        return segmentstoreDirectory.getBlobClient(path).asBlockBlobClient();
     }
 
-    private CloudAppendBlob getAppendBlob(String path) throws IOException {
-        try {
-            return segmentstoreDirectory.getAppendBlobReference(path);
-        } catch (URISyntaxException | StorageException e) {
-            throw new IOException(e);
-        }
+//    private CloudAppendBlob getAppendBlob(String path) throws IOException {
+//        try {
+//            return segmentstoreDirectory.getAppendBlobReference(path);
+//        } catch (URISyntaxException | StorageException e) {
+//            throw new IOException(e);
+//        }
+//    }
+
+    private AppendBlobClient getAppendBlob(String path) {
+        return segmentstoreDirectory.getBlobClient(path).asAppendBlobClient();
     }
 
     private static void attachRemoteStoreMonitor(RemoteStoreMonitor remoteStoreMonitor) {
@@ -168,6 +180,6 @@ public class AzurePersistence implements SegmentNodeStorePersistence {
             }
 
         });
-    }
 
+    }
 }

@@ -16,63 +16,81 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlockBlob;
-import org.apache.jackrabbit.oak.segment.spi.persistence.ManifestFile;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Properties;
 
+import com.azure.storage.blob.BlockBlobClient;
+import org.apache.jackrabbit.oak.segment.spi.persistence.ManifestFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class AzureManifestFile implements ManifestFile {
 
     private static final Logger log = LoggerFactory.getLogger(AzureManifestFile.class);
 
-    private final CloudBlockBlob manifestBlob;
+//    private final CloudBlockBlob manifestBlob;
 
-    public AzureManifestFile(CloudBlockBlob manifestBlob) {
+    private final BlockBlobClient manifestBlob;
+
+//    public AzureManifestFile(CloudBlockBlob manifestBlob) {
+//        this.manifestBlob = manifestBlob;
+//    }
+
+    public AzureManifestFile(BlockBlobClient manifestBlob) {
         this.manifestBlob = manifestBlob;
     }
 
     @Override
     public boolean exists() {
-        try {
-            return manifestBlob.exists();
-        } catch (StorageException e) {
-            log.error("Can't check if the manifest exists", e);
-            return false;
-        }
+//        try {
+//            return manifestBlob.exists();
+//        } catch (StorageException e) {
+//            log.error("Can't check if the manifest exists", e);
+//            return false;
+//        }
+        return manifestBlob.exists();
     }
 
     @Override
     public Properties load() throws IOException {
+//        Properties properties = new Properties();
+//        if (exists()) {
+//            long length = manifestBlob.getProperties().getLength();
+//            byte[] data = new byte[(int) length];
+//            try {
+//                manifestBlob.downloadToByteArray(data, 0);
+//            } catch (StorageException e) {
+//                throw new IOException(e);
+//            }
+//            properties.load(new ByteArrayInputStream(data));
+//        }
+//        return properties;
+
         Properties properties = new Properties();
         if (exists()) {
-            long length = manifestBlob.getProperties().getLength();
-            byte[] data = new byte[(int) length];
-            try {
-                manifestBlob.downloadToByteArray(data, 0);
-            } catch (StorageException e) {
-                throw new IOException(e);
-            }
-            properties.load(new ByteArrayInputStream(data));
+            properties.load(manifestBlob.openInputStream());
         }
         return properties;
     }
 
     @Override
     public void save(Properties properties) throws IOException {
+//        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+//        properties.store(bos, null);
+//
+//        byte[] data = bos.toByteArray();
+//        try {
+//            manifestBlob.uploadFromByteArray(data, 0, data.length);
+//        } catch (StorageException e) {
+//            throw new IOException(e);
+//        }
+
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         properties.store(bos, null);
-
         byte[] data = bos.toByteArray();
-        try {
-            manifestBlob.uploadFromByteArray(data, 0, data.length);
-        } catch (StorageException e) {
-            throw new IOException(e);
-        }
+        manifestBlob.upload(new BufferedInputStream(new ByteArrayInputStream(data)), data.length);
     }
 }
