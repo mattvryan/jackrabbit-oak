@@ -276,7 +276,25 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                              " old length=" + blob.getProperties().blobSize());
             }
             LOG.trace("Blob already exists. identifier={} lastModified={}", key, blob.getProperties().lastModified().toString());
-            Response rsp = blob.startCopyFromURLWithResponse(blob.getBlobUrl(),
+            URL sourceUrl = blob.getBlobUrl();
+            if (! properties.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
+                // If we got here, we must be authenticated with a SAS - append that SAS to the blob URL
+                String containerSas = properties.getProperty(AzureConstants.AZURE_SAS, null);
+                String queryStr = sourceUrl.getQuery();
+                if (! Strings.isNullOrEmpty(containerSas)) {
+                    if (!Strings.isNullOrEmpty(queryStr)) {
+                        if (containerSas.startsWith("?")) {
+                            containerSas = containerSas.substring(1, containerSas.length());
+                        }
+                        queryStr = queryStr + "&" + containerSas;
+                    }
+                    else {
+                        queryStr = containerSas;
+                    }
+                }
+                sourceUrl = new URL(String.format("https://%s%s%s", sourceUrl.getHost(), sourceUrl.getPath(), queryStr));
+            }
+            Response rsp = blob.startCopyFromURLWithResponse(sourceUrl,
                     null, null, null, null,
                     null, null, Context.NONE);
             //TODO: better way of updating lastModified (use custom metadata?)
