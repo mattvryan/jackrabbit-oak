@@ -58,6 +58,9 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
 
     @BeforeClass
     public static void setupDataStore() throws Exception {
+        // Direct binary access is not supported if not authenticating with an account key.
+        assumeTrue(AzureDataStoreUtils.getAzureConfig().containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY));
+
         assumeTrue(AzureDataStoreUtils.isAzureConfigured());
         dataStore = (AzureDataStore) AzureDataStoreUtils
             .getAzureDataStore(getProperties(), homeDir.newFolder().getAbsolutePath());
@@ -179,10 +182,8 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
         // uses SAS-based authentication.  This test verifies that SAS-based
         // authentication will cause the feature to be disabled.
         Properties props = getProperties();
+        assumeTrue(props.containsKey(AzureConstants.AZURE_SAS));
         props.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
-        if (! props.containsKey(AzureConstants.AZURE_SAS)) {
-            props.put(AzureConstants.AZURE_SAS, "fake-azure-sas");
-        }
 
         ConfigurableDataRecordAccessProvider ds = createDataStore(props);
         DataRecord record = doSynchronousAddRecord((AzureDataStore) ds, new RandomInputStream(System.currentTimeMillis(), 20*1024));
@@ -196,10 +197,8 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
         // uses SAS-based authentication.  This test verifies that SAS-based
         // authentication will cause the feature to be disabled.
         Properties props = getProperties();
+        assumeTrue(props.containsKey(AzureConstants.AZURE_SAS));
         props.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
-        if (! props.containsKey(AzureConstants.AZURE_SAS)) {
-            props.put(AzureConstants.AZURE_SAS, "fake-azure-sas");
-        }
 
         ConfigurableDataRecordAccessProvider ds = createDataStore(props);
 
