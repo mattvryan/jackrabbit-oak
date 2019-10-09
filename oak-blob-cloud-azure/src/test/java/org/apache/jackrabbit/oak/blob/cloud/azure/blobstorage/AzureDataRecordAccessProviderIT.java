@@ -18,6 +18,11 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getAzureConfig;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getAzureDataStore;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.isAzureConfigured;
+import static org.junit.Assume.assumeTrue;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -35,11 +40,6 @@ import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.rules.TemporaryFolder;
 
-import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getAzureConfig;
-import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getAzureDataStore;
-import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.isAzureConfigured;
-import static org.junit.Assume.assumeTrue;
-
 /**
  * As the test is memory intensive requires -Dtest.opts.memory=-Xmx2G
  */
@@ -53,6 +53,9 @@ public class AzureDataRecordAccessProviderIT extends AbstractDataRecordAccessPro
     @BeforeClass
     public static void setupDataStore() throws Exception {
         assumeTrue(isAzureConfigured() && !Strings.isNullOrEmpty(System.getProperty("test.opts.memory")));
+
+        // Direct binary access is not supported if not authenticating with an account key.
+        assumeTrue(AzureDataStoreUtils.getAzureConfig().containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY));
 
         dataStore = (AzureDataStore) getAzureDataStore(getAzureConfig(), homeDir.newFolder().getAbsolutePath());
         dataStore.setDirectDownloadURIExpirySeconds(expirySeconds);
