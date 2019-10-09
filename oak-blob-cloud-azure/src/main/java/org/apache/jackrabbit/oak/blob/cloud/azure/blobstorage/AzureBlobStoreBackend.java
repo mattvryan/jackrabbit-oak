@@ -57,6 +57,7 @@ import com.azure.storage.blob.models.BlobItem;
 import com.azure.storage.blob.models.Block;
 import com.azure.storage.blob.models.BlockList;
 import com.azure.storage.blob.models.BlockListType;
+import com.azure.storage.blob.models.CopyStatusType;
 import com.azure.storage.blob.models.ListBlobsOptions;
 import com.azure.storage.blob.models.StorageException;
 import com.google.common.base.Function;
@@ -275,7 +276,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                              " new length=" + len +
                                              " old length=" + blob.getProperties().blobSize());
             }
-            LOG.trace("Blob already exists. identifier={} lastModified={}", key, blob.getProperties().lastModified().toString());
+            OffsetDateTime oldLastModified = blob.getProperties().lastModified();
+            LOG.trace("Blob already exists. identifier={} lastModified={}", key, oldLastModified.toString());
+
             URL sourceUrl = blob.getBlobUrl();
             if (! properties.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
                 // If we got here, we must be authenticated with a SAS - append that SAS to the blob URL
@@ -294,6 +297,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 }
                 sourceUrl = new URL(String.format("https://%s%s%s", sourceUrl.getHost(), sourceUrl.getPath(), queryStr));
             }
+
             Response rsp = blob.startCopyFromURLWithResponse(sourceUrl,
                     null, null, null, null,
                     null, null, Context.NONE);
@@ -303,8 +307,29 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     String.format("Cannot update lastModified for blob. identifier=%s status=%d",
                                   key, rsp.statusCode()));
             }
-            LOG.debug("Blob updated. identifier={} lastModified={} duration={}", key,
-                      blob.getProperties().lastModified().toString(), (System.currentTimeMillis() - start));
+
+            try {
+                // In reality this copy should be really fast since it is all server side
+                // to the blob itself.  Based on testing it doesn't appear to be dependent on size.
+                // The wait is usually on the order of ~60ms.
+                // This wait is just to be extra careful.
+                int maxTries=50;
+                int nTries=0;
+                while (CopyStatusType.PENDING == blob.getProperties().copyStatus() &&
+                        maxTries >= nTries++) {
+                    Thread.sleep(50);
+                }
+            }
+            catch (InterruptedException e) { }
+
+            if (CopyStatusType.SUCCESS != blob.getProperties().copyStatus() &&
+                    ! (oldLastModified.toInstant().toEpochMilli() < blob.getProperties().lastModified().toInstant().toEpochMilli())) {
+                LOG.warn("Attempt to update last modified of blob failed. identifier={}", key);
+            }
+            else {
+                LOG.debug("Blob updated. identifier={} lastModified={} duration={}", key,
+                        blob.getProperties().lastModified().toString(), (System.currentTimeMillis() - start));
+            }
         }
         catch (StorageException e) {
             LOG.info("Error writing blob. identifier={}", key, e);
