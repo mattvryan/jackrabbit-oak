@@ -32,15 +32,12 @@ import java.text.MessageFormat;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.base.Stopwatch;
-import com.microsoft.azure.storage.StorageCredentials;
-import com.microsoft.azure.storage.StorageCredentialsAccountAndKey;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
-
 import org.apache.jackrabbit.oak.commons.Buffer;
 import org.apache.jackrabbit.oak.segment.azure.AzurePersistence;
 import org.apache.jackrabbit.oak.segment.azure.AzureUtilities;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
 import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
 import org.apache.jackrabbit.oak.segment.file.InvalidFileStoreVersionException;
@@ -81,7 +78,8 @@ public class ToolUtils {
 
     public static FileStore newFileStore(SegmentNodeStorePersistence persistence, File directory,
             boolean strictVersionCheck, int segmentCacheSize, long gcLogInterval)
-            throws IOException, InvalidFileStoreVersionException, URISyntaxException, StorageException {
+//            throws IOException, InvalidFileStoreVersionException, URISyntaxException, StorageException {
+            throws IOException, InvalidFileStoreVersionException {
         FileStoreBuilder builder = FileStoreBuilder.fileStoreBuilder(directory)
                 .withCustomPersistence(persistence).withMemoryMapping(false).withStrictVersionCheck(strictVersionCheck)
                 .withSegmentCacheSize(segmentCacheSize)
@@ -125,9 +123,11 @@ public class ToolUtils {
         String accountName = config.get(KEY_ACCOUNT_NAME);
         String key = System.getenv("AZURE_SECRET_KEY");
 
-        StorageCredentials credentials = null;
+//        StorageCredentials credentials = null;
+        SharedKeyCredential credentials = null;
         try {
-            credentials = new StorageCredentialsAccountAndKey(accountName, key);
+//            credentials = new StorageCredentialsAccountAndKey(accountName, key);
+            credentials = new SharedKeyCredential(accountName, key);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "Could not connect to the Azure Storage. Please verify if AZURE_SECRET_KEY environment variable "
@@ -139,7 +139,9 @@ public class ToolUtils {
 
         try {
             return AzureUtilities.cloudBlobDirectoryFrom(credentials, uri, dir);
-        } catch (URISyntaxException | StorageException e) {
+//        } catch (URISyntaxException | StorageException e) {
+        }
+        catch (URISyntaxException e) {
             throw new IllegalArgumentException(
                     "Could not connect to the Azure Storage. Please verify the path provided!");
         }

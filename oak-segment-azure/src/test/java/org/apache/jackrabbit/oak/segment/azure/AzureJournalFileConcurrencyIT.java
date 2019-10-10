@@ -16,11 +16,16 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.CloudStorageAccount;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobClient;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobClient;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudStorageAccount;
 import org.apache.jackrabbit.oak.segment.spi.persistence.JournalFile;
 import org.apache.jackrabbit.oak.segment.spi.persistence.JournalFileReader;
 import org.apache.jackrabbit.oak.segment.spi.persistence.JournalFileWriter;
@@ -32,13 +37,6 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-
 public class AzureJournalFileConcurrencyIT {
     private static final Logger log = LoggerFactory.getLogger(AzureJournalFileConcurrencyIT.class);
 
@@ -49,7 +47,8 @@ public class AzureJournalFileConcurrencyIT {
     private AzurePersistence persistence;
 
     @BeforeClass
-    public static void connectToAzure() throws URISyntaxException, InvalidKeyException, StorageException {
+//    public static void connectToAzure() throws URISyntaxException, InvalidKeyException, StorageException {
+    public static void connectToAzure() {
         String azureConnectionString = System.getenv("AZURE_CONNECTION");
         Assume.assumeNotNull(azureConnectionString);
         CloudBlobClient client = CloudStorageAccount.parse(azureConnectionString).createCloudBlobClient();
@@ -59,14 +58,16 @@ public class AzureJournalFileConcurrencyIT {
     }
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException, IOException, InterruptedException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException, IOException, InterruptedException {
+    public void setup() throws InvalidKeyException, URISyntaxException, IOException, InterruptedException {
         persistence = new AzurePersistence(container.getDirectoryReference("oak-" + (suffix++)));
         writeJournalLines(300, 0);
         log.info("Finished writing initial content to journal!");
     }
 
     @AfterClass
-    public static void cleanupContainer() throws StorageException {
+//    public static void cleanupContainer() throws StorageException {
+    public static void cleanupContainer() {
         if (container != null) {
             container.deleteIfExists();
         }

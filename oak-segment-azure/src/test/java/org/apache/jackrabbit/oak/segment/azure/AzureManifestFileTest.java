@@ -18,20 +18,19 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import org.apache.jackrabbit.oak.segment.spi.persistence.ManifestFile;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.security.InvalidKeyException;
 import java.util.Properties;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
+import org.apache.jackrabbit.oak.segment.spi.persistence.ManifestFile;
+import org.junit.Before;
+import org.junit.ClassRule;
+import org.junit.Test;
 
 public class AzureManifestFileTest {
 
@@ -41,12 +40,14 @@ public class AzureManifestFileTest {
     private CloudBlobContainer container;
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+    public void setup() throws InvalidKeyException, URISyntaxException {
         container = azurite.getContainer("oak-test");
     }
 
     @Test
-    public void testManifest() throws URISyntaxException, IOException {
+//    public void testManifest() throws URISyntaxException, IOException {
+    public void testManifest() throws IOException {
         ManifestFile manifestFile = new AzurePersistence(container.getDirectoryReference("oak")).getManifestFile();
         assertFalse(manifestFile.exists());
 

@@ -18,13 +18,16 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
+import java.io.File;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
 
 import org.apache.jackrabbit.oak.commons.Buffer;
 import org.apache.jackrabbit.oak.segment.SegmentId;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundException;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
 import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
 import org.apache.jackrabbit.oak.segment.file.InvalidFileStoreVersionException;
@@ -39,11 +42,6 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 
-import java.io.File;
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
-
 public class AzureReadSegmentTest {
 
     @ClassRule
@@ -52,12 +50,14 @@ public class AzureReadSegmentTest {
     private CloudBlobContainer container;
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+    public void setup() throws InvalidKeyException, URISyntaxException {
         container = azurite.getContainer("oak-test");
     }
 
     @Test(expected = SegmentNotFoundException.class)
-    public void testReadNonExistentSegmentRepositoryReachable() throws URISyntaxException, IOException, InvalidFileStoreVersionException, StorageException {
+//    public void testReadNonExistentSegmentRepositoryReachable() throws URISyntaxException, IOException, InvalidFileStoreVersionException, StorageException {
+    public void testReadNonExistentSegmentRepositoryReachable() throws IOException, InvalidFileStoreVersionException {
         AzurePersistence p = new AzurePersistence(container.getDirectoryReference("oak"));
         FileStore fs = FileStoreBuilder.fileStoreBuilder(new File("target")).withCustomPersistence(p).build();
         SegmentId id = new SegmentId(fs, 0, 0);
@@ -70,7 +70,8 @@ public class AzureReadSegmentTest {
     }
 
     @Test(expected = RepositoryNotReachableException.class)
-    public void testReadExistentSegmentRepositoryNotReachable() throws URISyntaxException, IOException, InvalidFileStoreVersionException, StorageException {
+//    public void testReadExistentSegmentRepositoryNotReachable() throws URISyntaxException, IOException, InvalidFileStoreVersionException, StorageException {
+    public void testReadExistentSegmentRepositoryNotReachable() throws IOException, InvalidFileStoreVersionException {
         AzurePersistence p = new ReadFailingAzurePersistence(container.getDirectoryReference("oak"));
         FileStore fs = FileStoreBuilder.fileStoreBuilder(new File("target")).withCustomPersistence(p).build();
 

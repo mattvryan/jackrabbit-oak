@@ -19,11 +19,22 @@ package org.apache.jackrabbit.oak.segment.azure.tool;
 import static org.apache.jackrabbit.oak.segment.azure.tool.ToolUtils.fetchByteArray;
 import static org.apache.jackrabbit.oak.segment.azure.tool.ToolUtils.storeDescription;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.apache.jackrabbit.oak.commons.Buffer;
 import org.apache.jackrabbit.oak.segment.azure.AzurePersistence;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.azure.tool.ToolUtils.SegmentStoreType;
 import org.apache.jackrabbit.oak.segment.file.tar.TarPersistence;
 import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitorAdapter;
@@ -39,20 +50,6 @@ import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveWriter;
 import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentNodeStorePersistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.Closeable;
-import java.io.File;
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Properties;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 public class SegmentStoreMigrator implements Closeable  {
 
@@ -242,9 +239,11 @@ public class SegmentStoreMigrator implements Closeable  {
             return this;
         }
 
-        public Builder withSource(CloudBlobDirectory dir) throws URISyntaxException, StorageException {
+//        public Builder withSource(CloudBlobDirectory dir) throws URISyntaxException, StorageException {
+        public Builder withSource(CloudBlobDirectory dir) {
             this.source = new AzurePersistence(dir);
-            this.sourceName = storeDescription(SegmentStoreType.AZURE, dir.getContainer().getName() + "/" + dir.getPrefix());
+//            this.sourceName = storeDescription(SegmentStoreType.AZURE, dir.getContainer().getName() + "/" + dir.getPrefix());
+            this.sourceName = storeDescription(SegmentStoreType.AZURE, dir.getContainerName() + "/" + dir.getPrefix());
             return this;
         }
 
@@ -266,9 +265,11 @@ public class SegmentStoreMigrator implements Closeable  {
             return this;
         }
 
-        public Builder withTarget(CloudBlobDirectory dir) throws URISyntaxException, StorageException {
+//        public Builder withTarget(CloudBlobDirectory dir) throws URISyntaxException, StorageException {
+        public Builder withTarget(CloudBlobDirectory dir) {
             this.target = new AzurePersistence(dir);
-            this.targetName = storeDescription(SegmentStoreType.AZURE, dir.getContainer().getName() + "/" + dir.getPrefix());
+//            this.targetName = storeDescription(SegmentStoreType.AZURE, dir.getContainer().getName() + "/" + dir.getPrefix());
+            this.targetName = storeDescription(SegmentStoreType.AZURE, dir.getContainerName() + "/" + dir.getPrefix());
             return this;
         }
 

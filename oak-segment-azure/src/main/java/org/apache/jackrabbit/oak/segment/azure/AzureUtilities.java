@@ -18,6 +18,8 @@ package org.apache.jackrabbit.oak.segment.azure;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -25,6 +27,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.azure.storage.blob.BlobClient;
+import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.collect.Lists;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.oak.commons.Buffer;
@@ -136,6 +141,19 @@ public final class AzureUtilities {
 //
 //        return container.getDirectoryReference(dir);
 //    }
+
+    public static CloudBlobDirectory cloudBlobDirectoryFrom(SharedKeyCredential credential, String uriString, String dir)
+            throws URISyntaxException {
+        URI uri = new URI(uriString);
+        String host = uri.getHost();
+        String container = Paths.get(uri.getPath()).subpath(0, 1).toString();
+        ContainerClient client = new BlobServiceClientBuilder()
+                .credential(credential)
+                .endpoint(String.format("https://%s", host))
+                .buildClient()
+                .getContainerClient(container);
+        return new CloudBlobDirectory(client, container, dir);
+    }
 
     private static class ByteBufferOutputStream extends OutputStream {
 

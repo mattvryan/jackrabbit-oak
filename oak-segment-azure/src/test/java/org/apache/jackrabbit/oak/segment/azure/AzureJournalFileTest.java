@@ -16,25 +16,23 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudAppendBlob;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import com.microsoft.azure.storage.blob.ListBlobItem;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.azure.storage.blob.models.BlobType;
+import com.azure.storage.blob.models.ListBlobsOptions;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
 import org.apache.jackrabbit.oak.segment.spi.persistence.JournalFileReader;
 import org.apache.jackrabbit.oak.segment.spi.persistence.JournalFileWriter;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 public class AzureJournalFileTest {
 
@@ -46,13 +44,15 @@ public class AzureJournalFileTest {
     private AzureJournalFile journal;
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+    public void setup() throws InvalidKeyException, URISyntaxException {
         container = azurite.getContainer("oak-test");
         journal = new AzureJournalFile(container.getDirectoryReference("journal"), "journal.log", 50);
     }
 
     @Test
-    public void testSplitJournalFiles() throws IOException, URISyntaxException, StorageException {
+//    public void testSplitJournalFiles() throws IOException, URISyntaxException, StorageException {
+    public void testSplitJournalFiles() throws IOException, URISyntaxException {
         assertFalse(journal.exists());
 
         int index = 0;
@@ -76,14 +76,26 @@ public class AzureJournalFileTest {
         }
     }
 
-    private int countJournalBlobs() throws URISyntaxException, StorageException {
-        List<CloudAppendBlob> result = new ArrayList<>();
-        for (ListBlobItem b : container.getDirectoryReference("journal").listBlobs("journal.log")) {
-            if (b instanceof CloudAppendBlob) {
-                result.add((CloudAppendBlob) b);
-            }
-        }
-        return result.size();
+//    private int countJournalBlobs() throws URISyntaxException, StorageException {
+//        List<CloudAppendBlob> result = new ArrayList<>();
+//        for (ListBlobItem b : container.getDirectoryReference("journal").listBlobs("journal.log")) {
+//            if (b instanceof CloudAppendBlob) {
+//                result.add((CloudAppendBlob) b);
+//            }
+//        }
+//        return result.size();
+//    }
+
+    private int countJournalBlobs() {
+        AtomicInteger count = new AtomicInteger(0);
+        container.getDirectoryReference("journal")
+                .listBlobsFlat(new ListBlobsOptions().prefix("journal.log"), null)
+                .forEach(blobItem -> {
+                    if (BlobType.APPEND_BLOB == blobItem.properties().blobType()) {
+                        count.getAndIncrement();
+                    }
+                });
+        return count.get();
     }
 
     private int writeNLines(int index, int n) throws IOException {

@@ -38,10 +38,14 @@ public class CloudBlobDirectory {
     private static Logger LOG = LoggerFactory.getLogger(CloudBlobDirectory.class);
 
     private final ContainerClient client;
+    private final String containerName;
     private final String directory;
 
-    public CloudBlobDirectory(@NotNull final ContainerClient client, @NotNull final String directory) {
+    public CloudBlobDirectory(@NotNull final ContainerClient client,
+                              @NotNull final String containerName,
+                              @NotNull final String directory) {
         this.client = client;
+        this.containerName = containerName;
         this.directory = directory;
     }
 
@@ -61,7 +65,7 @@ public class CloudBlobDirectory {
     }
 
     public CloudBlobDirectory getDirectoryReference(@NotNull final String dirName) {
-        return new CloudBlobDirectory(client, Paths.get(directory, dirName).toString());
+        return new CloudBlobDirectory(client, containerName, Paths.get(directory, dirName).toString());
     }
 
     public void deleteBlobIfExists(BlobClient blob) {
@@ -84,5 +88,13 @@ public class CloudBlobDirectory {
             LOG.warn("Unable to format directory URI", e);
             return null;
         }
+    }
+
+    public String getContainerName() {
+        return containerName;
+    }
+
+    public String getPrefix() {
+        return directory;
     }
 }

@@ -16,27 +16,8 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlob;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import com.microsoft.azure.storage.blob.ListBlobItem;
-import org.apache.jackrabbit.oak.api.CommitFailedException;
-import org.apache.jackrabbit.oak.segment.SegmentNodeStore;
-import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
-import org.apache.jackrabbit.oak.segment.file.FileStore;
-import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
-import org.apache.jackrabbit.oak.segment.file.InvalidFileStoreVersionException;
-import org.apache.jackrabbit.oak.segment.spi.monitor.RemoteStoreMonitorAdapter;
-import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveManager;
-import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitorAdapter;
-import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitorAdapter;
-import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveWriter;
-import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
-import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
-import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Test;
+import static com.google.common.collect.Lists.newArrayList;
+import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.io.IOException;
@@ -47,8 +28,27 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.UUID;
 
-import static com.google.common.collect.Lists.newArrayList;
-import static org.junit.Assert.assertEquals;
+import com.azure.storage.blob.models.BlobItem;
+import com.azure.storage.blob.models.ListBlobsOptions;
+import org.apache.jackrabbit.oak.api.CommitFailedException;
+import org.apache.jackrabbit.oak.segment.SegmentNodeStore;
+import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
+import org.apache.jackrabbit.oak.segment.file.FileStore;
+import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
+import org.apache.jackrabbit.oak.segment.file.InvalidFileStoreVersionException;
+import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitorAdapter;
+import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitorAdapter;
+import org.apache.jackrabbit.oak.segment.spi.monitor.RemoteStoreMonitorAdapter;
+import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveManager;
+import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentArchiveWriter;
+import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
+import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
+import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
+import org.junit.Before;
+import org.junit.ClassRule;
+import org.junit.Test;
 
 public class AzureArchiveManagerTest {
 
@@ -58,12 +58,14 @@ public class AzureArchiveManagerTest {
     private CloudBlobContainer container;
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+    public void setup() throws InvalidKeyException, URISyntaxException {
         container = azurite.getContainer("oak-test");
     }
 
     @Test
-    public void testRecovery() throws StorageException, URISyntaxException, IOException {
+//    public void testRecovery() throws StorageException, URISyntaxException, IOException {
+    public void testRecovery() throws IOException {
         SegmentArchiveManager manager = new AzurePersistence(container.getDirectoryReference("oak")).createArchiveManager(false, false, new IOMonitorAdapter(), new FileStoreMonitorAdapter(), new RemoteStoreMonitorAdapter());
         SegmentArchiveWriter writer = manager.create("data00000a.tar");
 
@@ -85,7 +87,8 @@ public class AzureArchiveManagerTest {
     }
 
     @Test
-    public void testUncleanStop() throws URISyntaxException, IOException, InvalidFileStoreVersionException, CommitFailedException, StorageException {
+//    public void testUncleanStop() throws URISyntaxException, IOException, InvalidFileStoreVersionException, CommitFailedException, StorageException {
+    public void testUncleanStop() throws IOException, InvalidFileStoreVersionException, CommitFailedException {
         AzurePersistence p = new AzurePersistence(container.getDirectoryReference("oak"));
         FileStore fs = FileStoreBuilder.fileStoreBuilder(new File("target")).withCustomPersistence(p).build();
         SegmentNodeStore segmentNodeStore = SegmentNodeStoreBuilders.builder(fs).build();
@@ -106,7 +109,8 @@ public class AzureArchiveManagerTest {
 
     @Test
     // see OAK-8566
-    public void testUncleanStopWithEmptyArchive() throws URISyntaxException, IOException, InvalidFileStoreVersionException, CommitFailedException, StorageException {
+//    public void testUncleanStopWithEmptyArchive() throws URISyntaxException, IOException, InvalidFileStoreVersionException, CommitFailedException, StorageException {
+    public void testUncleanStopWithEmptyArchive() throws IOException, InvalidFileStoreVersionException, CommitFailedException {
         AzurePersistence p = new AzurePersistence(container.getDirectoryReference("oak"));
         FileStore fs = FileStoreBuilder.fileStoreBuilder(new File("target")).withCustomPersistence(p).build();
         SegmentNodeStore segmentNodeStore = SegmentNodeStoreBuilders.builder(fs).build();
@@ -124,8 +128,14 @@ public class AzureArchiveManagerTest {
         fs.close();
 
         // remove the segment 0000 from the second archive
-        ListBlobItem segment0000 = container.listBlobs("oak/data00001a.tar/0000.").iterator().next();
-        ((CloudBlob) segment0000).delete();
+//        ListBlobItem segment0000 = container.listBlobs("oak/data00001a.tar/0000.").iterator().next();
+//        ((CloudBlob) segment0000).delete();
+//        container.getBlockBlobReference("oak/data00001a.tar/closed").delete();
+
+        CloudBlobDirectory dir = container.getDirectoryReference("oak/data00001a.tar");
+        BlobItem segment0000 = dir.listBlobsFlat(new ListBlobsOptions().prefix("0000."), null)
+                        .iterator().next();
+        dir.getBlobClient(segment0000.name()).delete();
         container.getBlockBlobReference("oak/data00001a.tar/closed").delete();
 
         fs = FileStoreBuilder.fileStoreBuilder(new File("target")).withCustomPersistence(p).build();

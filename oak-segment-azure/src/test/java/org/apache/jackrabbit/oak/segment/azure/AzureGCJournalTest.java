@@ -18,17 +18,16 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentNodeStorePersistence;
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
+
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
 import org.apache.jackrabbit.oak.segment.file.GcJournalTest;
+import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentNodeStorePersistence;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
 
 public class AzureGCJournalTest extends GcJournalTest {
 
@@ -38,7 +37,8 @@ public class AzureGCJournalTest extends GcJournalTest {
     private CloudBlobContainer container;
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+    public void setup() throws InvalidKeyException, URISyntaxException {
         container = azurite.getContainer("oak-test");
     }
 

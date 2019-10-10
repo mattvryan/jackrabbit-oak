@@ -94,7 +94,7 @@ public class AzureSegmentStoreService {
             }
 
 //            AzurePersistence persistence = new AzurePersistence(container.getDirectoryReference(path));
-            AzurePersistence persistence = new AzurePersistence(new CloudBlobDirectory(containerClient, path));
+            AzurePersistence persistence = new AzurePersistence(new CloudBlobDirectory(containerClient, configuration.containerName(), path));
             return persistence;
 //        } catch (StorageException | URISyntaxException | InvalidKeyException e) {
 //            throw new IOException(e);
