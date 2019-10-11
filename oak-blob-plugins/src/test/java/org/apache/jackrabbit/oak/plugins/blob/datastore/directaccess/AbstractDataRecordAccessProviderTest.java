@@ -34,6 +34,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
@@ -201,19 +202,10 @@ public abstract class AbstractDataRecordAccessProviderTest {
             assertTrue(Arrays.equals(toByteArray(testStream), toByteArray(conn.getInputStream())));
             assertEquals(200, conn.getResponseCode());
             assertEquals(mimeType, conn.getHeaderField("Content-Type"));
-//            This proper behavior is disabled due to https://github.com/Azure/azure-sdk-for-java/issues/2900
-//            (see also https://issues.apache.org/jira/browse/OAK-8013).  We can re-enable the full test
-//            once the issue is resolved.  -MR
-//            assertEquals(
-//                    String.format("%s; filename=\"%s\"; filename*=UTF-8''%s",
-//                            dispositionType, fileName,
-//                            new String(encodedFileName.getBytes(StandardCharsets.UTF_8))
-//                    ),
-//                    conn.getHeaderField("Content-Disposition")
-//            );
             assertEquals(
-                    String.format("%s; filename=\"%s\"",
-                            dispositionType, fileName
+                    String.format("%s; filename=\"%s\"; filename*=UTF-8''%s",
+                            dispositionType, fileName,
+                            new String(encodedFileName.getBytes(StandardCharsets.UTF_8))
                     ),
                     conn.getHeaderField("Content-Disposition")
             );
