@@ -16,7 +16,13 @@
  */
 package org.apache.jackrabbit.oak.segment.split;
 
-import com.microsoft.azure.storage.StorageException;
+import static org.junit.Assert.assertEquals;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
+
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.segment.SegmentNodeStore;
 import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
@@ -44,14 +50,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import java.io.File;
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
-import java.util.UUID;
-
-import static org.junit.Assert.assertEquals;
-
 public class SplitPersistenceTest {
 
     @ClassRule
@@ -71,7 +69,8 @@ public class SplitPersistenceTest {
     private SegmentNodeStorePersistence splitPersistence;
 
     @Before
-    public void setup() throws IOException, InvalidFileStoreVersionException, CommitFailedException, URISyntaxException, InvalidKeyException, StorageException {
+//    public void setup() throws IOException, InvalidFileStoreVersionException, CommitFailedException, URISyntaxException, InvalidKeyException, StorageException {
+    public void setup() throws IOException, InvalidFileStoreVersionException, CommitFailedException, URISyntaxException, InvalidKeyException {
         SegmentNodeStorePersistence sharedPersistence = new AzurePersistence(azurite.getContainer("oak-test").getDirectoryReference("oak"));
 
         baseFileStore = FileStoreBuilder
