@@ -16,16 +16,13 @@
  */
 package org.apache.jackrabbit.oak.segment.azure.journal;
 
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentNodeStorePersistence;
-import org.apache.jackrabbit.oak.segment.azure.AzuriteDockerRule;
-import org.apache.jackrabbit.oak.segment.file.TarRevisionsTest;
 import org.apache.jackrabbit.oak.segment.azure.AzurePersistence;
+import org.apache.jackrabbit.oak.segment.azure.AzuriteDockerRule;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
+import org.apache.jackrabbit.oak.segment.file.TarRevisionsTest;
+import org.apache.jackrabbit.oak.segment.spi.persistence.SegmentNodeStorePersistence;
 import org.junit.Before;
 import org.junit.ClassRule;
-
-import java.io.IOException;
-import java.net.URISyntaxException;
 
 public class AzureTarRevisionsTest extends TarRevisionsTest {
 
@@ -41,11 +38,14 @@ public class AzureTarRevisionsTest extends TarRevisionsTest {
     }
 
     @Override
-    protected SegmentNodeStorePersistence getPersistence() throws IOException {
-        try {
-            return new AzurePersistence(container.getDirectoryReference("oak"));
-        } catch (URISyntaxException e) {
-            throw new IOException(e);
-        }
+//    protected SegmentNodeStorePersistence getPersistence() throws IOException {
+//        try {
+//            return new AzurePersistence(container.getDirectoryReference("oak"));
+//        } catch (URISyntaxException e) {
+//            throw new IOException(e);
+//        }
+//    }
+    protected SegmentNodeStorePersistence getPersistence() {
+        return new AzurePersistence(container.getDirectoryReference("oak"));
     }
 }
