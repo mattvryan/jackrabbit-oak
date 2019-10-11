@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.azure.storage.blob.BlockBlobClient;
+import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.models.BlobRange;
 import com.azure.storage.blob.models.StorageException;
 import org.apache.commons.io.IOUtils;
@@ -37,7 +37,7 @@ public class ReverseFileReader {
 
 //    private final CloudBlob blob;
 
-    private final BlockBlobClient blob;
+    private final BlobClient blob;
 
     private byte[] buffer;
 
@@ -49,7 +49,7 @@ public class ReverseFileReader {
 //        this(blob, BUFFER_SIZE);
 //    }
 
-    public ReverseFileReader(BlockBlobClient blobClient) throws StorageException {
+    public ReverseFileReader(BlobClient blobClient) throws StorageException {
         this(blobClient, BUFFER_SIZE);
     }
 
@@ -63,7 +63,7 @@ public class ReverseFileReader {
 //        this.bufferSize = bufferSize;
 //    }
 
-    public ReverseFileReader(BlockBlobClient blobClient, int bufferSize) throws StorageException {
+    public ReverseFileReader(BlobClient blobClient, int bufferSize) throws StorageException {
         blob = blobClient;
         if (blob.exists()) {
             this.fileOffset = (int) blob.getProperties().blobSize();

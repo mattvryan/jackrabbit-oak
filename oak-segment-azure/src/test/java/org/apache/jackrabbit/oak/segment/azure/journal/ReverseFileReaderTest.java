@@ -16,16 +16,6 @@
  */
 package org.apache.jackrabbit.oak.segment.azure.journal;
 
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudAppendBlob;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import org.apache.jackrabbit.oak.segment.azure.AzuriteDockerRule;
-import org.apache.jackrabbit.oak.segment.azure.ReverseFileReader;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Test;
-
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.security.InvalidKeyException;
@@ -33,6 +23,17 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+
+import com.azure.storage.blob.AppendBlobClient;
+import com.google.common.base.Charsets;
+import org.apache.commons.io.IOUtils;
+import org.apache.jackrabbit.oak.segment.azure.AzuriteDockerRule;
+import org.apache.jackrabbit.oak.segment.azure.ReverseFileReader;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.ClassRule;
+import org.junit.Test;
 
 public class ReverseFileReaderTest {
 
@@ -42,49 +43,61 @@ public class ReverseFileReaderTest {
     private CloudBlobContainer container;
 
     @Before
-    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//    public void setup() throws StorageException, InvalidKeyException, URISyntaxException {
+//        container = azurite.getContainer("oak-test");
+//        getBlob().createOrReplace();
+//    }
+    public void setup() throws InvalidKeyException, URISyntaxException {
         container = azurite.getContainer("oak-test");
-        getBlob().createOrReplace();
+        getBlob().create();
     }
 
-    private CloudAppendBlob getBlob() throws URISyntaxException, StorageException {
+//    private CloudAppendBlob getBlob() throws URISyntaxException, StorageException {
+    private AppendBlobClient getBlob() {
         return container.getAppendBlobReference("test-blob");
     }
 
     @Test
-    public void testReverseReader() throws IOException, URISyntaxException, StorageException {
+//    public void testReverseReader() throws IOException, URISyntaxException, StorageException {
+    public void testReverseReader() throws IOException, URISyntaxException {
         List<String> entries = createFile( 1024, 80);
         ReverseFileReader reader = new ReverseFileReader(getBlob(), 256);
         assertEquals(entries, reader);
     }
 
     @Test
-    public void testEmptyFile() throws IOException, URISyntaxException, StorageException {
+//    public void testEmptyFile() throws IOException, URISyntaxException, StorageException {
+    public void testEmptyFile() throws IOException, URISyntaxException {
         List<String> entries = createFile( 0, 80);
         ReverseFileReader reader = new ReverseFileReader(getBlob(), 256);
         assertEquals(entries, reader);
     }
 
     @Test
-    public void test1ByteBlock() throws IOException, URISyntaxException, StorageException {
+//    public void test1ByteBlock() throws IOException, URISyntaxException, StorageException {
+    public void test1ByteBlock() throws IOException, URISyntaxException {
         List<String> entries = createFile( 10, 16);
         ReverseFileReader reader = new ReverseFileReader(getBlob(), 1);
         assertEquals(entries, reader);
     }
 
 
-    private List<String> createFile(int lines, int maxLineLength) throws IOException, URISyntaxException, StorageException {
+//    private List<String> createFile(int lines, int maxLineLength) throws IOException, URISyntaxException, StorageException {
+private List<String> createFile(int lines, int maxLineLength) {
         Random random = new Random();
         List<String> entries = new ArrayList<>();
-        CloudAppendBlob blob = getBlob();
+//        CloudAppendBlob blob = getBlob();
+        AppendBlobClient blob = getBlob();
         for (int i = 0; i < lines; i++) {
             int entrySize = random.nextInt(maxLineLength) + 1;
             String entry = randomString(entrySize);
-            try {
-                blob.appendText(entry + '\n');
-            } catch (StorageException e) {
-                throw new IOException(e);
-            }
+//            try {
+//                blob.appendText(entry + '\n');
+                String toAppend = entry + '\n';
+                blob.appendBlock(IOUtils.toInputStream(toAppend, Charsets.UTF_8), entry.length());
+//            } catch (StorageException e) {
+//                throw new IOException(e);
+//            }
             entries.add(entry);
         }
 
