@@ -124,10 +124,10 @@ public class ToolUtils {
         String key = System.getenv("AZURE_SECRET_KEY");
 
 //        StorageCredentials credentials = null;
-        SharedKeyCredential credentials = null;
+        SharedKeyCredential credential = null;
         try {
 //            credentials = new StorageCredentialsAccountAndKey(accountName, key);
-            credentials = new SharedKeyCredential(accountName, key);
+            credential = new SharedKeyCredential(accountName, key);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "Could not connect to the Azure Storage. Please verify if AZURE_SECRET_KEY environment variable "
@@ -138,7 +138,7 @@ public class ToolUtils {
         String dir = config.get(KEY_DIR);
 
         try {
-            return AzureUtilities.cloudBlobDirectoryFrom(credentials, uri, dir);
+            return AzureUtilities.cloudBlobDirectoryFrom(credential, uri, dir);
 //        } catch (URISyntaxException | StorageException e) {
         }
         catch (URISyntaxException e) {

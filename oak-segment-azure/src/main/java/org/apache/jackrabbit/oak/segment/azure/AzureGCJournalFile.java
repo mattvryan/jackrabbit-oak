@@ -16,15 +16,12 @@
  */
 package org.apache.jackrabbit.oak.segment.azure;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Collections;
 import java.util.List;
 
 import com.azure.storage.blob.AppendBlobClient;
-import com.google.common.base.Charsets;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.oak.segment.spi.persistence.GCJournalFile;
 
@@ -55,8 +52,8 @@ public class AzureGCJournalFile implements GCJournalFile {
         if (! gcJournal.exists()) {
             gcJournal.create();
         }
-        byte[] toAppend = (line + "\n").getBytes(Charsets.UTF_8);
-        gcJournal.appendBlock(new BufferedInputStream(new ByteArrayInputStream(toAppend)), toAppend.length);
+        String toAppend = line + "\n";
+        gcJournal.appendBlock(IOUtils.toBufferedInputStream(IOUtils.toInputStream(toAppend, "UTF-8")), toAppend.length());
     }
 
     @Override

@@ -132,7 +132,7 @@ public class AzureJournalFile implements JournalFile {
         public String readLine() throws IOException {
             if (reader == null) {
 //                try {
-                    reader = new ReverseFileReader(blob.asBlockBlobClient());
+                    reader = new ReverseFileReader(blob);
 //                } catch (StorageException e) {
 //                    throw new IOException(e);
 //                }

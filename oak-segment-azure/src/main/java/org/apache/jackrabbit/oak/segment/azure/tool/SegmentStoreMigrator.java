@@ -22,6 +22,7 @@ import static org.apache.jackrabbit.oak.segment.azure.tool.ToolUtils.storeDescri
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -243,7 +244,7 @@ public class SegmentStoreMigrator implements Closeable  {
         public Builder withSource(CloudBlobDirectory dir) {
             this.source = new AzurePersistence(dir);
 //            this.sourceName = storeDescription(SegmentStoreType.AZURE, dir.getContainer().getName() + "/" + dir.getPrefix());
-            this.sourceName = storeDescription(SegmentStoreType.AZURE, dir.getContainerName() + "/" + dir.getPrefix());
+            this.sourceName = storeDescription(SegmentStoreType.AZURE, Paths.get(dir.getContainerName(), dir.getPrefix()).toString());
             return this;
         }
 
@@ -269,7 +270,7 @@ public class SegmentStoreMigrator implements Closeable  {
         public Builder withTarget(CloudBlobDirectory dir) {
             this.target = new AzurePersistence(dir);
 //            this.targetName = storeDescription(SegmentStoreType.AZURE, dir.getContainer().getName() + "/" + dir.getPrefix());
-            this.targetName = storeDescription(SegmentStoreType.AZURE, dir.getContainerName() + "/" + dir.getPrefix());
+            this.targetName = storeDescription(SegmentStoreType.AZURE, Paths.get(dir.getContainerName(), dir.getPrefix()).toString());
             return this;
         }
 
