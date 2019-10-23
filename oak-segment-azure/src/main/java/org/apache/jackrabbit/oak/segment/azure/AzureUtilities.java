@@ -29,11 +29,13 @@ import java.util.stream.Collectors;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.StorageException;
 import com.azure.storage.common.credentials.SharedKeyCredential;
 import com.google.common.collect.Lists;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.oak.commons.Buffer;
 import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
+import org.apache.jackrabbit.oak.segment.azure.util.AzureConfigurationParserUtils;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,6 +155,44 @@ public final class AzureUtilities {
                 .buildClient()
                 .getContainerClient(container);
         return new CloudBlobDirectory(client, container, dir);
+    }
+
+    public static CloudBlobDirectory cloudBlobDirectoryFrom(String connection, String containerName,
+            String dir) throws StorageException {
+        String proto = "https";
+        String accountName = null;
+        String accountKey = null;
+        String blobEndpoint = null;
+        for (String keypair : connection.split(";")) {
+            String[] parts = keypair.split("=", 2);
+            if (2 == parts.length) {
+                String key = parts[0].toLowerCase();
+                if (key.equals(AzureConfigurationParserUtils.AzureConnectionKey.DEFAULT_ENDPOINTS_PROTOCOL.text())) {
+                    proto = parts[1];
+                }
+                else if (key.equals(AzureConfigurationParserUtils.AzureConnectionKey.ACCOUNT_NAME.text())) {
+                    accountName = parts[1];
+                }
+                else if (key.equals(AzureConfigurationParserUtils.AzureConnectionKey.ACCOUNT_KEY.text())) {
+                    accountKey = parts[1];
+                }
+                else if (key.equals(AzureConfigurationParserUtils.AzureConnectionKey.BLOB_ENDPOINT.text())) {
+                    blobEndpoint = parts[1];
+                }
+            }
+        }
+
+        if (null != accountName && null != accountKey) {
+            SharedKeyCredential credential = new SharedKeyCredential(accountName, accountKey);
+            BlobServiceClientBuilder clientBuilder = new BlobServiceClientBuilder()
+                    .credential(credential);
+            if (null != blobEndpoint) {
+                clientBuilder.endpoint(String.format("%s://%s", proto, blobEndpoint));
+            }
+            ContainerClient containerClient = clientBuilder.buildClient().getContainerClient(containerName);
+            return new CloudBlobDirectory(containerClient, containerName, dir);
+        }
+        throw new IllegalArgumentException(String.format("Invalid connection string - could not parse '%s'", connection));
     }
 
     private static class ByteBufferOutputStream extends OutputStream {

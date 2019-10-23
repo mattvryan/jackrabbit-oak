@@ -41,7 +41,7 @@ import org.apache.jackrabbit.oak.upgrade.cli.node.FileStoreUtils.NodeStoreWithFi
 public class SegmentAzureFactory implements NodeStoreFactory {
     private final String accountName;
     private final String uri;
-//    private final String connectionString;
+    private final String connectionString;
     private final String containerName;
     private final String dir;
 
@@ -55,7 +55,7 @@ public class SegmentAzureFactory implements NodeStoreFactory {
 
         private String accountName;
         private String uri;
-//        private String connectionString;
+        private String connectionString;
         private String containerName;
 
         public Builder(String dir, int segmentCacheSize, boolean readOnly) {
@@ -74,10 +74,10 @@ public class SegmentAzureFactory implements NodeStoreFactory {
             return this;
         }
 
-//        public Builder connectionString(String connectionString) {
-//            this.connectionString = connectionString;
-//            return this;
-//        }
+        public Builder connectionString(String connectionString) {
+            this.connectionString = connectionString;
+            return this;
+        }
 
         public Builder containerName(String containerName) {
             this.containerName = containerName;
@@ -92,7 +92,7 @@ public class SegmentAzureFactory implements NodeStoreFactory {
     public SegmentAzureFactory(Builder builder) {
         this.accountName = builder.accountName;
         this.uri = builder.uri;
-//        this.connectionString = builder.connectionString;
+        this.connectionString = builder.connectionString;
         this.containerName = builder.containerName;
         this.dir = builder.dir;
         this.segmentCacheSize = builder.segmentCacheSize;
@@ -143,8 +143,8 @@ private AzurePersistence createAzurePersistence() throws URISyntaxException, Inv
 //            StorageCredentials credentials = new StorageCredentialsAccountAndKey(accountName, key);
             SharedKeyCredential credential = new SharedKeyCredential(accountName, key);
             cloudBlobDirectory = AzureUtilities.cloudBlobDirectoryFrom(credential, uri, dir);
-//        } else if (connectionString != null && containerName != null) {
-//            cloudBlobDirectory = AzureUtilities.cloudBlobDirectoryFrom(connectionString, containerName, dir);
+        } else if (connectionString != null && containerName != null) {
+            cloudBlobDirectory = AzureUtilities.cloudBlobDirectoryFrom(connectionString, containerName, dir);
         }
 
         if (cloudBlobDirectory == null) {
