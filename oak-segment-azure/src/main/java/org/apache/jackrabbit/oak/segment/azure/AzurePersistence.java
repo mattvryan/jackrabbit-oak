@@ -17,16 +17,10 @@
 package org.apache.jackrabbit.oak.segment.azure;
 
 import java.io.IOException;
-import java.nio.file.Paths;
-import java.util.Date;
-import java.util.concurrent.TimeUnit;
 
 import com.azure.storage.blob.AppendBlobClient;
 import com.azure.storage.blob.BlockBlobClient;
 import com.azure.storage.blob.models.BlobItem;
-import com.microsoft.azure.storage.OperationContext;
-import com.microsoft.azure.storage.RequestCompletedEvent;
-import com.microsoft.azure.storage.StorageEvent;
 import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.spi.monitor.FileStoreMonitor;
 import org.apache.jackrabbit.oak.segment.spi.monitor.IOMonitor;
@@ -157,29 +151,33 @@ public class AzurePersistence implements SegmentNodeStorePersistence {
         return segmentstoreDirectory.getBlobClient(path).asAppendBlobClient();
     }
 
-    private static void attachRemoteStoreMonitor(RemoteStoreMonitor remoteStoreMonitor) {
-        OperationContext.getGlobalRequestCompletedEventHandler().addListener(new StorageEvent<RequestCompletedEvent>() {
-
-            @Override
-            public void eventOccurred(RequestCompletedEvent e) {
-                Date startDate = e.getRequestResult().getStartDate();
-                Date stopDate = e.getRequestResult().getStopDate();
-
-                if (startDate != null && stopDate != null) {
-                    long requestDuration = stopDate.getTime() - startDate.getTime();
-                    remoteStoreMonitor.requestDuration(requestDuration, TimeUnit.MILLISECONDS);
-                }
-
-                Exception exception = e.getRequestResult().getException();
-
-                if (exception == null) {
-                    remoteStoreMonitor.requestCount();
-                } else {
-                    remoteStoreMonitor.requestError();
-                }
-            }
-
-        });
-
+    private void attachRemoteStoreMonitor(RemoteStoreMonitor remoteStoreMonitor) {
+        segmentstoreDirectory.setRemoteStoreMonitor(remoteStoreMonitor);
     }
+
+//    private static void attachRemoteStoreMonitor(RemoteStoreMonitor remoteStoreMonitor) {
+//        OperationContext.getGlobalRequestCompletedEventHandler().addListener(new StorageEvent<RequestCompletedEvent>() {
+//
+//            @Override
+//            public void eventOccurred(RequestCompletedEvent e) {
+//                Date startDate = e.getRequestResult().getStartDate();
+//                Date stopDate = e.getRequestResult().getStopDate();
+//
+//                if (startDate != null && stopDate != null) {
+//                    long requestDuration = stopDate.getTime() - startDate.getTime();
+//                    remoteStoreMonitor.requestDuration(requestDuration, TimeUnit.MILLISECONDS);
+//                }
+//
+//                Exception exception = e.getRequestResult().getException();
+//
+//                if (exception == null) {
+//                    remoteStoreMonitor.requestCount();
+//                } else {
+//                    remoteStoreMonitor.requestError();
+//                }
+//            }
+//
+//        });
+//
+//    }
 }

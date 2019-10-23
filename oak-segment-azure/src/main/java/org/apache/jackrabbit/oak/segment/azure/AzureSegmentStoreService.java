@@ -82,9 +82,11 @@ public class AzureSegmentStoreService {
 //            container.createIfNotExists();
 
             SharedKeyCredential credential = new SharedKeyCredential(configuration.accountName(), configuration.accessKey());
+            AzureStorageMonitorPolicy monitorPolicy = new AzureStorageMonitorPolicy();
             BlobServiceClient serviceClient = new BlobServiceClientBuilder()
                     .endpoint(String.format("https://%s.blob.core.windows.net", configuration.accountName()))
                     .credential(credential)
+                    .addPolicy(monitorPolicy)
                     .buildClient();
             ContainerClient containerClient = serviceClient.getContainerClient(configuration.containerName());
 
@@ -94,7 +96,12 @@ public class AzureSegmentStoreService {
             }
 
 //            AzurePersistence persistence = new AzurePersistence(container.getDirectoryReference(path));
-            AzurePersistence persistence = new AzurePersistence(new CloudBlobDirectory(containerClient, configuration.containerName(), path));
+//            AzurePersistence persistence = new AzurePersistence(new CloudBlobDirectory(containerClient, configuration.containerName(), path));
+
+        CloudBlobDirectory client = new CloudBlobDirectory(containerClient, configuration.containerName(), path);
+        client.setMonitorPolicy(monitorPolicy);
+        AzurePersistence persistence = new AzurePersistence(client);
+
             return persistence;
 //        } catch (StorageException | URISyntaxException | InvalidKeyException e) {
 //            throw new IOException(e);
