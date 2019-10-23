@@ -42,6 +42,10 @@ public class CloudBlobContainer {
         return new CloudBlobContainer(containerClient, containerName);
     }
 
+    public String getName() {
+        return containerName;
+    }
+
     public boolean exists() {
         return containerClient.exists();
     }
