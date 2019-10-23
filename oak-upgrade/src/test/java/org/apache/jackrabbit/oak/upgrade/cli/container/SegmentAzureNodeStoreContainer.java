@@ -17,21 +17,18 @@
 package org.apache.jackrabbit.oak.upgrade.cli.container;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.InvalidKeyException;
 
+import com.azure.storage.blob.models.StorageException;
+import com.google.common.io.Files;
 import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
 import org.apache.jackrabbit.oak.segment.azure.AzurePersistence;
 import org.apache.jackrabbit.oak.segment.azure.AzureUtilities;
 import org.apache.jackrabbit.oak.segment.azure.AzuriteDockerRule;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobContainer;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
 import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
 import org.apache.jackrabbit.oak.segment.file.InvalidFileStoreVersionException;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
-
-import com.google.common.io.Files;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
 
 public class SegmentAzureNodeStoreContainer implements NodeStoreContainer {
     private static final String AZURE_ACCOUNT_NAME = "devstoreaccount1";
@@ -66,7 +63,8 @@ public class SegmentAzureNodeStoreContainer implements NodeStoreContainer {
         try {
             this.container = azurite.getContainer("oak-test");
             this.mappedPort = azurite.getMappedPort();
-        } catch (InvalidKeyException | URISyntaxException | StorageException e) {
+//        } catch (InvalidKeyException | URISyntaxException | StorageException e) {
+        } catch (StorageException e) {
             throw new IOException(e);
         }
     }
@@ -74,11 +72,12 @@ public class SegmentAzureNodeStoreContainer implements NodeStoreContainer {
     @Override
     public NodeStore open() throws IOException {
         AzurePersistence azPersistence = null;
-        try {
-            azPersistence = new AzurePersistence(container.getDirectoryReference(dir));
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException(e);
-        }
+//        try {
+//            azPersistence = new AzurePersistence(container.getDirectoryReference(dir));
+//        } catch (URISyntaxException e) {
+//            throw new IllegalStateException(e);
+//        }
+        azPersistence = new AzurePersistence(container.getDirectoryReference(dir));
 
         FileStoreBuilder builder = FileStoreBuilder.fileStoreBuilder(Files.createTempDir())
                 .withCustomPersistence(azPersistence).withMemoryMapping(false);
@@ -105,11 +104,12 @@ public class SegmentAzureNodeStoreContainer implements NodeStoreContainer {
 
     @Override
     public void clean() throws IOException {
-        try {
-            AzureUtilities.deleteAllEntries(container.getDirectoryReference(dir));
-        } catch (URISyntaxException e) {
-            throw new IOException(e);
-        }
+//        try {
+//            AzureUtilities.deleteAllEntries(container.getDirectoryReference(dir));
+//        } catch (URISyntaxException e) {
+//            throw new IOException(e);
+//        }
+        AzureUtilities.deleteAllEntries(container.getDirectoryReference(dir));
     }
 
     @Override
