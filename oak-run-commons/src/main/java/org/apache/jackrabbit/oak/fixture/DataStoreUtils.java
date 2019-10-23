@@ -30,9 +30,8 @@ import com.amazonaws.services.s3.model.DeleteObjectsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.TransferManager;
+import com.azure.storage.blob.ContainerClient;
 import com.google.common.base.Strings;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureConstants;
@@ -153,12 +152,24 @@ public class DataStoreUtils {
             return;
         }
         log.info("deleting container [" + containerName + "]");
-        CloudBlobContainer container = org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils
-            .getBlobContainer(org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils.getConnectionString(accountName, accountKey), containerName);
-        if (container.deleteIfExists()) {
+
+//        CloudBlobContainer container = org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils
+//                .getBlobContainer(org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils.getConnectionString(accountName, accountKey), containerName);
+//        if (container.deleteIfExists()) {
+//            log.info("container [ " + containerName + "] deleted");
+//        } else {
+//            log.info("container [" + containerName + "] doesn't exists");
+//        }
+
+        Properties p = new Properties();
+        p.putAll(config);
+        ContainerClient container = org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils
+                .getBlobContainer(p, containerName);
+        if (container.exists()) {
+            container.delete();
             log.info("container [ " + containerName + "] deleted");
         } else {
-            log.info("container [" + containerName + "] doesn't exists");
+            log.info("container [" + containerName + "] doesn't exist");
         }
     }
 }
