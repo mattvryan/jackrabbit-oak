@@ -28,11 +28,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.models.StorageException;
 import com.google.common.base.StandardSystemProperty;
-import com.microsoft.azure.storage.CloudStorageAccount;
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
-import com.microsoft.azure.storage.blob.CloudBlobDirectory;
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.core.data.FileDataStore;
 import org.apache.jackrabbit.oak.Oak;
@@ -43,6 +41,8 @@ import org.apache.jackrabbit.oak.segment.SegmentNodeStoreBuilders;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundException;
 import org.apache.jackrabbit.oak.segment.SegmentNotFoundExceptionListener;
 import org.apache.jackrabbit.oak.segment.azure.AzurePersistence;
+import org.apache.jackrabbit.oak.segment.azure.AzureUtilities;
+import org.apache.jackrabbit.oak.segment.azure.compat.CloudBlobDirectory;
 import org.apache.jackrabbit.oak.segment.compaction.SegmentGCOptions;
 import org.apache.jackrabbit.oak.segment.file.FileStore;
 import org.apache.jackrabbit.oak.segment.file.FileStoreBuilder;
@@ -155,7 +155,8 @@ public class SegmentTarFixture extends OakFixture {
     private StandbyClientSync[] clientSyncs;
     private ScheduledExecutorService[] executors;
 
-    private CloudBlobContainer[] containers;
+//    private CloudBlobContainer[] containers;
+    private ContainerClient[] containers;
     
     public SegmentTarFixture(SegmentTarFixtureBuilder builder) {
         this(builder, false, -1);
@@ -194,11 +195,15 @@ public class SegmentTarFixture extends OakFixture {
                 .withSegmentCacheSize(segmentCacheSize)
                 .withMemoryMapping(memoryMapping);
 
+//        if (azureConnectionString != null) {
+//            CloudStorageAccount cloud = CloudStorageAccount.parse(azureConnectionString);
+//            CloudBlobContainer container = cloud.createCloudBlobClient().getContainerReference(azureContainerName);
+//            container.createIfNotExists();
+//            CloudBlobDirectory directory = container.getDirectoryReference(azureRootPath);
+//            fileStoreBuilder.withCustomPersistence(new AzurePersistence(directory));
+//        }
         if (azureConnectionString != null) {
-            CloudStorageAccount cloud = CloudStorageAccount.parse(azureConnectionString);
-            CloudBlobContainer container = cloud.createCloudBlobClient().getContainerReference(azureContainerName);
-            container.createIfNotExists();
-            CloudBlobDirectory directory = container.getDirectoryReference(azureRootPath);
+            CloudBlobDirectory directory = AzureUtilities.cloudBlobDirectoryFrom(azureConnectionString, azureContainerName,azureRootPath);
             fileStoreBuilder.withCustomPersistence(new AzurePersistence(directory));
         }
 
@@ -237,12 +242,21 @@ public class SegmentTarFixture extends OakFixture {
 
             FileStoreBuilder builder = fileStoreBuilder(new File(parentPath, "primary-" + i));
 
+//            if (azureConnectionString != null) {
+//                CloudStorageAccount cloud = CloudStorageAccount.parse(azureConnectionString);
+//                CloudBlobContainer container = cloud.createCloudBlobClient().getContainerReference(azureContainerName);
+//                container.createIfNotExists();
+//                containers[i] = container;
+//                CloudBlobDirectory directory = container.getDirectoryReference(azureRootPath + "/primary-" + i);
+//                builder.withCustomPersistence(new AzurePersistence(directory));
+//            }
             if (azureConnectionString != null) {
-                CloudStorageAccount cloud = CloudStorageAccount.parse(azureConnectionString);
-                CloudBlobContainer container = cloud.createCloudBlobClient().getContainerReference(azureContainerName);
-                container.createIfNotExists();
+                ContainerClient container = AzureUtilities.containerFrom(azureConnectionString, azureContainerName);
+                if (! container.exists()) {
+                    container.create();
+                }
                 containers[i] = container;
-                CloudBlobDirectory directory = container.getDirectoryReference(azureRootPath + "/primary-" + i);
+                CloudBlobDirectory directory = new CloudBlobDirectory(container, azureContainerName, "/primary-" + i);
                 builder.withCustomPersistence(new AzurePersistence(directory));
             }
 
@@ -374,7 +388,8 @@ public class SegmentTarFixture extends OakFixture {
         blobStoreFixtures = new BlobStoreFixture[blobStoresLength];
 
         if (azureConnectionString != null) {
-            containers = new CloudBlobContainer[n];
+//            containers = new CloudBlobContainer[n];
+            containers = new ContainerClient[n];
         }
     }
 
@@ -406,18 +421,31 @@ public class SegmentTarFixture extends OakFixture {
             }
         }
 
+//        if (containers != null) {
+//            for (CloudBlobContainer container : containers) {
+//                if (container != null) {
+//                    try {
+//                        container.deleteIfExists();
+//                    } catch (StorageException e) {
+//                        log.error("Can't remove container", e);
+//                    }
+//                }
+//            }
+//        }
         if (containers != null) {
-            for (CloudBlobContainer container : containers) {
+            for (ContainerClient container : containers) {
                 if (container != null) {
                     try {
-                        container.deleteIfExists();
+                        if (container.exists()) {
+                            container.delete();
+                        }
                     } catch (StorageException e) {
                         log.error("Can't remove container", e);
                     }
                 }
             }
         }
-        
+
         FileUtils.deleteQuietly(parentPath);
     }
 

@@ -157,8 +157,11 @@ public final class AzureUtilities {
         return new CloudBlobDirectory(client, container, dir);
     }
 
-    public static CloudBlobDirectory cloudBlobDirectoryFrom(String connection, String containerName,
-            String dir) throws StorageException {
+    public static CloudBlobDirectory cloudBlobDirectoryFrom(String connection, String containerName, String dir) throws StorageException {
+        return new CloudBlobDirectory(containerFrom(connection, containerName), containerName, dir);
+    }
+
+    public static ContainerClient containerFrom(String connection, String containerName) throws StorageException {
         String proto = "https";
         String accountName = null;
         String accountKey = null;
@@ -190,7 +193,10 @@ public final class AzureUtilities {
                 clientBuilder.endpoint(String.format("%s://%s", proto, blobEndpoint));
             }
             ContainerClient containerClient = clientBuilder.buildClient().getContainerClient(containerName);
-            return new CloudBlobDirectory(containerClient, containerName, dir);
+            if (!containerClient.exists()) {
+                containerClient.create();
+            }
+            return containerClient;
         }
         throw new IllegalArgumentException(String.format("Invalid connection string - could not parse '%s'", connection));
     }
