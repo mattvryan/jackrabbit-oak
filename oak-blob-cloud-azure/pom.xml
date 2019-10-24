@@ -46,8 +46,7 @@
                         </Export-Package>
                         <DynamicImport-Package>sun.io</DynamicImport-Package>
                         <Embed-Dependency>
-                            azure-storage,
-                            azure-keyvault-core
+                            azure-storage-blob
                         </Embed-Dependency>
                     </instructions>
                 </configuration>
