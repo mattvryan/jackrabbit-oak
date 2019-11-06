@@ -64,9 +64,4 @@ class AmnesiaDiffCache extends DiffCache {
     public Iterable<CacheStats> getStats() {
         return Collections.emptyList();
     }
-
-    @Override
-    public void invalidateAll() {
-        // Nothing to do
-    }
 }

@@ -28,7 +28,6 @@ import javax.security.auth.login.LoginException;
 
 import com.google.common.collect.ImmutableList;
 
-import com.google.common.collect.ImmutableSet;
 import org.jetbrains.annotations.NotNull;
 
 public class TestIdentityProvider implements ExternalIdentityProvider {
@@ -217,23 +216,15 @@ public class TestIdentityProvider implements ExternalIdentityProvider {
             return props;
         }
 
-        @NotNull
-        protected TestIdentity withProperty(@NotNull String name, @NotNull Object value) {
+        protected TestIdentity withProperty(String name, Object value) {
             props.put(name, value);
             return this;
         }
 
-        @NotNull
-        protected TestIdentity withGroups(@NotNull String ... grps) {
+        protected TestIdentity withGroups(String ... grps) {
             for (String grp: grps) {
                 groups.add(new ExternalIdentityRef(grp, id.getProviderName()));
             }
-            return this;
-        }
-
-        @NotNull
-        public TestIdentity withGroups(@NotNull ExternalIdentityRef... groups) {
-            this.groups.addAll(ImmutableSet.copyOf(groups));
             return this;
         }
     }

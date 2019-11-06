@@ -25,18 +25,15 @@ import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.io.CountingInputStream;
-import org.jetbrains.annotations.NotNull;
 
 
 public final class StatsCollectingStreams {
 
-    public static InputStream wrap(@NotNull final BlobStatsCollector collector, final String blobId, InputStream in) {
-        return StatsCollectingStreams.wrap(collector, blobId, in, System.nanoTime());
-    }
-
-    public static InputStream wrap(@NotNull final BlobStatsCollector collector, final String blobId, InputStream in, long startTime) {
+    public static InputStream wrap(final BlobStatsCollector collector, final String blobId, InputStream in) {
         final CountingInputStream cin = new CountingInputStream(in);
         return new FilterInputStream(cin) {
+            final long startTime = System.nanoTime();
+
             @Override
             public void close() throws IOException {
                 super.close();

@@ -42,6 +42,8 @@ Currently these Blob/DataStores are supported:
 * [S3DataStore](../osgi_config.html#Jackrabbit_2_-_S3DataStore)
 * AzureDataStore
 
+Important note:  AzureDataStore allows two forms of authentication - via an account key, and via a shared access signature.  However, it is not possible to generate a valid signed URI when authenticating using a shared access signature.  Therefore if you wish to use the direct binary access feature you must configure your AzureDataStore authentication to use an account key.  The feature is disabled for clients that authenticate using a shared access signature.
+
 ## Configuration
 
 The feature has to be explicitly enabled by setting properties on the DataStore. In the table, "S3" refers to `S3DataStore`, "Azure" to `AzureDataStore`.
@@ -58,9 +60,9 @@ The feature has to be explicitly enabled by setting properties on the DataStore.
 
 The APIs for this feature are available in [jackrabbit-api](https://jackrabbit.apache.org/jcr/jcr-api.html):
 
-* [JackrabbitValueFactory](http://jackrabbit.apache.org/oak/docs/apidocs/org/apache/jackrabbit/api/JackrabbitValueFactory.html) for uploading - cast `session.getValueFactory()` to this and use `initiateBinaryUpload()` and `completeBinaryUpload()`
-* [BinaryDownload](http://jackrabbit.apache.org/oak/docs/apidocs/org/apache/jackrabbit/api/binary/BinaryDownload.html) for downloading - cast a `Binary` to this and call `getURI()`
-* other elements are in the [org.apache.jackrabbit.api.binary package](http://jackrabbit.apache.org/oak/docs/apidocs/org/apache/jackrabbit/api/binary/package-summary.html)
+* [JackrabbitValueFactory](http://jackrabbit.apache.org/api/trunk/org/apache/jackrabbit/api/JackrabbitValueFactory.html) for uploading - cast `session.getValueFactory()` to this and use `initiateBinaryUpload()` and `completeBinaryUpload()`
+* [BinaryDownload](http://jackrabbit.apache.org/api/trunk/org/apache/jackrabbit/api/binary/BinaryDownload.html) for downloading - cast a `Binary` to this and call `getURI()`
+* other elements are in the [org.apache.jackrabbit.api.binary package](http://jackrabbit.apache.org/api/trunk/org/apache/jackrabbit/api/binary/package-summary.html)
 
 ## Usage
 
@@ -107,10 +109,11 @@ if (binary instanceof BinaryDownload) {
 
 Please note that only `Binary` objects returned from `Property.getBinary()`, `Property.getValue().getBinary()` or `Property.getValues() ... getBinary()` will support a functional `BinaryDownload`.
 
-Also note that clients should always check whether the URI returned from the `getURI()` call is null.  A null return value generally indicates that the feature is not available.  But this situation is also possible in two other cases:
+Also note that clients should always check whether the URI returned from the `getURI()` call is null.  A null return value generally indicates that the feature is not available.  But this situation is also possible in three other cases:
 
 * If the binary is stored in-line in the node store.  If the binary is smaller than the minimum upload size, it will be stored in the node store instead of in cloud blob storage, and thus a direct download URI cannot be provided.
 * If the data store implementation is using asynchronous uploads and the binary is still in cache.  If a client adds a binary via the repository (i.e. not using the direct binary upload feature) and then immediately requests a download URI for it, it is possible that the binary is still in cache and not yet uploaded to cloud storage, and thus a direct download URI cannot be provided.
+* If the data store is configured to authenticate using a shared access signature (AzureDataStore only), as it is not possible to generate a signed download URI when authenticating this way.
 
 ### Upload
 
@@ -184,11 +187,11 @@ public class InitiateUploadServlet extends HttpServlet {
 }
 ```
 
-Clients should always check whether the `BinaryUpload` returned from `valueFactory.initiateBinaryUpload()` is null.  This situation indicates that the feature is not supported.
+Clients should always check whether the `BinaryUpload` returned from `valueFactory.initiateBinaryUpload()` is null, and also should handle the case where no upload URIs are returned.  Either situation indicates that the feature is not supported.
 
 #### 2. Upload
 
-The remote client will upload using the instructions according to the [upload algorithm described in BinaryUpload](http://jackrabbit.apache.org/oak/docs/apidocs/org/apache/jackrabbit/api/binary/BinaryUpload.html).
+The remote client will upload using the instructions according to the [upload algorithm described in BinaryUpload](http://jackrabbit.apache.org/api/trunk/org/apache/jackrabbit/api/binary/BinaryUpload.html).
 
 #### 3. Complete
 
@@ -233,34 +236,3 @@ public class CompleteUploadServlet extends HttpServlet {
     }
 }
 ```
-
-# CDN Support
-
-`@since Oak 1.18 (AzureDataStore)`
-
-Oak can be configured to make use of CDNs if desired.  Configuring a CDN for use with Oak can provide clients with accelerated blob access times as blobs are accessed via more local caches instead of from the origin blob store.
-
-## Preconditions
-
-The following conditions must be true to leverage a CDN:
-
-* You must be using `AzureDataStore`.  (`S3DataStore` will be supported at a future date but is not currently supported.)
-* You must have Direct Binary Access enabled - CDNs only offer a benefit with direct access URIs.
-* You must have a CDN configured that uses your cloud blob storage container as the origin.
-
-## Configuration
-
-Add one or both of the following configuration options to the data store configuration file:
-
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `presignedHttpDownloadURIDomainOverride`   | String  | null     | When this property is set, the domain provided will be used for direct download URIs instead of the default direct download domain. |
-| `presignedHttpUploadURIDomainOverride` | String  | null     | When this property is set, the domain provided will be used for direct upload URIs instead of the default direct upload domain. |
-
-When set, the property value should be a valid fully-qualified domain name, e.g. "mycdndomain.azureedge.net".
-
-## Uses
-
-CDNs may be used for direct upload as well as direct download, if the CDN in question supports such behavior.  CDNs that support this behavior include AWS CloudFront, all Azure CDN offerings, and some other third-party CDNs do as well; however, these capabilities are the responsibility of the service providers, not Oak.  Check with your CDN provider for authoritative information on suitability; comprehensive testing is recommended.
-
-Note that you are not required to configure both domains, nor is it required that both domains be the same.  For example, if one CDN offers the best download performance and another CDN offers the best upload performance, you may choose to implement both and set each configuration parameter to a different domain.  Likewise, you are not required to set them both.  If you only wish to use CDNs for download but not upload, simply configure the download parameter with the CDN domain and don't configure an upload domain.

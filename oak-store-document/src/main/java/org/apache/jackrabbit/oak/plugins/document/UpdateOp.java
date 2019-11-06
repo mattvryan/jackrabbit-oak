@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 
 import com.google.common.collect.Maps;
 
@@ -451,21 +450,6 @@ public final class UpdateOp {
         @Override
         public String toString() {
             return type + " " + value;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj instanceof Operation) {
-                Operation other = (Operation) obj;
-                return this.type.equals(other.type)
-                        && Objects.equals(this.value, other.value);
-            }
-            return false;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(type, value);
         }
 
         public Operation getReverse() {

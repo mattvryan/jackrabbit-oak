@@ -160,6 +160,12 @@ public class PrinicipalBasedReadTest extends ReadDeepTreeTest {
     }
 
     @NotNull
+    static String getRandom(@NotNull List<String> paths) {
+        int index = (int) Math.floor(paths.size() * Math.random());
+        return paths.get(index);
+    }
+
+    @NotNull
     private static Privilege[] getRandomPrivileges(@NotNull List<Privilege> allPrivileges) {
         Collections.shuffle(allPrivileges);
         return allPrivileges.subList(0, 3).toArray(new Privilege[0]);

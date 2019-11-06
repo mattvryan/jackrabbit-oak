@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.oak.plugins.document.util;
 
-import java.io.IOException;
 import java.util.concurrent.ConcurrentMap;
 
 import org.apache.jackrabbit.oak.plugins.document.Path;
@@ -28,15 +27,16 @@ import static org.junit.Assert.assertEquals;
 public class MapDBMapFactoryTest {
 
     @Test
-    public void mapDB() throws IOException {
-        try (MapDBMapFactory dbf = new MapDBMapFactory()) {
-            ConcurrentMap<Path, Revision> map = dbf.create();
-            for (int i = 0; i < 10000; i++) {
-                map.put(Path.fromString("/some/test/path/node-" + i), new Revision(i, 0, 1));
-            }
-            for (int i = 0; i < 10000; i++) {
-                assertEquals(new Revision(i, 0, 1), map.get(Path.fromString("/some/test/path/node-" + i)));
-            }
+    public void mapDB() {
+        ConcurrentMap<Path, Revision> map = new MapDBMapFactory().create();
+        for (int i = 0; i < 10000; i++) {
+            map.put(Path.fromString("/some/test/path/node-" + i), new Revision(i, 0, 1));
+        }
+        for (int i = 0; i < 10000; i++) {
+            assertEquals(
+                    new Revision(i, 0, 1),
+                    map.get(Path.fromString("/some/test/path/node-" + i))
+            );
         }
     }
 }

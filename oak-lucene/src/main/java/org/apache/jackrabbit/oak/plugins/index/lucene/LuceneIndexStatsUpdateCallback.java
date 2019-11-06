@@ -18,8 +18,8 @@
  */
 package org.apache.jackrabbit.oak.plugins.index.lucene;
 
+import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
-import org.apache.jackrabbit.oak.plugins.index.IndexingContext;
 import org.apache.jackrabbit.oak.plugins.index.search.PropertyDefinition;
 import org.apache.jackrabbit.oak.plugins.index.search.PropertyUpdateCallback;
 import org.apache.jackrabbit.oak.stats.HistogramStats;
@@ -45,18 +45,12 @@ public class LuceneIndexStatsUpdateCallback implements PropertyUpdateCallback {
     private final String indexPath;
     private final LuceneIndexMBean luceneIndexMBean;
     private final StatisticsProvider statisticsProvider;
-    private final AsyncIndexesSizeStatsUpdate asyncIndexesSizeStatsUpdate;
-    private final IndexingContext indexingContext;
 
     LuceneIndexStatsUpdateCallback(String indexPath, @NotNull LuceneIndexMBean luceneIndexMBean,
-                                   @NotNull StatisticsProvider statisticsProvider,
-                                   AsyncIndexesSizeStatsUpdate asyncIndexesSizeStatsUpdate,
-                                   IndexingContext indexingContext) {
+                                   @NotNull StatisticsProvider statisticsProvider) {
         this.indexPath = indexPath;
         this.luceneIndexMBean = luceneIndexMBean;
         this.statisticsProvider = statisticsProvider;
-        this.asyncIndexesSizeStatsUpdate = asyncIndexesSizeStatsUpdate;
-        this.indexingContext = indexingContext;
     }
 
     @Override
@@ -65,40 +59,19 @@ public class LuceneIndexStatsUpdateCallback implements PropertyUpdateCallback {
     }
 
     @Override
-    public void done() {
-        if (shouldUpdateStats()) {
-            try {
-                long startTime = System.currentTimeMillis();
-                int docCount = Integer.parseInt(luceneIndexMBean.getDocCount(indexPath));
-                HistogramStats docCountHistogram = statisticsProvider.getHistogram(indexPath + NO_DOCS, StatsOptions.METRICS_ONLY);
-                docCountHistogram.update(docCount);
-                log.trace("{} stats updated, docCount {}, timeToUpdate {}", indexPath, docCount, System.currentTimeMillis() - startTime);
-                long indexSize = Long.parseLong(luceneIndexMBean.getSize(indexPath));
-                HistogramStats indexSizeHistogram = statisticsProvider.getHistogram(indexPath + INDEX_SIZE, StatsOptions.METRICS_ONLY);
-                indexSizeHistogram.update(indexSize);
-                long endTime = System.currentTimeMillis();
-                asyncIndexesSizeStatsUpdate.setLastStatsUpdateTime(indexPath, endTime);
-                log.debug("{} stats updated; docCount {}, size {}, timeToUpdate {}", indexPath, docCount, indexSize, endTime - startTime);
-            } catch (IOException e) {
-                log.warn("could not update no_docs/index_size stats for index at {}", indexPath, e);
-            }
-        }
-    }
+    public void done() throws CommitFailedException {
+        try {
+            int docCount = Integer.parseInt(luceneIndexMBean.getDocCount(indexPath));
+            HistogramStats docCountHistogram = statisticsProvider.getHistogram(indexPath + NO_DOCS, StatsOptions.METRICS_ONLY);
+            docCountHistogram.update(docCount);
 
-    private boolean shouldUpdateStats() {
-        boolean timeToUpdate = false;
-        if (indexingContext.isAsync()
-                && asyncIndexesSizeStatsUpdate != null
-                && asyncIndexesSizeStatsUpdate.getScheduleTimeInMillis() >= 0
-                && isScheduled()) {
-            timeToUpdate = true;
-        }
-        return timeToUpdate;
-    }
+            long indexSize = Long.parseLong(luceneIndexMBean.getSize(indexPath));
+            HistogramStats indexSizeHistogram = statisticsProvider.getHistogram(indexPath + INDEX_SIZE, StatsOptions.METRICS_ONLY);
+            indexSizeHistogram.update(indexSize);
 
-    private boolean isScheduled() {
-        long lastStatsUpdateTime = asyncIndexesSizeStatsUpdate.getLastStatsUpdateTime(indexPath);
-        long defaultStatsUpdateTime = asyncIndexesSizeStatsUpdate.getScheduleTimeInMillis();
-        return System.currentTimeMillis() > lastStatsUpdateTime + defaultStatsUpdateTime;
+            log.debug("{} stats updated; docCount {}, size {}", indexPath, docCount, indexSize);
+        } catch (IOException e) {
+            log.debug("could not update no_docs/index_size stats for index at {}", indexPath, e);
+        }
     }
 }

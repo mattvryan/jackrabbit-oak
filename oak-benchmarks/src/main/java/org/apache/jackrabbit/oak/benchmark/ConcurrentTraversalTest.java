@@ -51,9 +51,12 @@ public class ConcurrentTraversalTest extends ManyUserReadTest {
             int nodeCnt = 0;
             int propertyCnt = 0;
             int noAccess = 0;
+            int size = allPaths.size();
             long start = System.currentTimeMillis();
             for (int i = 0; i < cnt; i++) {
-                String path = getRandom(allPaths);
+                double rand = size * Math.random();
+                int index = (int) Math.floor(rand);
+                String path = allPaths.get(index);
                 if (testSession.itemExists(path)) {
                     Item item = testSession.getItem(path);
                     Visitor visitor = new Visitor();

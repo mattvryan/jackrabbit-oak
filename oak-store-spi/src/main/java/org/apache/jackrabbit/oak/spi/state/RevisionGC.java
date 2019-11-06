@@ -27,10 +27,11 @@ import static org.apache.jackrabbit.oak.commons.jmx.ManagementOperation.newManag
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
-import java.util.function.Supplier;
 
 import javax.management.openmbean.CompositeData;
 
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
 import org.apache.jackrabbit.oak.commons.jmx.ManagementOperation;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -86,7 +87,7 @@ public class RevisionGC implements RevisionGCMBean {
             @NotNull Runnable runGC,
             @NotNull Runnable cancelGC,
             @NotNull Executor executor) {
-        this(runGC, cancelGC, () -> "", executor);
+        this(runGC, cancelGC, Suppliers.ofInstance(""), executor);
     }
 
     @NotNull

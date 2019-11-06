@@ -19,6 +19,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.partition;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Lists.reverse;
@@ -536,11 +537,7 @@ public final class DocumentNodeStore
             s = new TimingDocumentStoreWrapper(s);
         }
         if (builder.getLogging()) {
-            if (builder.getLoggingPrefix() != null) {
-                s = new LoggingDocumentStoreWrapper(s, builder.getLoggingPrefix());
-            } else {
-                s = new LoggingDocumentStoreWrapper(s);
-            }
+            s = new LoggingDocumentStoreWrapper(s);
         }
         if (builder.getReadOnlyMode()) {
             s = ReadOnlyDocumentStoreWrapperFactory.getInstance(s);
@@ -561,7 +558,7 @@ public final class DocumentNodeStore
         } else {
             clusterNodeInfo = ClusterNodeInfo.getInstance(nonLeaseCheckingStore,
                     new RecoveryHandlerImpl(nonLeaseCheckingStore, clock, lastRevSeeker),
-                    null, null, cid, builder.isClusterInvisible());
+                    null, null, cid);
             checkRevisionAge(nonLeaseCheckingStore, clusterNodeInfo, clock);
         }
         this.clusterId = clusterNodeInfo.getId();
@@ -2243,7 +2240,19 @@ public final class DocumentNodeStore
      */
     @NotNull
     private RevisionVector getMinExternalRevisions() {
-        return Utils.getStartRevisions(clusterNodes.values()).remove(getClusterId());
+        return new RevisionVector(transform(filter(clusterNodes.values(),
+                new Predicate<ClusterNodeInfoDocument>() {
+                    @Override
+                    public boolean apply(ClusterNodeInfoDocument input) {
+                        return input.getClusterId() != getClusterId();
+                    }
+                }),
+                new Function<ClusterNodeInfoDocument, Revision>() {
+            @Override
+            public Revision apply(ClusterNodeInfoDocument input) {
+                return new Revision(input.getStartTime(), 0, input.getClusterId());
+            }
+        }));
     }
 
     /**
@@ -2502,7 +2511,6 @@ public final class DocumentNodeStore
             // unless we are in read-only mode
             return 0;
         }
-
         // are there in-doubt commit revisions that are older than
         // the current head revision?
         SortedSet<Revision> garbage = Sets.newTreeSet(StableRevisionComparator.INSTANCE);
@@ -2515,8 +2523,7 @@ public final class DocumentNodeStore
         // revision for the local clusterId. A sweep is needed even
         // without garbage when an upgrade happened and no sweep revision
         // exists for the local clusterId
-        Revision sweepRev = sweepRevisions.getRevision(clusterId);
-        if (garbage.isEmpty() && sweepRev != null) {
+        if (garbage.isEmpty() && sweepRevisions.getRevision(clusterId) != null) {
             updateSweepRevision(head);
             return 0;
         }
@@ -2526,26 +2533,15 @@ public final class DocumentNodeStore
             startRev = garbage.first();
         }
 
-        String reason = "";
-        if (!garbage.isEmpty()) {
-            reason = garbage.size() + " garbage revision(s)";
-        }
-        if (sweepRev == null) {
-            if (! reason.isEmpty()) {
-                reason += ", ";
-            }
-            reason += "no sweepRevision for " + clusterId;
-        }
-
-        int num = forceBackgroundSweep(startRev, reason);
+        int num = forceBackgroundSweep(startRev);
         inDoubtTrunkCommits.removeAll(garbage);
         return num;
     }
 
-    private int forceBackgroundSweep(Revision startRev, String reason) throws DocumentStoreException {
+    private int forceBackgroundSweep(Revision startRev) throws DocumentStoreException {
         NodeDocumentSweeper sweeper = new NodeDocumentSweeper(this, false);
-        LOG.info("Starting document sweep. Head: {}, starting at {} (reason: {})",
-                sweeper.getHeadRevision(), startRev, reason);
+        LOG.debug("Starting document sweep. Head: {}, starting at {}",
+                sweeper.getHeadRevision(), startRev);
         Iterable<NodeDocument> docs = lastRevSeeker.getCandidates(startRev.getTimestamp());
         try {
             final AtomicInteger numUpdates = new AtomicInteger();
@@ -2759,7 +2755,7 @@ public final class DocumentNodeStore
                 "base must not be a branch revision: " + base);
 
         // build commit before revision is created by the commit queue (OAK-7869)
-        CommitBuilder commitBuilder = newCommitBuilder(base, null);
+        CommitBuilder commitBuilder = new CommitBuilder(this, base);
         changes.with(commitBuilder);
 
         boolean success = false;
@@ -2787,7 +2783,7 @@ public final class DocumentNodeStore
 
         checkOpen();
         Revision commitRevision = newRevision();
-        CommitBuilder commitBuilder = newCommitBuilder(base, commitRevision);
+        CommitBuilder commitBuilder = new CommitBuilder(this, commitRevision, base);
         changes.with(commitBuilder);
         if (isDisableBranches()) {
             // Regular branch commits do not need to acquire the background
@@ -2812,19 +2808,6 @@ public final class DocumentNodeStore
             }
         }
         return commitBuilder.build();
-    }
-
-    @NotNull
-    private CommitBuilder newCommitBuilder(@NotNull RevisionVector base,
-                                           @Nullable Revision commitRevision) {
-        CommitBuilder cb;
-        if (commitRevision != null) {
-            cb = new CommitBuilder(this, commitRevision, base);
-        } else {
-            cb = new CommitBuilder(this, base);
-        }
-        RevisionVector startRevs = Utils.getStartRevisions(clusterNodes.values());
-        return cb.withStartRevisions(startRevs);
     }
 
     /**

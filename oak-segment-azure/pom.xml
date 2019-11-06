@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.jackrabbit</groupId>
         <artifactId>oak-parent</artifactId>
-        <version>1.20-SNAPSHOT</version>
+        <version>1.18-SNAPSHOT</version>
         <relativePath>../oak-parent/pom.xml</relativePath>
     </parent>
 
@@ -45,14 +45,7 @@
                             !org.apache.jackrabbit.oak.segment*,
                             *
                         </Import-Package>
-                        <Export-Package>
-                            org.apache.jackrabbit.oak.segment.azure,
-                            org.apache.jackrabbit.oak.segment.azure.queue,
-                            org.apache.jackrabbit.oak.segment.azure.util,
-                            com.microsoft.azure.storage,
-                            com.microsoft.azure.storage.core,
-                            com.microsoft.azure.storage.blob
-                        </Export-Package>
+                        <Export-Package />
                         <Embed-Dependency>
                             azure-storage,
                             azure-keyvault-core
@@ -119,12 +112,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Nullability annotations -->
-        <dependency>
-            <groupId>org.jetbrains</groupId>
-            <artifactId>annotations</artifactId>
-        </dependency>
-
         <!-- Dependencies to other Oak components -->
         <dependency>
             <groupId>org.apache.jackrabbit</groupId>
@@ -143,10 +130,12 @@
         <dependency>
             <groupId>com.microsoft.azure</groupId>
             <artifactId>azure-storage</artifactId>
+            <version>5.0.0</version>
         </dependency>
         <dependency>
             <groupId>com.microsoft.azure</groupId>
             <artifactId>azure-keyvault-core</artifactId>
+            <version>0.9.7</version>
         </dependency>
 
         <!-- Test dependencies -->

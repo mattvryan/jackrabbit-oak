@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.index.counter;
 
+import com.google.common.base.Predicate;
 import org.apache.jackrabbit.oak.InitialContent;
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
@@ -44,8 +45,6 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
-
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -162,7 +161,7 @@ public class MountsNodeCounterTest {
     private void runAsyncIndex() {
         Runnable async = WhiteboardUtils.getService(wb, Runnable.class, new Predicate<Runnable>() {
             @Override
-            public boolean test(@Nullable Runnable input) {
+            public boolean apply(@Nullable Runnable input) {
                 return input instanceof AsyncIndexUpdate;
             }
         });

@@ -30,7 +30,6 @@ import org.apache.jackrabbit.oak.spi.commit.DefaultValidator;
 import org.apache.jackrabbit.oak.spi.commit.Validator;
 import org.apache.jackrabbit.oak.spi.lifecycle.RepositoryInitializer;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
-import org.apache.jackrabbit.oak.spi.state.NodeStateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -173,9 +172,7 @@ class NameValidator extends DefaultValidator {
     @Override
     public Validator childNodeAdded(String name, NodeState after)
             throws CommitFailedException {
-        if (!NodeStateUtils.isHidden(name)) {
-            checkValidName(name);
-        }
+        checkValidName(name);
         return this;
     }
 

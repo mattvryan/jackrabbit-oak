@@ -27,7 +27,6 @@ import org.apache.jackrabbit.oak.plugins.index.elasticsearch.ElasticsearchIndexD
 import org.apache.jackrabbit.oak.plugins.index.search.FieldNames;
 import org.apache.jackrabbit.oak.plugins.index.search.IndexDefinition;
 import org.apache.jackrabbit.oak.plugins.index.search.PropertyDefinition;
-import org.apache.jackrabbit.oak.plugins.index.search.util.LMSEstimator;
 import org.apache.jackrabbit.oak.plugins.index.search.spi.query.FulltextIndex;
 import org.apache.jackrabbit.oak.plugins.index.search.spi.query.FulltextIndexPlanner.PlanResult;
 import org.apache.jackrabbit.oak.spi.query.Filter;
@@ -97,22 +96,20 @@ public class ElasticsearchResultRowIterator extends AbstractIterator<FulltextInd
     private final IndexPlan plan;
     private final ElasticsearchIndexNode indexNode;
     private final RowInclusionPredicate rowInclusionPredicate;
-    private final LMSEstimator estimator;
 
     ElasticsearchResultRowIterator(@NotNull ElasticsearchIndexCoordinateFactory esIndexCoordFactory,
                                    @NotNull Filter filter,
                                    @NotNull PlanResult pr,
                                    @NotNull IndexPlan plan,
                                    ElasticsearchIndexNode indexNode,
-                                   RowInclusionPredicate rowInclusionPredicate,
-                                   LMSEstimator estimator) {
+                                   RowInclusionPredicate rowInclusionPredicate
+    ) {
         this.esIndexCoordFactory = esIndexCoordFactory;
         this.filter = filter;
         this.pr = pr;
         this.plan = plan;
         this.indexNode = indexNode;
         this.rowInclusionPredicate = rowInclusionPredicate != null ? rowInclusionPredicate : RowInclusionPredicate.NOOP;
-        this.estimator = estimator;
     }
 
     @Override
@@ -150,8 +147,6 @@ public class ElasticsearchResultRowIterator extends AbstractIterator<FulltextInd
 
                 SearchHit[] searchHits = docs.getHits().getHits();
                 PERF_LOGGER.end(start, -1, "{} ...", searchHits.length);
-
-                estimator.update(filter, docs.getHits().getTotalHits().value);
 
                 if (searchHits.length < nextBatchSize) {
                     noDocs = true;
@@ -486,7 +481,7 @@ public class ElasticsearchResultRowIterator extends AbstractIterator<FulltextInd
             addNodeTypeConstraints(planResult.indexingRule, qs, filter);
         }
 
-        String path = FulltextIndex.getPathRestriction(plan);
+        String path = getPathRestriction(plan);
         switch (filter.getPathRestriction()) {
             case ALL_CHILDREN:
                 if (defn.evaluatePathRestrictions()) {
@@ -607,6 +602,17 @@ public class ElasticsearchResultRowIterator extends AbstractIterator<FulltextInd
         }
     }
 
+    // TODO: utilize FulltextIndex#getPathRestriction instead of copying it here
+    private static String getPathRestriction(IndexPlan plan) {
+        Filter f = plan.getFilter();
+        String pathPrefix = plan.getPathPrefix();
+        if (pathPrefix.isEmpty()) {
+            return f.getPath();
+        }
+        String relativePath = PathUtils.relativize(pathPrefix, f.getPath());
+        return "/" + relativePath;
+    }
+
     private static QueryBuilder createNodeNameQuery(Filter.PropertyRestriction pr) {
         String first = pr.first != null ? pr.first.getValue(STRING) : null;
         if (pr.first != null && pr.first.equals(pr.last) && pr.firstIncluding
@@ -658,7 +664,7 @@ public class ElasticsearchResultRowIterator extends AbstractIterator<FulltextInd
     @Nullable
     private static QueryBuilder createQuery(String propertyName, Filter.PropertyRestriction pr,
                                      PropertyDefinition defn) {
-        int propType = FulltextIndex.determinePropertyType(defn, pr);
+        int propType = determinePropertyType(defn, pr);
 
         if (pr.isNullRestriction()) {
             return newNullPropQuery(defn.name);

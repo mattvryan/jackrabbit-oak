@@ -41,8 +41,6 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
 
     private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("ds.debug", "true"));
 
-    private String logPrefix = "ds";
-
     final DocumentStore store;
     private boolean logThread;
 
@@ -50,18 +48,8 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
         this.store = store;
     }
 
-    public LoggingDocumentStoreWrapper(DocumentStore store, String prefix) {
-        this.store = store;
-        this.logPrefix = prefix;
-    }
-
     public LoggingDocumentStoreWrapper withThreadNameLogging() {
         this.logThread = true;
-        return this;
-    }
-
-    public LoggingDocumentStoreWrapper withPrefix(String prefix) {
-        this.logPrefix = prefix;
         return this;
     }
 
@@ -216,6 +204,7 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
         }
     }
 
+    @NotNull
     @Override
     public <T extends Document> T createOrUpdate(final Collection<T> collection,
                                                  final UpdateOp update) {
@@ -377,7 +366,7 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
     }
 
     private void logMethod(String methodName, Object... args) {
-        StringBuilder buff = new StringBuilder(logPrefix);
+        StringBuilder buff = new StringBuilder("ds");
         buff.append('.').append(methodName).append('(');
         for (int i = 0; i < args.length; i++) {
             if (i > 0) {

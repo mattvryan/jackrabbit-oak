@@ -86,18 +86,17 @@ public class AzureSegmentArchiveWriter implements SegmentArchiveWriter {
     private void doWriteEntry(AzureSegmentArchiveEntry indexEntry, byte[] data, int offset, int size) throws IOException {
         long msb = indexEntry.getMsb();
         long lsb = indexEntry.getLsb();
-        String segmentName = getSegmentFileName(indexEntry);
-        CloudBlockBlob blob = getBlob(segmentName);
-        ioMonitor.beforeSegmentWrite(new File(blob.getName()), msb, lsb, size);
+        ioMonitor.beforeSegmentWrite(pathAsFile(), msb, lsb, size);
         Stopwatch stopwatch = Stopwatch.createStarted();
         try {
+            CloudBlockBlob blob = getBlob(getSegmentFileName(indexEntry));
             blob.setMetadata(AzureBlobMetadata.toSegmentMetadata(indexEntry));
             blob.uploadFromByteArray(data, offset, size);
             blob.uploadMetadata();
         } catch (StorageException e) {
             throw new IOException(e);
         }
-        ioMonitor.afterSegmentWrite(new File(blob.getName()), msb, lsb, size, stopwatch.elapsed(TimeUnit.NANOSECONDS));
+        ioMonitor.afterSegmentWrite(pathAsFile(), msb, lsb, size, stopwatch.elapsed(TimeUnit.NANOSECONDS));
     }
 
     @Override
@@ -195,6 +194,10 @@ public class AzureSegmentArchiveWriter implements SegmentArchiveWriter {
     @Override
     public String getName() {
         return AzureUtilities.getName(archiveDirectory);
+    }
+
+    private File pathAsFile() {
+        return new File(archiveDirectory.getUri().getPath());
     }
 
     private CloudBlockBlob getBlob(String name) throws IOException {

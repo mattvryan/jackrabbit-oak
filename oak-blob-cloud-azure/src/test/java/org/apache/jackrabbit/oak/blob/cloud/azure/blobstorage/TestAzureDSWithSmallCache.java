@@ -16,9 +16,14 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import java.util.Properties;
+
 import org.apache.jackrabbit.core.data.CachingDataStore;
 import org.apache.jackrabbit.core.data.LocalCache;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,9 +36,14 @@ import org.slf4j.LoggerFactory;
  * src/test/resources/azure.properties
 
  */
+@RunWith(Parameterized.class)
 public class TestAzureDSWithSmallCache extends TestAzureDS {
 
     protected static final Logger LOG = LoggerFactory.getLogger(TestAzureDSWithSmallCache.class);
+
+    public TestAzureDSWithSmallCache(@NotNull final Properties fixture) {
+        super(fixture);
+    }
 
     @Override
     @Before

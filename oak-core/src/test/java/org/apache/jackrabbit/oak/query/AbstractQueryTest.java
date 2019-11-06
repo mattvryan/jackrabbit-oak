@@ -261,13 +261,12 @@ public abstract class AbstractQueryTest {
         List<String> lines = new ArrayList<String>();
         try {
             Result result = executeQuery(query, language, NO_BINDINGS);
-            if (query.startsWith("explain ")) {
-                lines.add(formatPlan(readPlan(result.getRows().iterator().next())));
-            } else {
-                for (ResultRow row : result.getRows()) {
-                    String r = readRow(row, pathsOnly);
-                    lines.add(r);
+            for (ResultRow row : result.getRows()) {
+                String r = readRow(row, pathsOnly);
+                if (query.startsWith("explain ")) {
+                    r = formatPlan(r);
                 }
+                lines.add(r);
             }
             if (!query.contains("order by") && !skipSort) {
                 Collections.sort(lines);
@@ -363,10 +362,6 @@ public abstract class AbstractQueryTest {
             }
         }
         return buff.toString();
-    }
-
-    protected static String readPlan(ResultRow row) {
-        return row.getValue("plan").getValue(Type.STRING);
     }
 
     /**

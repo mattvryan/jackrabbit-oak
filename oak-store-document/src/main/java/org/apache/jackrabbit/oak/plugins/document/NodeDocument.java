@@ -885,15 +885,19 @@ public final class NodeDocument extends Document {
         if (validRevisions.containsKey(rev)) {
             return true;
         }
-        // get the commit value if it is not yet available
-        if (commitValue == null) {
-            commitValue = context.getCommitValue(rev, this);
+        if (Utils.isCommitted(commitValue) && !readRevision.isBranch()) {
+            // no need to load commit root document, we can simply
+            // tell by looking at the commit revision whether the
+            // revision is valid/visible
+            Revision commitRev = Utils.resolveCommitRevision(rev, commitValue);
+            return !readRevision.isRevisionNewer(commitRev);
         }
-        if (commitValue == null) {
-            // this change is not committed, hence not valid/visible
+
+        NodeDocument doc = getCommitRoot(rev);
+        if (doc == null) {
             return false;
         }
-        if (isVisible(context, rev, commitValue, readRevision)) {
+        if (doc.isVisible(context, rev, commitValue, readRevision)) {
             validRevisions.put(rev, commitValue);
             return true;
         }
@@ -1866,13 +1870,6 @@ public final class NodeDocument extends Document {
                 revision.toString());
     }
 
-    public static void hasLastRev(@NotNull UpdateOp op,
-                                  @NotNull Revision revision) {
-        checkNotNull(op).equals(LAST_REV,
-                new Revision(0, 0, revision.getClusterId()),
-                revision.toString());
-    }
-
     //----------------------------< internal >----------------------------------
 
     private void previousDocumentNotFound(String prevId, Revision rev) {
@@ -2063,15 +2060,22 @@ public final class NodeDocument extends Document {
      * to check.
      *
      * @param revision  the revision to check.
-     * @param commitValue the commit value of the revision to check.
+     * @param commitValue the commit value of the revision to check or
+     *                    <code>null</code> if unknown.
      * @param readRevision the read revision.
      * @return <code>true</code> if the revision is visible, otherwise
      *         <code>false</code>.
      */
     private boolean isVisible(@NotNull RevisionContext context,
                               @NotNull Revision revision,
-                              @NotNull String commitValue,
+                              @Nullable String commitValue,
                               @NotNull RevisionVector readRevision) {
+        if (commitValue == null) {
+            commitValue = context.getCommitValue(revision, this);
+        }
+        if (commitValue == null) {
+            return false;
+        }
         if (Utils.isCommitted(commitValue)) {
             Branch b = context.getBranches().getBranch(readRevision);
             if (b == null) {

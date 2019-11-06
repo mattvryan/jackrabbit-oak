@@ -345,13 +345,12 @@ public class ConsistencyChecker {
         boolean head,
         Set<String> checkpoints,
         Set<String> paths,
-        boolean binaries,
-        Integer revisionsCount
+        boolean binaries
     ) {
         List<PathToCheck> headPaths = new ArrayList<>();
         Map<String, List<PathToCheck>> checkpointPaths = new HashMap<>();
 
-        int checkedRevisionsCount = 0;
+        int revisionCount = 0;
 
         for (String path : paths) {
             if (head) {
@@ -374,7 +373,7 @@ public class ConsistencyChecker {
             String revision = journalEntry.getRevision();
 
             try {
-                checkedRevisionsCount++;
+                revisionCount++;
                 store.setRevision(revision);
                 onCheckRevision(revision);
 
@@ -399,12 +398,6 @@ public class ConsistencyChecker {
                 if (allPathsConsistent(headPaths, checkpointPaths)) {
                     break;
                 }
-
-                // limit the number of revisions to be checked
-
-                if (checkedRevisionsCount == revisionsCount) {
-                    break;
-                }
             } catch (IllegalArgumentException | SegmentNotFoundException e) {
                 onCheckRevisionError(revision, e);
             }
@@ -412,7 +405,7 @@ public class ConsistencyChecker {
 
         ConsistencyCheckResult result = new ConsistencyCheckResult();
 
-        result.checkedRevisionsCount = checkedRevisionsCount;
+        result.checkedRevisionsCount = revisionCount;
         result.overallRevision = newRevisionOrNull(lastValidJournalEntry);
 
         for (PathToCheck path : headPaths) {

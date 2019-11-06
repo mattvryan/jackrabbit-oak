@@ -31,8 +31,9 @@ import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.google.common.base.Strings;
+import com.microsoft.azure.storage.CloudStorageAccount;
+import com.microsoft.azure.storage.blob.CloudBlobClient;
 import com.microsoft.azure.storage.blob.CloudBlobContainer;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureConstants;
@@ -153,8 +154,14 @@ public class DataStoreUtils {
             return;
         }
         log.info("deleting container [" + containerName + "]");
-        CloudBlobContainer container = org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils
-            .getBlobContainer(org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils.getConnectionString(accountName, accountKey), containerName);
+        String connectionString = String.format(
+                "DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s",
+                accountName,
+                accountKey
+        );
+        CloudStorageAccount account = CloudStorageAccount.parse(connectionString);
+        CloudBlobClient client = account.createCloudBlobClient();
+        CloudBlobContainer container =  client.getContainerReference(containerName);
         if (container.deleteIfExists()) {
             log.info("container [ " + containerName + "] deleted");
         } else {

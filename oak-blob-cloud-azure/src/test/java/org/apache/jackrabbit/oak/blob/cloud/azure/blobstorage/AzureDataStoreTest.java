@@ -18,6 +18,7 @@ package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import static org.apache.commons.codec.binary.Hex.encodeHexString;
 import static org.apache.commons.io.FileUtils.copyInputStreamToFile;
+import static org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStoreUtils.getDataStorePropertyFixtures;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -25,28 +26,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
-
-import com.google.common.base.Strings;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.microsoft.azure.storage.StorageException;
-
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.io.output.NullOutputStream;
-import org.apache.jackrabbit.core.data.DataIdentifier;
-import org.apache.jackrabbit.core.data.DataRecord;
-import org.apache.jackrabbit.core.data.DataStoreException;
-import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -73,6 +52,29 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.jcr.RepositoryException;
 
+import com.google.common.base.Strings;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.output.NullOutputStream;
+import org.apache.jackrabbit.core.data.DataIdentifier;
+import org.apache.jackrabbit.core.data.DataRecord;
+import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.oak.spi.blob.SharedBackend;
+import org.jetbrains.annotations.NotNull;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Test {@link AzureDataStore} with AzureDataStore and local cache on.
  * It requires to pass azure config file via system property or system properties by prefixing with 'ds.'.
@@ -80,8 +82,14 @@ import javax.jcr.RepositoryException;
  * For e.g. -Dconfig=/opt/cq/azure.properties. Sample azure properties located at
  * src/test/resources/azure.properties
  */
+@RunWith(Parameterized.class)
 public class AzureDataStoreTest {
     protected static final Logger LOG = LoggerFactory.getLogger(AzureDataStoreTest.class);
+
+    @Parameterized.Parameters(name = "{0}")
+    public static Iterable<?> dataStoreProperties() {
+        return getDataStorePropertyFixtures();
+    }
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder(new File("target"));
@@ -98,10 +106,14 @@ public class AzureDataStoreTest {
         assumeTrue(AzureDataStoreUtils.isAzureConfigured());
     }
 
-    @Before
-    public void setup() throws IOException, RepositoryException, URISyntaxException, InvalidKeyException, StorageException {
+    public AzureDataStoreTest(@NotNull final Properties fixture) {
+        this.props = fixture;
+    }
 
-        props = AzureDataStoreUtils.getAzureConfig();
+    @Before
+    public void setup() throws IOException, RepositoryException, URISyntaxException, InvalidKeyException {
+
+        //props = AzureDataStoreUtils.getAzureConfig();
         container = String.valueOf(randomGen.nextInt(9999)) + "-" + String.valueOf(randomGen.nextInt(9999))
                     + "-test";
         props.setProperty(AzureConstants.AZURE_BLOB_CONTAINER_NAME, container);
@@ -114,7 +126,7 @@ public class AzureDataStoreTest {
     }
 
     @After
-    public void teardown() throws InvalidKeyException, URISyntaxException, StorageException {
+    public void teardown() {
         ds = null;
         try {
             AzureDataStoreUtils.deleteContainer(container);
@@ -574,12 +586,8 @@ public class AzureDataStoreTest {
     @Test
     public void testBackendGetMetadataRecordInvalidName() throws DataStoreException {
         backend.addMetadataRecord(randomStream(0, 10), "testRecord");
-        assertNull(backend.getMetadataRecord("invalid"));
-        for (String name : Lists.newArrayList("", null)) {
-            try {
-                backend.getMetadataRecord(name);
-                fail("Expect to throw");
-            } catch(Exception e) {}
+        for (String name : Lists.newArrayList("invalid", "", null)) {
+            assertNull(backend.getMetadataRecord(name));
         }
 
         backend.deleteMetadataRecord("testRecord");

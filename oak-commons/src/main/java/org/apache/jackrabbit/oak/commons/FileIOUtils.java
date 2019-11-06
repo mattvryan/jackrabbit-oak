@@ -74,10 +74,7 @@ public final class FileIOUtils {
         }
     };
 
-    /**
-     * @deprecated use {@link java.util.function.Function#identity()} instead
-     */
-    @Deprecated public final static Function<String, String> passThruTransformer = new Function<String, String>() {
+    public final static Function<String, String> passThruTransformer = new Function<String, String>() {
         @Nullable @Override public String apply(@Nullable String input) {
             return input;
         }
@@ -231,7 +228,7 @@ public final class FileIOUtils {
      */
     public static int writeStrings(Iterator<String> iterator, File f, boolean escape,
         @Nullable Logger logger, @Nullable String message) throws IOException {
-        return writeStrings(iterator, f, escape, java.util.function.Function.identity(), logger, message);
+        return writeStrings(iterator, f, escape, passThruTransformer, logger, message);
     }
 
     /**
@@ -248,8 +245,8 @@ public final class FileIOUtils {
      * @throws IOException
      */
     public static int writeStrings(Iterator<String> iterator, File f, boolean escape,
-        @NotNull java.util.function.Function<String, String> transformer, @Nullable Logger logger, @Nullable String message) throws IOException {
-        BufferedWriter writer = newWriter(f, UTF_8);
+        @NotNull Function<String, String> transformer, @Nullable Logger logger, @Nullable String message) throws IOException {
+        BufferedWriter writer =  newWriter(f, UTF_8);
         boolean threw = true;
 
         int count = 0;
@@ -268,16 +265,6 @@ public final class FileIOUtils {
             close(writer, threw);
         }
         return count;
-    }
-
-    /**
-     * @deprecated use {@link #writeStrings(Iterator, File, boolean, java.util.function.Function, Logger, String)} instead
-     */
-    @Deprecated public static int writeStrings(Iterator<String> iterator, File f, boolean escape,
-            @NotNull Function<String, String> transformer, @Nullable Logger logger, @Nullable String message) throws IOException {
-        GuavaDeprecation.handleCall("OAK-8677");
-        java.util.function.Function<String, String> tr2 = (s) -> transformer.apply(s);
-        return writeStrings(iterator, f, escape, tr2, logger, message);
     }
 
     /**
@@ -373,10 +360,8 @@ public final class FileIOUtils {
      * ensured that both the files are written with
      * {@link #writeAsLine(BufferedWriter, String, boolean)} with true to escape line break
      * characters.
-     * 
-     * @deprecated use {@link org.apache.jackrabbit.oak.commons.io.FileLineDifferenceIterator} instead
      */
-    @Deprecated public static class FileLineDifferenceIterator extends AbstractIterator<String> implements Closeable {
+    public static class FileLineDifferenceIterator extends AbstractIterator<String> implements Closeable {
         private final PeekingIterator<String> peekMarked;
         private final LineIterator marked;
         private final LineIterator all;
@@ -399,7 +384,6 @@ public final class FileIOUtils {
 
         public FileLineDifferenceIterator(LineIterator marked, LineIterator available,
             @Nullable Function<String, String> transformer) throws IOException {
-            GuavaDeprecation.handleCall("OAK-8676");
             this.marked = marked;
             this.peekMarked = Iterators.peekingIterator(marked);
             this.all = available;
@@ -472,22 +456,21 @@ public final class FileIOUtils {
      * A custom transformer can also be provided to unescape.
      *
      * @param <T> the type of elements in the iterator
-     * @deprecated use {@link org.apache.jackrabbit.oak.commons.io.BurnOnCloseFileIterator} instead
      */
-    @Deprecated public static class BurnOnCloseFileIterator<T> extends AbstractIterator<T> implements Closeable {
+    public static class BurnOnCloseFileIterator<T> extends AbstractIterator<T> implements Closeable {
         private final Logger log = LoggerFactory.getLogger(getClass());
 
         private final LineIterator iterator;
         private final Function<String, T> transformer;
-        private final File backingFile;
+        private File backingFile;
 
         public BurnOnCloseFileIterator(LineIterator iterator, Function<String, T> transformer) {
-            this(iterator, null, transformer);
+            this.iterator = iterator;
+            this.transformer = transformer;
         }
 
         public BurnOnCloseFileIterator(LineIterator iterator, File backingFile,
             Function<String, T> transformer) {
-            GuavaDeprecation.handleCall("OAK-8666");
             this.iterator = iterator;
             this.transformer = transformer;
             this.backingFile = backingFile;

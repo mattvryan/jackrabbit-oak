@@ -110,10 +110,6 @@ public class AzureJournalFile implements JournalFile {
 
         private ReverseFileReader reader;
 
-        private boolean metadataFetched;
-
-        private boolean firstLineReturned;
-
         private AzureJournalReader(CloudBlob blob) {
             this.blob = blob;
         }
@@ -122,18 +118,7 @@ public class AzureJournalFile implements JournalFile {
         public String readLine() throws IOException {
             if (reader == null) {
                 try {
-                    if (!metadataFetched) {
-                        blob.downloadAttributes();
-                        metadataFetched = true;
-                        if (blob.getMetadata().containsKey("lastEntry")) {
-                            firstLineReturned = true;
-                            return blob.getMetadata().get("lastEntry");
-                        }
-                    }
                     reader = new ReverseFileReader(blob);
-                    if (firstLineReturned) {
-                        while("".equals(reader.readLine())); // the first line was already returned, let's fast-forward it
-                    }
                 } catch (StorageException e) {
                     throw new IOException(e);
                 }
@@ -158,7 +143,6 @@ public class AzureJournalFile implements JournalFile {
                 try {
                     currentBlob = directory.getAppendBlobReference(getJournalFileName(1));
                     currentBlob.createOrReplace();
-                    currentBlob.downloadAttributes();
                 } catch (URISyntaxException | StorageException e) {
                     throw new IOException(e);
                 }
@@ -195,8 +179,6 @@ public class AzureJournalFile implements JournalFile {
             }
             try {
                 currentBlob.appendText(line + "\n");
-                currentBlob.getMetadata().put("lastEntry", line);
-                currentBlob.uploadMetadata();
                 blockCount++;
             } catch (StorageException e) {
                 throw new IOException(e);

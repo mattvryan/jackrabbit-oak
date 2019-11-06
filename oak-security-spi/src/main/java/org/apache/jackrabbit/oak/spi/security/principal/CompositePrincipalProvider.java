@@ -91,7 +91,6 @@ public class CompositePrincipalProvider implements PrincipalProvider {
     @NotNull
     @Override
     public Set<Group> getGroupMembership(@NotNull Principal principal) {
-        AclGroupDeprecation.handleCall();
         return Collections.emptySet();
     }
 

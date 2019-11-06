@@ -70,7 +70,7 @@ class DocumentRootBuilder extends AbstractDocumentNodeBuilder {
      */
     private int updates;
 
-    DocumentRootBuilder(@NotNull NodeState base,
+    DocumentRootBuilder(@NotNull DocumentNodeState base,
                         @NotNull DocumentNodeStore store,
                         @NotNull DocumentNodeStoreBranch branch) {
         super(checkNotNull(base));

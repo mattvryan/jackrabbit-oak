@@ -97,10 +97,4 @@ class TieredDiffCache extends DiffCache {
     public Iterable<CacheStats> getStats() {
         return Iterables.concat(localCache.getStats(), memoryCache.getStats());
     }
-
-    @Override
-    public void invalidateAll() {
-        localCache.invalidateAll();
-        memoryCache.invalidateAll();
-    }
 }

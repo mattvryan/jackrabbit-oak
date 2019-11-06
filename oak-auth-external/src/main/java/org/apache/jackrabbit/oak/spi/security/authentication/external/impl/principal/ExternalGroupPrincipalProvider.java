@@ -63,7 +63,6 @@ import org.apache.jackrabbit.oak.plugins.memory.PropertyValues;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityRef;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.basic.DefaultSyncConfig;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.ExternalIdentityConstants;
-import org.apache.jackrabbit.oak.spi.security.principal.AclGroupDeprecation;
 import org.apache.jackrabbit.oak.spi.security.principal.GroupPrincipals;
 import org.apache.jackrabbit.oak.spi.security.principal.PrincipalImpl;
 import org.apache.jackrabbit.oak.spi.security.principal.PrincipalProvider;
@@ -222,7 +221,7 @@ class ExternalGroupPrincipalProvider implements PrincipalProvider, ExternalIdent
     }
 
     private Set<Principal> getGroupPrincipals(@NotNull Tree userTree) {
-        if (userTree.exists() && UserUtil.isType(userTree, AuthorizableType.USER)) {
+        if (userTree.exists() && UserUtil.isType(userTree, AuthorizableType.USER) && userTree.hasProperty(REP_EXTERNAL_PRINCIPAL_NAMES)) {
             PropertyState ps = userTree.getProperty(REP_EXTERNAL_PRINCIPAL_NAMES);
             if (ps != null) {
                 // we have an 'external' user that has been synchronized with the dynamic-membership option
@@ -308,7 +307,6 @@ class ExternalGroupPrincipalProvider implements PrincipalProvider, ExternalIdent
 
         @Override
         public boolean addMember(Principal user) {
-            AclGroupDeprecation.handleCall();
             if (isMember(user)) {
                 return false;
             } else {
@@ -318,7 +316,6 @@ class ExternalGroupPrincipalProvider implements PrincipalProvider, ExternalIdent
 
         @Override
         public boolean removeMember(Principal user) {
-            AclGroupDeprecation.handleCall();
             if (!isMember(user)) {
                 return false;
             } else {
@@ -401,14 +398,14 @@ class ExternalGroupPrincipalProvider implements PrincipalProvider, ExternalIdent
         protected Principal getNext() {
             if (!propValues.hasNext()) {
                 if (rows.hasNext()) {
-                    propValues = Iterators.filter(rows.next().getValue(REP_EXTERNAL_PRINCIPAL_NAMES).getValue(Type.STRINGS).iterator(), Predicates.notNull());
+                    propValues = rows.next().getValue(REP_EXTERNAL_PRINCIPAL_NAMES).getValue(Type.STRINGS).iterator();
                 } else {
                     propValues = Collections.emptyIterator();
                 }
             }
             while (propValues.hasNext()) {
                 String principalName = propValues.next();
-                if (!processed.contains(principalName) && matchesQuery(principalName) ) {
+                if (principalName != null && !processed.contains(principalName) && matchesQuery(principalName) ) {
                     processed.add(principalName);
                     return new ExternalGroupPrincipal(principalName);
                 }

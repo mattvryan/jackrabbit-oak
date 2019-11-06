@@ -27,7 +27,6 @@ import javax.jcr.security.AccessControlPolicy;
 import javax.jcr.security.AccessControlPolicyIterator;
 import javax.jcr.security.Privilege;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -260,12 +259,12 @@ class CugAccessControlManager extends AbstractAccessControlManager implements Cu
         }
     }
 
-    private Iterable<Principal> getPrincipals(@NotNull Tree cugTree) {
+    private Set<Principal> getPrincipals(@NotNull Tree cugTree) {
         PropertyState property = cugTree.getProperty(REP_PRINCIPAL_NAMES);
         if (property == null) {
             return Collections.emptySet();
         } else {
-            return ImmutableList.copyOf(Iterables.transform(property.getValue(Type.STRINGS), principalName -> {
+            return ImmutableSet.copyOf(Iterables.transform(property.getValue(Type.STRINGS), principalName -> {
                 Principal principal = principalManager.getPrincipal(principalName);
                 if (principal == null) {
                     log.debug("Unknown principal {}", principalName);

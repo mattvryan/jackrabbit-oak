@@ -28,7 +28,6 @@ import org.apache.jackrabbit.oak.plugins.document.Path;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore.META_PROP_NAMES;
 import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.EMPTY_NODE;
 import static org.apache.jackrabbit.oak.plugins.memory.PropertyStates.createProperty;
 
@@ -178,9 +177,14 @@ public class BundlingHandler {
     }
 
     private static void removeDeletedChildProperties(NodeState state, BundlingContext childContext) {
-        removeBundlingMetaProps(state, childContext);
+        childContext.removeProperty(DocumentBundlor.META_PROP_BUNDLING_PATH);
         for (PropertyState ps : state.getProperties()){
-            childContext.removeProperty(ps.getName());
+            String propName = ps.getName();
+            //In deletion never touch child status related meta props
+            //as they are not to be changed once set
+            if (!propName.startsWith(DocumentBundlor.HAS_CHILD_PROP_PREFIX)) {
+                childContext.removeProperty(ps.getName());
+            }
         }
     }
 
@@ -188,10 +192,9 @@ public class BundlingHandler {
         //Explicitly remove meta prop related to bundling as it would not
         //be part of normal listing of properties and hence would not be deleted
         //as part of diff
-        for (String name : META_PROP_NAMES) {
-            if (state.hasProperty(name)) {
-                childContext.removeProperty(name);
-            }
+        PropertyState bundlorConfig = state.getProperty(DocumentBundlor.META_PROP_PATTERN);
+        if (bundlorConfig != null){
+            childContext.removeProperty(DocumentBundlor.META_PROP_PATTERN);
         }
     }
 

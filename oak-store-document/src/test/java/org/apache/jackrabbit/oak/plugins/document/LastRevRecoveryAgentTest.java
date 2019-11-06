@@ -29,7 +29,6 @@ import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.junit.Test;
 
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
-import static org.apache.jackrabbit.oak.plugins.document.TestUtils.disposeQuietly;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getIdFromPath;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -80,9 +79,6 @@ public class LastRevRecoveryAgentTest extends AbstractTwoNodeTest {
         assertEquals(zlastRev2, getDocument(ds1, "/x/y").getLastRev().get(c2Id));
         assertEquals(zlastRev2, getDocument(ds1, "/x").getLastRev().get(c2Id));
         assertEquals(zlastRev2, getDocument(ds1, "/").getLastRev().get(c2Id));
-
-        // dispose ds2 quietly because it may now throw an exception
-        disposeQuietly(ds2);
     }
 
     //OAK-5337
@@ -156,9 +152,6 @@ public class LastRevRecoveryAgentTest extends AbstractTwoNodeTest {
         assertTrue(ds1.getLastRevRecoveryAgent().isRecoveryNeeded());
         ds1.getLastRevRecoveryAgent().performRecoveryIfNeeded();
         assertFalse(ds1.getLastRevRecoveryAgent().isRecoveryNeeded());
-
-        // dispose ds2 quietly because it may now throw an exception
-        disposeQuietly(ds2);
     }
 
     @Test
@@ -200,9 +193,6 @@ public class LastRevRecoveryAgentTest extends AbstractTwoNodeTest {
         b1 = ds1.getRoot().builder();
         b1.child("x").child("y").setProperty("p", "v11");
         merge(ds1, b1);
-
-        // dispose ds2 quietly because it may now throw an exception
-        disposeQuietly(ds2);
     }
 
     @Test

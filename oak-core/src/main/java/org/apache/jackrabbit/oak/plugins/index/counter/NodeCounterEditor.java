@@ -111,7 +111,7 @@ public class NodeCounterEditor implements Editor {
     public void leave(NodeState before, NodeState after)
             throws CommitFailedException {
         if (NodeCounter.COUNT_HASH) {
-            leaveNew();
+            leaveNew(before, after);
             return;
         }
         leaveOld(before, after);
@@ -153,17 +153,13 @@ public class NodeCounterEditor implements Editor {
         }
     }
 
-    private void leaveNew() throws CommitFailedException {
+    public void leaveNew(NodeState before, NodeState after) throws CommitFailedException {
         if (countOffsets.isEmpty()) {
             return;
         }
         root.callback.indexUpdate();
         for (Map.Entry<Mount, Integer> e : countOffsets.entrySet()) {
-            Mount mount = e.getKey();
-            if (mount.isReadOnly()) {
-                continue;
-            }
-            NodeBuilder builder = getBuilder(mount);
+            NodeBuilder builder = getBuilder(e.getKey());
             int countOffset = e.getValue();
 
             PropertyState p = builder.getProperty(COUNT_HASH_PROPERTY_NAME);

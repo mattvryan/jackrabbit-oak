@@ -115,23 +115,29 @@ public class ElasticsearchDocumentMaker extends FulltextDocumentMaker<Elasticsea
     }
 
     @Override
-    protected void indexTypedProperty(ElasticsearchDocument doc, PropertyState property, String pname, PropertyDefinition pd, int i) {
+    protected boolean indexTypedProperty(ElasticsearchDocument doc, PropertyState property, String pname, PropertyDefinition pd) {
         int tag = property.getType().tag();
+        boolean fieldAdded = false;
+        for (int i = 0; i < property.count(); i++) {
+            Object f;
+            if (tag == Type.LONG.tag()) {
+                f = property.getValue(Type.LONG, i);
+            } else if (tag == Type.DATE.tag()) {
+                f = property.getValue(Type.DATE, i);
+            } else if (tag == Type.DOUBLE.tag()) {
+                f = property.getValue(Type.DOUBLE, i);
+            } else if (tag == Type.BOOLEAN.tag()) {
+                f = property.getValue(Type.BOOLEAN, i).toString();
+            } else {
+                f = property.getValue(Type.STRING, i);
+            }
 
-        Object f;
-        if (tag == Type.LONG.tag()) {
-            f = property.getValue(Type.LONG, i);
-        } else if (tag == Type.DATE.tag()) {
-            f = property.getValue(Type.DATE, i);
-        } else if (tag == Type.DOUBLE.tag()) {
-            f = property.getValue(Type.DOUBLE, i);
-        } else if (tag == Type.BOOLEAN.tag()) {
-            f = property.getValue(Type.BOOLEAN, i).toString();
-        } else {
-            f = property.getValue(Type.STRING, i);
+            if (includePropertyValue(property, i, pd)){
+                doc.addProperty(pname, f);
+                fieldAdded = true;
+            }
         }
-
-        doc.addProperty(pname, f);
+        return fieldAdded;
     }
 
     @Override
@@ -172,8 +178,6 @@ public class ElasticsearchDocumentMaker extends FulltextDocumentMaker<Elasticsea
     @Override
     protected void indexSimilarityBinaries(ElasticsearchDocument doc, PropertyDefinition pd, Blob blob) throws IOException {
         // TODO : not implemented
-        // see https://www.elastic.co/blog/text-similarity-search-with-vectors-in-elasticsearch
-        // see https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html
     }
 
     @Override

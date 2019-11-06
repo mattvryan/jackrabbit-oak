@@ -16,6 +16,12 @@
  */
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeNotNull;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -27,6 +33,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import javax.jcr.RepositoryException;
 
@@ -45,11 +52,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * Test base class for {@link DataStore} which covers all scenarios.
@@ -171,6 +173,34 @@ public abstract class AbstractDataStoreTest {
                 + "#testGetAllIdentifiers finished, time taken = ["
                 + (System.currentTimeMillis() - start) + "]ms");
         } catch (Exception e) {
+            LOG.error("error:", e);
+            fail(e.getMessage());
+        }
+    }
+
+    /**
+     * Testcase to validate {$link DataStore#getAllIdentifiers()} API with a
+     * large number of identifiers.  Using a large number ensures that
+     * enumeration of the storage works when the number of entries exceeds the
+     * number returned from a single "list" invocation.
+     *
+     * This test is disabled by default because it takes a long time.  To enable
+     * execution of this test, set the -Denable.get.many.identifiers.test flag
+     * at the command line.
+     */
+    @Test
+    public void testGetManyIdentifiers() {
+        assumeNotNull(System.getProperty("enable.get.many.identifiers.test", null));
+        try {
+            long start = System.currentTimeMillis();
+            LOG.info("Testcase: " + this.getClass().getName()
+                    + "#testGetManyIdentifiers, testDir=" + dataStoreDir);
+            doGetAllIdentifiersTest(12345);
+            LOG.info("Testcase: " + this.getClass().getName()
+                    + "#testGetManyIdentifiers finished, time taken = ["
+                    + (System.currentTimeMillis() - start) + "]ms");
+        }
+        catch (Exception e) {
             LOG.error("error:", e);
             fail(e.getMessage());
         }
@@ -361,33 +391,28 @@ public abstract class AbstractDataStoreTest {
             ds.getRecord(rec3.getIdentifier()).getStream());
     }
 
-    /**
-     * Test {@link DataStore#getAllIdentifiers()} and asserts all identifiers
-     * are returned.
-     */
     protected void doGetAllIdentifiersTest() throws Exception {
-        List<DataIdentifier> list = new ArrayList<DataIdentifier>();
-        Random random = randomGen;
-        byte[] data = new byte[dataLength];
-        random.nextBytes(data);
-        DataRecord rec = ds.addRecord(new ByteArrayInputStream(data));
-        list.add(rec.getIdentifier());
+        doGetAllIdentifiersTest(3);
+    }
 
-        data = new byte[dataLength];
-        random.nextBytes(data);
-        rec = ds.addRecord(new ByteArrayInputStream(data));
-        list.add(rec.getIdentifier());
+    /** Test {@link DataStore#getAllIdentifiers()} and asserts all identifiers
+     * are returned.
+     *
+     * @param nRecords Number of records to create and iterate through
+     * @throws Exception
+     */
+    protected void doGetAllIdentifiersTest(int nRecords) throws Exception {
+        Set<DataIdentifier> ids = Sets.newHashSet();
 
-        data = new byte[dataLength];
-        random.nextBytes(data);
-        rec = ds.addRecord(new ByteArrayInputStream(data));
-        list.add(rec.getIdentifier());
+        for (int i=0; i<nRecords; i++) {
+            ids.add(ds.addRecord(new RandomInputStream(System.currentTimeMillis(), dataLength)).getIdentifier());
+        }
 
         Iterator<DataIdentifier> itr = Sets.newHashSet(ds.getAllIdentifiers()).iterator();
         while (itr.hasNext()) {
-            assertTrue("record found on list", list.remove(itr.next()));
+            assertTrue("record found on list", ids.remove(itr.next()));
         }
-        Assert.assertEquals(0, list.size());
+        Assert.assertEquals(0, ids.size());
     }
 
     /**

@@ -19,9 +19,7 @@ package org.apache.jackrabbit.oak.plugins.index.solr.configuration;
 import java.io.StringReader;
 import java.util.regex.Pattern;
 
-import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.BaseTokenStreamTestCase;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.core.KeywordTokenizer;
@@ -31,11 +29,13 @@ import org.apache.lucene.analysis.path.PathHierarchyTokenizer;
 import org.apache.lucene.analysis.pattern.PatternCaptureGroupTokenFilter;
 import org.apache.lucene.analysis.pattern.PatternReplaceFilter;
 import org.apache.lucene.analysis.reverse.ReverseStringFilter;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import static org.apache.lucene.analysis.BaseTokenStreamTestCase.assertAnalyzesTo;
+import static org.apache.lucene.analysis.BaseTokenStreamTestCase.assertTokenStreamContents;
 
 /**
  * Testcase for checking default analyzers configurations behave as expected with regards to path related restrictions
@@ -43,8 +43,7 @@ import org.junit.runner.RunWith;
  * Note that default Solr analyzers for Oak should be equivalent to the ones programmatically defined here.
  */
 @RunWith(com.carrotsearch.randomizedtesting.RandomizedRunner.class)
-@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
-public class DefaultAnalyzersConfigurationTest extends BaseTokenStreamTestCase {
+public class DefaultAnalyzersConfigurationTest {
 
     private Analyzer parentPathIndexingAnalyzer;
     private Analyzer parentPathSearchingAnalyzer;
@@ -56,7 +55,6 @@ public class DefaultAnalyzersConfigurationTest extends BaseTokenStreamTestCase {
 
     @Before
     public void setUp() throws Exception {
-        super.setUp();
         this.exactPathAnalyzer = new Analyzer() {
             @Override
             protected TokenStreamComponents createComponents(String fieldName) {
@@ -118,18 +116,6 @@ public class DefaultAnalyzersConfigurationTest extends BaseTokenStreamTestCase {
                 return new TokenStreamComponents(source);
             }
         };
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        super.tearDown();
-        this.exactPathAnalyzer.close();
-        this.parentPathIndexingAnalyzer.close();
-        this.parentPathSearchingAnalyzer.close();
-        this.directChildrenPathIndexingAnalyzer.close();
-        this.directChildrenPathSearchingAnalyzer.close();
-        this.allChildrenPathIndexingAnalyzer.close();
-        this.allChildrenPathSearchingAnalyzer.close();
     }
 
     @Test

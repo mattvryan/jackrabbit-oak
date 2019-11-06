@@ -312,13 +312,7 @@ public final class IndexDefinitionBuilder {
 
         private Tree findExisting(String name) {
             for (Tree tree : getPropsTree().getChildren()){
-                String treeName = tree.getName();
-                PropertyState ps = tree.getProperty(FulltextIndexConstants.PROP_NAME);
-                if(ps != null) {
-                    treeName = ps.getValue(Type.STRING);
-                }
-
-                if (name.equals(treeName)) {
+                if (name.equals(tree.getProperty(FulltextIndexConstants.PROP_NAME).getValue(Type.STRING))){
                     return tree;
                 }
             }

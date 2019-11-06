@@ -475,9 +475,6 @@ public class TypeEditor extends DefaultEditor {
         }
         if (!names.isEmpty()) {
             for (String name : names) {
-                if (NodeStateUtils.isHidden(name)) {
-                    continue;
-                }
                 NodeState child = after.getChildNode(name);
                 String primary = child.getName(JCR_PRIMARYTYPE);
                 Iterable<String> mixins = child.getNames(JCR_MIXINTYPES);

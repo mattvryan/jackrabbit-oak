@@ -51,6 +51,7 @@ import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
 import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
 import org.apache.jackrabbit.oak.spi.blob.AbstractBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
+import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
 import org.apache.jackrabbit.oak.spi.gc.LoggingGCMonitor;
@@ -114,7 +115,6 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     private int asyncDelay = 1000;
     private boolean timing;
     private boolean logging;
-    private String loggingPrefix;
     private LeaseCheckMode leaseCheck = ClusterNodeInfo.DEFAULT_LEASE_CHECK_MODE; // OAK-2739 is enabled by default also for non-osgi
     private boolean isReadOnlyMode = false;
     private Weigher<CacheValue, CacheValue> weigher = new EmpiricalWeigher();
@@ -150,7 +150,6 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     private GCMonitor gcMonitor = new LoggingGCMonitor(
             LoggerFactory.getLogger(VersionGarbageCollector.class));
     private Predicate<Path> nodeCachePredicate = Predicates.alwaysTrue();
-    private boolean clusterInvisible;
 
     /**
      * @return a new {@link DocumentNodeStoreBuilder}.
@@ -210,22 +209,6 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
 
     public boolean getLogging() {
         return logging;
-    }
-
-    /**
-     * Sets a custom prefix for the logger.
-     * 
-     * @param prefix to be used in the logs output.
-     * @return this
-     */
-    public T setLoggingPrefix(String prefix) {
-        this.loggingPrefix = prefix;
-        return thisBuilder();
-    }
-
-    @Nullable
-    String getLoggingPrefix() {
-        return loggingPrefix;
     }
 
     /**
@@ -336,18 +319,6 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
         return thisBuilder();
     }
 
-    /**
-     * Set the cluster as invisible to the discovery lite service. By default
-     * it is visible.
-     *
-     * @return this
-     * @see DocumentDiscoveryLiteService
-     */
-    public T setClusterInvisible(boolean invisible) {
-        this.clusterInvisible = invisible;
-        return thisBuilder();
-    }
-    
     public T setCacheSegmentCount(int cacheSegmentCount) {
         this.cacheSegmentCount = cacheSegmentCount;
         return thisBuilder();
@@ -360,10 +331,6 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
 
     public int getClusterId() {
         return clusterId;
-    }
-
-    public boolean isClusterInvisible() {
-        return clusterInvisible;
     }
 
     /**

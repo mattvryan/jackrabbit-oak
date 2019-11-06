@@ -40,7 +40,7 @@ public class DataRecordDownloadOptions {
     private static final char[] hex = {
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
     };
-    private static final Set<Character> rfc5987AllowedChars = Sets.newHashSet(
+    private static final Set<Character> rfc8187AllowedChars = Sets.newHashSet(
             '0','1','2','3','4','5','6','7','8','9',
                     'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
                     'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
@@ -138,7 +138,8 @@ public class DataRecordDownloadOptions {
                 if (Strings.isNullOrEmpty(dispositionType)) {
                     dispositionType = DISPOSITION_TYPE_INLINE;
                 }
-                contentDispositionHeader = formatContentDispositionHeader(dispositionType, fileName, null);
+//                 contentDispositionHeader = formatContentDispositionHeader(dispositionType, fileName, null);
+                contentDispositionHeader = formatContentDispositionHeader(dispositionType, fileName, rfc8187Encode(fileName));
             }
             else if (DISPOSITION_TYPE_ATTACHMENT.equals(this.dispositionType)) {
                 contentDispositionHeader = DISPOSITION_TYPE_ATTACHMENT;
@@ -160,7 +161,7 @@ public class DataRecordDownloadOptions {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {
             char c = (char) b;
-            if (rfc5987AllowedChars.contains(c)) {
+            if (rfc8187AllowedChars.contains(c)) {
                 sb.append(c);
             }
             else {

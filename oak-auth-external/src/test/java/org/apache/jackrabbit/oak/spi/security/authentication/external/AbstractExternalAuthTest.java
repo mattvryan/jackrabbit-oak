@@ -35,7 +35,6 @@ import org.apache.jackrabbit.api.security.user.Authorizable;
 import org.apache.jackrabbit.api.security.user.User;
 import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.oak.AbstractSecurityTest;
-import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.ContentSession;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Root;
@@ -52,8 +51,6 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Abstract base test for external-authentication tests.
@@ -118,29 +115,25 @@ public abstract class AbstractExternalAuthTest extends AbstractSecurityTest {
         }
     }
 
-    protected static void assertException(@NotNull CommitFailedException e, @NotNull String expectedType, int expectedCode) throws CommitFailedException {
-        assertEquals(expectedType, e.getType());
-        assertEquals(expectedCode, e.getCode());
-        throw e;
-    }
-
-    @NotNull
     private static Iterator<String> getAllAuthorizableIds(@NotNull UserManager userManager) throws Exception {
         Iterator<Authorizable> iter = userManager.findAuthorizables("jcr:primaryType", null);
-        return Iterators.filter(Iterators.transform(iter, input -> {
-            try {
-                if (input != null) {
-                    return input.getID();
+        return Iterators.filter(Iterators.transform(iter, new Function<Authorizable, String>() {
+            @Nullable
+            @Override
+            public String apply(Authorizable input) {
+                try {
+                    if (input != null) {
+                        return input.getID();
+                    }
+                } catch (RepositoryException e) {
+                    // failed to retrieve ID
                 }
-            } catch (RepositoryException e) {
-                // failed to retrieve ID
+                return null;
             }
-            return null;
         }), Predicates.notNull());
     }
 
     @Override
-    @NotNull
     protected SecurityProvider getSecurityProvider() {
         if (securityProvider == null) {
             securityProvider = TestSecurityProvider.newTestSecurityProvider(getSecurityConfigParameters(), externalPrincipalConfiguration);
@@ -151,7 +144,6 @@ public abstract class AbstractExternalAuthTest extends AbstractSecurityTest {
         return securityProvider;
     }
 
-    @NotNull
     protected ExternalIdentityProvider createIDP() {
         return new TestIdentityProvider();
     }
@@ -164,7 +156,6 @@ public abstract class AbstractExternalAuthTest extends AbstractSecurityTest {
         ((TestIdentityProvider) idp).addUser(new TestIdentityProvider.TestUser(id, idp.getName()));
     }
 
-    @NotNull
     protected DefaultSyncConfig createSyncConfig() {
         DefaultSyncConfig syncConfig = new DefaultSyncConfig();
         Map<String, String> mapping = new HashMap<>();
@@ -178,7 +169,6 @@ public abstract class AbstractExternalAuthTest extends AbstractSecurityTest {
         return syncConfig;
     }
 
-    @NotNull
     protected Root getSystemRoot() throws Exception {
         if (systemRoot == null) {
             systemSession = Subject.doAs(SystemSubject.INSTANCE, new PrivilegedExceptionAction<ContentSession>() {

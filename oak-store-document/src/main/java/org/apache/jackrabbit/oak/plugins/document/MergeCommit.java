@@ -35,7 +35,7 @@ class MergeCommit extends Commit {
     MergeCommit(DocumentNodeStore nodeStore,
                 RevisionVector baseRevision,
                 SortedSet<Revision> revisions) {
-        super(nodeStore, revisions.last(), baseRevision, new RevisionVector());
+        super(nodeStore, revisions.last(), baseRevision);
         this.mergeRevs = revisions;
     }
 

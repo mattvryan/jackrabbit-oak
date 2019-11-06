@@ -79,7 +79,6 @@ class DocumentFixtureProvider {
         if (readOnly) {
             builder.setReadOnlyMode();
         }
-        builder.setClusterInvisible(true);
 
         int cacheSize = docStoreOpts.getCacheSize();
         if (cacheSize != 0) {

@@ -33,7 +33,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 
 import javax.jcr.Node;
 import javax.jcr.Repository;
@@ -44,6 +43,7 @@ import javax.jcr.query.QueryManager;
 import javax.jcr.query.QueryResult;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Predicate;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -407,7 +407,7 @@ public class HybridIndexTest extends AbstractTest<HybridIndexTest.TestContext> {
     private AsyncIndexUpdate getAsyncIndexUpdate() {
         return (AsyncIndexUpdate)WhiteboardUtils.getService(whiteboard, Runnable.class, new Predicate<Runnable>() {
                 @Override
-                public boolean test(@Nullable Runnable input) {
+                public boolean apply(@Nullable Runnable input) {
                     return input instanceof AsyncIndexUpdate;
                 }
             });

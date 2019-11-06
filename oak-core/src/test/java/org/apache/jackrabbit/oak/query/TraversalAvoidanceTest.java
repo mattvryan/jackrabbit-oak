@@ -17,7 +17,6 @@ import static org.junit.Assert.assertNotNull;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
 
 import org.apache.jackrabbit.oak.InitialContent;
 import org.apache.jackrabbit.oak.Oak;
@@ -43,6 +42,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
@@ -101,7 +101,7 @@ public class TraversalAvoidanceTest extends AbstractQueryTest {
     private void runAsyncIndex() {
         Runnable async = WhiteboardUtils.getService(wb, Runnable.class, new Predicate<Runnable>() {
             @Override
-            public boolean test(@Nullable Runnable input) {
+            public boolean apply(@Nullable Runnable input) {
                 return input instanceof AsyncIndexUpdate;
             }
         });

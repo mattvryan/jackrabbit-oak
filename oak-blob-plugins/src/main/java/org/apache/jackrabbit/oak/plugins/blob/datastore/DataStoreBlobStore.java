@@ -66,17 +66,16 @@ import org.apache.jackrabbit.oak.cache.CacheStats;
 import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.blob.BlobStoreBlob;
 import org.apache.jackrabbit.oak.plugins.blob.BlobTrackingStore;
-import org.apache.jackrabbit.oak.plugins.blob.ExtendedBlobStatsCollector;
 import org.apache.jackrabbit.oak.plugins.blob.SharedDataStore;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordAccessProvider;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
-import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
-import org.apache.jackrabbit.oak.spi.blob.stats.BlobStatsCollector;
 import org.apache.jackrabbit.oak.spi.blob.stats.StatsCollectingStreams;
+import org.apache.jackrabbit.oak.spi.blob.stats.BlobStatsCollector;
+import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -94,7 +93,7 @@ public class DataStoreBlobStore
 
     protected final DataStore delegate;
 
-    protected BlobStatsCollector stats = ExtendedBlobStatsCollector.NOOP;
+    protected BlobStatsCollector stats = BlobStatsCollector.NOOP;
 
     private BlobTracker tracker;
 
@@ -162,84 +161,31 @@ public class DataStoreBlobStore
 
     @Override
     public DataRecord getRecordIfStored(DataIdentifier identifier) throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-
-            DataRecord rec = isInMemoryRecord(identifier) ?
-                    getDataRecord(identifier.toString()) :
-                    delegate.getRecordIfStored(identifier);
-
-            long elapsed = System.nanoTime() - start;
-            stats.getRecordIfStoredCalled(elapsed, TimeUnit.NANOSECONDS, rec.getLength());
-            stats.getRecordIfStoredCompleted(identifier.toString());
-
-            return rec;
+        if (isInMemoryRecord(identifier)) {
+            return getDataRecord(identifier.toString());
         }
-        catch (DataStoreException e) {
-            stats.getRecordIfStoredFailed(identifier.toString());
-            throw e;
-        }
+        return delegate.getRecordIfStored(identifier);
     }
 
     @Override
     public DataRecord getRecord(DataIdentifier identifier) throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-
-            DataRecord rec = isInMemoryRecord(identifier) ?
-                    getDataRecord(identifier.toString()) :
-                    delegate.getRecord(identifier);
-
-            long elapsed = System.nanoTime() - start;
-            stats.getRecordCalled(elapsed, TimeUnit.NANOSECONDS, rec.getLength());
-            stats.getRecordCompleted(identifier.toString());
-
-            return rec;
+        if (isInMemoryRecord(identifier)) {
+            return getDataRecord(identifier.toString());
         }
-        catch (DataStoreException e) {
-            stats.getRecordFailed(identifier.toString());
-            throw e;
-        }
+        return delegate.getRecord(identifier);
     }
 
     @Override
     public DataRecord getRecordFromReference(String reference) throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-
-            DataRecord rec = delegate.getRecordFromReference(reference);
-
-            long elapsed = System.nanoTime() - start;
-            stats.getRecordFromReferenceCalled(elapsed, TimeUnit.NANOSECONDS, rec.getLength());
-            stats.getRecordFromReferenceCompleted(reference);
-
-            return rec;
-        }
-        catch (DataStoreException e) {
-            stats.getRecordFromReferenceFailed(reference);
-            throw e;
-        }
+        return delegate.getRecordFromReference(reference);
     }
 
     @Override
     public DataRecord addRecord(InputStream stream) throws DataStoreException {
         try {
-            long start = System.nanoTime();
-
-            DataRecord rec = writeStream(stream, new BlobOptions());
-
-            stats.recordAdded(System.nanoTime() - start, TimeUnit.NANOSECONDS, rec.getLength());
-            stats.addRecordCompleted(rec.getIdentifier().toString());
-
-            return rec;
-        }
-        catch (IOException e) {
-            stats.addRecordFailed();
+            return writeStream(stream, new BlobOptions());
+        } catch (IOException e) {
             throw new DataStoreException(e);
-        }
-        catch (DataStoreException e) {
-            stats.addRecordFailed();
-            throw e;
         }
     }
 
@@ -250,38 +196,12 @@ public class DataStoreBlobStore
 
     @Override
     public int deleteAllOlderThan(long min) throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-
-            int deletedCount = delegate.deleteAllOlderThan(min);
-
-            stats.deletedAllOlderThan(System.nanoTime() - start, TimeUnit.NANOSECONDS, min);
-            stats.deleteAllOlderThanCompleted(deletedCount);
-
-            return deletedCount;
-        }
-        catch (Exception e) {
-            stats.deleteAllOlderThanFailed(min);
-            throw e;
-        }
+        return delegate.deleteAllOlderThan(min);
     }
 
     @Override
     public Iterator<DataIdentifier> getAllIdentifiers() throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-
-            Iterator<DataIdentifier> allIdentifiersIterator = delegate.getAllIdentifiers();
-
-            stats.getAllIdentifiersCalled(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-            stats.getAllIdentifiersCompleted();
-
-            return allIdentifiersIterator;
-        }
-        catch (Exception e) {
-            stats.getAllIdentifiersFailed();
-            throw e;
-        }
+        return delegate.getAllIdentifiers();
     }
 
     @Override
@@ -313,19 +233,15 @@ public class DataStoreBlobStore
         boolean threw = true;
         try {
             long start = System.nanoTime();
-
             checkNotNull(stream);
             DataRecord dr = writeStream(stream, options);
             String id = getBlobId(dr);
             updateTracker(id);
             threw = false;
-
             stats.uploaded(System.nanoTime() - start, TimeUnit.NANOSECONDS, dr.getLength());
             stats.uploadCompleted(id);
-
             return id;
         } catch (DataStoreException e) {
-            stats.uploadFailed();
             throw new IOException(e);
         } finally {
             //DataStore does not closes the stream internally
@@ -436,19 +352,12 @@ public class DataStoreBlobStore
                         }
                     }
                 });
-
                 return new ByteArrayInputStream(content);
             } catch (ExecutionException e) {
                 log.warn("Error occurred while loading bytes from steam while fetching for id {}", encodedBlobId, e);
             }
         }
-        try {
-            return getStream(blobId.blobId);
-        }
-        catch (IOException e) {
-            stats.downloadFailed(blobId.blobId);
-            throw e;
-        }
+        return getStream(blobId.blobId);
     }
 
     //~-------------------------------------------< GarbageCollectableBlobStore >
@@ -527,38 +436,27 @@ public class DataStoreBlobStore
     public long countDeleteChunks(List<String> chunkIds, long maxLastModifiedTime) throws Exception {
         int count = 0;
         if (delegate instanceof MultiDataStoreAware) {
-            try {
-                List<String> deleted = Lists.newArrayListWithExpectedSize(512);
-                for (String chunkId : chunkIds) {
-                    long start = System.nanoTime();
-
-                    String blobId = extractBlobId(chunkId);
-                    DataIdentifier identifier = new DataIdentifier(blobId);
-                    DataRecord dataRecord = getRecordForId(identifier);
-                    boolean success = (maxLastModifiedTime <= 0)
-                            || dataRecord.getLastModified() <= maxLastModifiedTime;
-                    log.trace("Deleting blob [{}] with last modified date [{}] : [{}]", blobId,
-                            dataRecord.getLastModified(), success);
-                    if (success) {
-                        ((MultiDataStoreAware) delegate).deleteRecord(identifier);
-                        deleted.add(blobId);
-                        count++;
-                        if (count % 512 == 0) {
-                            log.info("Deleted blobs {}", deleted);
-                            deleted.clear();
-                        }
+            List<String> deleted = Lists.newArrayListWithExpectedSize(512);
+            for (String chunkId : chunkIds) {
+                String blobId = extractBlobId(chunkId);
+                DataIdentifier identifier = new DataIdentifier(blobId);
+                DataRecord dataRecord = getRecordForId(identifier);
+                boolean success = (maxLastModifiedTime <= 0)
+                        || dataRecord.getLastModified() <= maxLastModifiedTime;
+                log.trace("Deleting blob [{}] with last modified date [{}] : [{}]", blobId,
+                    dataRecord.getLastModified(), success);
+                if (success) {
+                    ((MultiDataStoreAware) delegate).deleteRecord(identifier);
+                    deleted.add(blobId);
+                    count++;
+                    if (count % 512 == 0) {
+                        log.info("Deleted blobs {}", deleted);
+                        deleted.clear();
                     }
-
-                    stats.deleted(blobId, System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    stats.deleteCompleted(blobId);
-                }
-                if (!deleted.isEmpty()) {
-                    log.info("Deleted blobs {}", deleted);
                 }
             }
-            catch (Exception e) {
-                stats.deleteFailed();
-                throw e;
+            if (!deleted.isEmpty()) {
+                log.info("Deleted blobs {}", deleted);
             }
         }
         return count;
@@ -575,219 +473,76 @@ public class DataStoreBlobStore
     @Override
     public void addMetadataRecord(InputStream stream, String name) throws DataStoreException {
         if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                ((SharedDataStore) delegate).addMetadataRecord(stream, name);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).metadataRecordAdded(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).addMetadataRecordCompleted(name);
-                }
-            }
-            catch (DataStoreException e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).addMetadataRecordFailed(name);
-                }
-                throw e;
-            }
+            ((SharedDataStore) delegate).addMetadataRecord(stream, name);
         }
     }
 
     @Override
     public void addMetadataRecord(File f, String name) throws DataStoreException {
         if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                ((SharedDataStore) delegate).addMetadataRecord(f, name);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).metadataRecordAdded(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).addMetadataRecordCompleted(name);
-                }
-            }
-            catch (DataStoreException e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).addMetadataRecordFailed(name);
-                }
-                throw e;
-            }
+            ((SharedDataStore) delegate).addMetadataRecord(f, name);
         }
     }
 
     @Override public DataRecord getMetadataRecord(String name) {
         if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                DataRecord record = ((SharedDataStore) delegate).getMetadataRecord(name);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).getMetadataRecordCalled(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).getMetadataRecordCompleted(name);
-                }
-
-                return record;
-            }
-            catch (Exception e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).getMetadataRecordFailed(name);
-                }
-                throw e;
-            }
+            return ((SharedDataStore) delegate).getMetadataRecord(name);
         }
         return null;
     }
 
     @Override
     public boolean metadataRecordExists(String name) {
-        if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                boolean exists = ((SharedDataStore) delegate).metadataRecordExists(name);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).metadataRecordExistsCalled(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).metadataRecordExistsCompleted(name);
-                }
-
-                return exists;
-            }
-            catch (Exception e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).metadataRecordExistsFailed(name);
-                }
-                throw e;
-            }
-        }
-        return false;
+        return delegate instanceof SharedDataStore && ((SharedDataStore) delegate).metadataRecordExists(name);
     }
 
     @Override
     public List<DataRecord> getAllMetadataRecords(String prefix) {
         if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                List<DataRecord> records = ((SharedDataStore) delegate).getAllMetadataRecords(prefix);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).getAllMetadataRecordsCalled(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).getAllMetadataRecordsCompleted(prefix);
-                }
-
-                return records;
-            }
-            catch (Exception e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).getAllMetadataRecordsFailed(prefix);
-                }
-                throw e;
-            }
+            return ((SharedDataStore) delegate).getAllMetadataRecords(prefix);
         }
         return null;
     }
 
     @Override
     public boolean deleteMetadataRecord(String name) {
-        if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                boolean deleted = ((SharedDataStore) delegate).deleteMetadataRecord(name);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).metadataRecordDeleted(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).deleteMetadataRecordCompleted(name);
-                }
-
-                return deleted;
-            }
-            catch (Exception e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).deleteMetadataRecordFailed(name);
-                }
-                throw e;
-            }
-        }
-        return false;
+        return delegate instanceof SharedDataStore && ((SharedDataStore) delegate).deleteMetadataRecord(name);
     }
 
     @Override
     public void deleteAllMetadataRecords(String prefix) {
         if (delegate instanceof SharedDataStore) {
-            try {
-                long start = System.nanoTime();
-
-                ((SharedDataStore) delegate).deleteAllMetadataRecords(prefix);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).allMetadataRecordsDeleted(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).deleteAllMetadataRecordsCompleted(prefix);
-                }
-            }
-            catch (Exception e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).deleteAllMetadataRecordsFailed(prefix);
-                }
-                throw e;
-            }
+            ((SharedDataStore) delegate).deleteAllMetadataRecords(prefix);
         }
     }
 
     @Override
     public Iterator<DataRecord> getAllRecords() throws DataStoreException {
-        long start = System.nanoTime();
-
-        Iterator<DataRecord> result = delegate instanceof SharedDataStore ?
-                ((SharedDataStore) delegate).getAllRecords() :
-                Iterators.transform(delegate.getAllIdentifiers(),
-                        new Function<DataIdentifier, DataRecord>() {
-                            @Nullable
-                            @Override
-                            public DataRecord apply(@Nullable DataIdentifier input) {
-                                try {
-                                    return delegate.getRecord(input);
-                                } catch (DataStoreException e) {
-                                    log.warn("Error occurred while fetching DataRecord for identifier {}", input, e);
-                                }
-                                return null;
-                            }
-                        });
-
-        if (stats instanceof ExtendedBlobStatsCollector) {
-            ((ExtendedBlobStatsCollector) stats).getAllRecordsCalled(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-            ((ExtendedBlobStatsCollector) stats).getAllRecordsCompleted();
+        if (delegate instanceof SharedDataStore) {
+            return ((SharedDataStore) delegate).getAllRecords();
+        } else {
+            return Iterators.transform(delegate.getAllIdentifiers(),
+                new Function<DataIdentifier, DataRecord>() {
+                    @Nullable
+                    @Override
+                    public DataRecord apply(@Nullable DataIdentifier input) {
+                        try {
+                            return delegate.getRecord(input);
+                        } catch (DataStoreException e) {
+                            log.warn("Error occurred while fetching DataRecord for identifier {}", input, e);
+                        }
+                        return null;
+                    }
+            });
         }
-
-        return result;
     }
 
     @Override
     public DataRecord getRecordForId(DataIdentifier identifier) throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-
-            DataRecord record = delegate instanceof SharedDataStore ?
-                    ((SharedDataStore) delegate).getRecordForId(identifier) :
-                    delegate.getRecord(identifier);
-
-            if (stats instanceof ExtendedBlobStatsCollector) {
-                long elapsed = System.nanoTime() - start;
-                ((ExtendedBlobStatsCollector) stats).getRecordForIdCalled(elapsed, TimeUnit.NANOSECONDS, record.getLength());
-                ((ExtendedBlobStatsCollector) stats).getRecordForIdCompleted(identifier.toString());
-            }
-
-            return record;
+        if (delegate instanceof SharedDataStore) {
+            return ((SharedDataStore) delegate).getRecordForId(identifier);
         }
-        catch (DataStoreException e) {
-            if (stats instanceof ExtendedBlobStatsCollector) {
-                ((ExtendedBlobStatsCollector) stats).getRecordForIdFailed(identifier.toString());
-            }
-            throw e;
-        }
+        return delegate.getRecord(identifier);
     }
 
     @Override
@@ -801,23 +556,10 @@ public class DataStoreBlobStore
 
     @Override
     public DataRecord addRecord(InputStream input, BlobOptions options) throws DataStoreException {
-        try {
-            long start = System.nanoTime();
-            DataRecord result = addRecordInternal(input, options);
-            stats.recordAdded(System.nanoTime() - start, TimeUnit.NANOSECONDS, result.getLength());
-            stats.addRecordCompleted(result.getIdentifier().toString());
-            return result;
+        if (delegate instanceof TypedDataStore) {
+            return ((TypedDataStore) delegate).addRecord(input, options);
         }
-        catch (DataStoreException e) {
-            stats.addRecordFailed();
-            throw e;
-        }
-    }
-
-    private DataRecord addRecordInternal(InputStream input, BlobOptions options) throws DataStoreException {
-        return delegate instanceof TypedDataStore ?
-                ((TypedDataStore) delegate).addRecord(input, options) :
-                delegate.addRecord(input);
+        return delegate.addRecord(input);
     }
 
     //~---------------------------------------------< Object >
@@ -862,12 +604,11 @@ public class DataStoreBlobStore
 
     protected InputStream getStream(String blobId) throws IOException {
         try {
-            long startTime = System.nanoTime();
             InputStream in = getDataRecord(blobId).getStream();
             if (!(in instanceof BufferedInputStream)){
                 in = new BufferedInputStream(in);
             }
-            return StatsCollectingStreams.wrap(stats, blobId, in, startTime);
+            return StatsCollectingStreams.wrap(stats, blobId, in);
         } catch (DataStoreException e) {
             throw new IOException(e);
         }
@@ -917,7 +658,7 @@ public class DataStoreBlobStore
         } else {
             // a few bytes are already read, need to re-build the input stream
             in = new SequenceInputStream(new ByteArrayInputStream(buffer, 0, pos), in);
-            record = addRecordInternal(in, options);
+            record = addRecord(in, options);
         }
         return record;
     }
@@ -945,24 +686,12 @@ public class DataStoreBlobStore
             throws IllegalArgumentException {
         if (delegate instanceof DataRecordAccessProvider) {
             try {
-                long start = System.nanoTime();
-
                 DataRecordAccessProvider provider = (DataRecordAccessProvider) this.delegate;
 
                 DataRecordUpload upload = provider.initiateDataRecordUpload(maxUploadSizeInBytes, maxNumberOfURIs);
-
                 if (upload == null) {
-                    if (stats instanceof ExtendedBlobStatsCollector) {
-                        ((ExtendedBlobStatsCollector) stats).initiateBlobUploadFailed();
-                    }
                     return null;
                 }
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).initiateBlobUpload(System.nanoTime() - start, TimeUnit.NANOSECONDS, maxUploadSizeInBytes, maxNumberOfURIs);
-                    ((ExtendedBlobStatsCollector) stats).initiateBlobUploadCompleted();
-                }
-
                 return new BlobUpload() {
                     @Override
                     @NotNull
@@ -988,20 +717,8 @@ public class DataStoreBlobStore
                 };
             }
             catch (DataRecordUploadException e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).initiateBlobUploadFailed();
-                }
                 log.warn("Unable to initiate direct upload", e);
             }
-            catch (IllegalArgumentException e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).initiateBlobUploadFailed();
-                }
-                throw e;
-            }
-        }
-        else if (stats instanceof ExtendedBlobStatsCollector) {
-            ((ExtendedBlobStatsCollector) stats).initiateBlobUploadFailed();
         }
         return null;
     }
@@ -1011,34 +728,14 @@ public class DataStoreBlobStore
     public Blob completeBlobUpload(@NotNull String uploadToken) throws IllegalArgumentException {
         if (delegate instanceof DataRecordAccessProvider) {
             try {
-                long start = System.nanoTime();
-
                 DataRecord record = ((DataRecordAccessProvider) delegate).completeDataRecordUpload(uploadToken);
                 String id = getBlobId(record);
                 updateTracker(id);
-
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).completeBlobUpload(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-                    ((ExtendedBlobStatsCollector) stats).completeBlobUploadCompleted(id);
-                }
-
                 return new BlobStoreBlob(this, id);
             }
             catch (DataStoreException | DataRecordUploadException e) {
                 log.warn("Unable to complete direct upload for upload token {}", uploadToken, e);
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).completeBlobUploadFailed();
-                }
             }
-            catch (IllegalArgumentException e) {
-                if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).completeBlobUploadFailed();
-                }
-                throw e;
-            }
-        }
-        else if (stats instanceof ExtendedBlobStatsCollector) {
-            ((ExtendedBlobStatsCollector) stats).completeBlobUploadFailed();
         }
         return null;
     }
@@ -1047,31 +744,13 @@ public class DataStoreBlobStore
     @Override
     public URI getDownloadURI(@NotNull Blob blob, @NotNull BlobDownloadOptions downloadOptions) {
         if (delegate instanceof DataRecordAccessProvider) {
-            long start = System.nanoTime();
-
             String blobId = blob.getContentIdentity();
             if (blobId != null) {
-                String extractedBlobId = extractBlobId(blobId);
-                URI uri = ((DataRecordAccessProvider) delegate).getDownloadURI(
-                        new DataIdentifier(extractedBlobId),
+                return ((DataRecordAccessProvider) delegate).getDownloadURI(
+                        new DataIdentifier(extractBlobId(blobId)),
                         DataRecordDownloadOptions.fromBlobDownloadOptions(downloadOptions)
                 );
-
-                if (null != uri) {
-                    if (stats instanceof ExtendedBlobStatsCollector) {
-                        ((ExtendedBlobStatsCollector) stats).getDownloadURICalled(System.nanoTime() - start, TimeUnit.NANOSECONDS, extractedBlobId);
-                        ((ExtendedBlobStatsCollector) stats).getDownloadURICompleted(uri.toString());
-                    }
-                }
-                else if (stats instanceof ExtendedBlobStatsCollector) {
-                    ((ExtendedBlobStatsCollector) stats).getDownloadURIFailed();
-                }
-
-                return uri;
             }
-        }
-        else if (stats instanceof ExtendedBlobStatsCollector) {
-            ((ExtendedBlobStatsCollector) stats).getDownloadURIFailed();
         }
         return null;
     }

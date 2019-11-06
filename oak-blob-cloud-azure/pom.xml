@@ -21,7 +21,7 @@
     <parent>
         <artifactId>oak-parent</artifactId>
         <groupId>org.apache.jackrabbit</groupId>
-        <version>1.20-SNAPSHOT</version>
+        <version>1.18-SNAPSHOT</version>
         <relativePath>../oak-parent/pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -29,6 +29,10 @@
     <artifactId>oak-blob-cloud-azure</artifactId>
     <name>Oak Azure Cloud Blob Store</name>
     <packaging>bundle</packaging>
+
+    <properties>
+        <azure.version>12.0.0-preview.3</azure.version>
+    </properties>
 
     <build>
         <plugins>
@@ -46,8 +50,7 @@
                         </Export-Package>
                         <DynamicImport-Package>sun.io</DynamicImport-Package>
                         <Embed-Dependency>
-                            azure-storage,
-                            azure-keyvault-core
+                            azure-storage-blob
                         </Embed-Dependency>
                     </instructions>
                 </configuration>
@@ -74,12 +77,6 @@
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.scr.annotations</artifactId>
             <scope>provided</scope>
-        </dependency>
-
-        <!-- Nullability annotations -->
-        <dependency>
-            <groupId>org.jetbrains</groupId>
-            <artifactId>annotations</artifactId>
         </dependency>
 
         <!-- JCR and Jackrabbit dependencies -->
@@ -119,12 +116,10 @@
 
         <!-- Azure Blob Storage dependency -->
         <dependency>
-            <groupId>com.microsoft.azure</groupId>
-            <artifactId>azure-storage</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.microsoft.azure</groupId>
-            <artifactId>azure-keyvault-core</artifactId>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-storage-blob</artifactId>
+            <version>${azure.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Test dependencies -->

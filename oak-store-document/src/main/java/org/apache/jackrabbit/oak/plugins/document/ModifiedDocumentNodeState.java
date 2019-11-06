@@ -20,6 +20,7 @@ import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState;
 import org.apache.jackrabbit.oak.plugins.memory.ModifiedNodeState;
 import org.apache.jackrabbit.oak.spi.state.AbstractNodeState;
+import org.apache.jackrabbit.oak.spi.state.ApplyDiff;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.EqualsDiff;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
@@ -88,7 +89,9 @@ class ModifiedDocumentNodeState extends AbstractNodeState {
     @NotNull
     @Override
     public NodeBuilder builder() {
-        return new DocumentRootBuilder(modified, store, branch);
+        NodeBuilder builder = new DocumentRootBuilder(base, store, branch);
+        modified.compareAgainstBaseState(base, new ApplyDiff(builder));
+        return builder;
     }
 
     @Override

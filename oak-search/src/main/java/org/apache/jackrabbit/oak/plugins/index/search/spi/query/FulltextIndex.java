@@ -87,22 +87,11 @@ public abstract class FulltextIndex implements AdvancedQueryIndex, QueryIndex, N
     protected abstract Predicate<NodeState> getIndexDefinitionPredicate();
 
     protected abstract String getFulltextRequestString(IndexPlan plan, IndexNode indexNode);
-    
-    /**
-     * Whether replaced indexes (that is, if a new version of the index is
-     * available) should be filtered out.
-     * 
-     * @return true if yes (e.g. in a blue-green deployment model)
-     */
-    protected abstract boolean filterReplacedIndexes();
 
     @Override
     public List<IndexPlan> getPlans(Filter filter, List<OrderEntry> sortOrder, NodeState rootState) {
         Collection<String> indexPaths = new IndexLookup(rootState, getIndexDefinitionPredicate())
                 .collectIndexNodePaths(filter);
-        if (filterReplacedIndexes()) {
-            indexPaths = IndexName.filterReplacedIndexes(indexPaths, rootState);
-        }
         List<IndexPlan> plans = Lists.newArrayListWithCapacity(indexPaths.size());
         for (String path : indexPaths) {
             IndexNode indexNode = null;
@@ -126,7 +115,7 @@ public abstract class FulltextIndex implements AdvancedQueryIndex, QueryIndex, N
         }
         return plans;
     }
-    
+
     @Override
     public double getCost(Filter filter, NodeState root) {
         throw new UnsupportedOperationException("Not supported as implementing AdvancedQueryIndex");
@@ -237,7 +226,7 @@ public abstract class FulltextIndex implements AdvancedQueryIndex, QueryIndex, N
         return PathUtils.getName(getPlanResult(plan).indexPath);
     }
 
-    public static int determinePropertyType(PropertyDefinition defn, PropertyRestriction pr) {
+    protected static int determinePropertyType(PropertyDefinition defn, PropertyRestriction pr) {
         int typeFromRestriction = pr.propertyType;
         if (typeFromRestriction == PropertyType.UNDEFINED) {
             //If no explicit type defined then determine the type from restriction
@@ -307,7 +296,7 @@ public abstract class FulltextIndex implements AdvancedQueryIndex, QueryIndex, N
         return rewritten.toString();
     }
 
-    public static String getPathRestriction(IndexPlan plan) {
+    protected static String getPathRestriction(IndexPlan plan) {
         Filter f = plan.getFilter();
         String pathPrefix = plan.getPathPrefix();
         if (pathPrefix.isEmpty()) {
@@ -385,8 +374,7 @@ public abstract class FulltextIndex implements AdvancedQueryIndex, QueryIndex, N
         private long estimatedSize;
         private final int numberOfFacets;
 
-        public FulltextPathCursor(final Iterator<FulltextResultRow> it, final IteratorRewoundStateProvider iterStateProvider,
-                                  final IndexPlan plan, QueryLimits settings, SizeEstimator sizeEstimator) {
+        public FulltextPathCursor(final Iterator<FulltextResultRow> it, final IteratorRewoundStateProvider iterStateProvider, final IndexPlan plan, QueryLimits settings, SizeEstimator sizeEstimator) {
             pathPrefix = plan.getPathPrefix();
             this.sizeEstimator = sizeEstimator;
             Iterator<String> pathIterator = new Iterator<String>() {

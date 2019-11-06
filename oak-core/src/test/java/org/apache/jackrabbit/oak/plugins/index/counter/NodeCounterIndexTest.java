@@ -23,7 +23,6 @@ import static org.junit.Assert.assertTrue;
 
 import java.text.ParseException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
 
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.api.ContentRepository;
@@ -48,6 +47,8 @@ import org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils;
 import org.jetbrains.annotations.Nullable;
 import org.junit.Before;
 import org.junit.Test;
+
+import com.google.common.base.Predicate;
 
 /**
  * A test case for the node counter index.
@@ -151,7 +152,7 @@ public class NodeCounterIndexTest {
     private void runAsyncIndex() {
         Runnable async = WhiteboardUtils.getService(wb, Runnable.class, new Predicate<Runnable>() {
             @Override
-            public boolean test(@Nullable Runnable input) {
+            public boolean apply(@Nullable Runnable input) {
                 return input instanceof AsyncIndexUpdate;
             }
         });

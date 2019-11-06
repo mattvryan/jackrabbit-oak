@@ -16,17 +16,13 @@
  */
 package org.apache.jackrabbit.oak.security.authorization.accesscontrol;
 
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 import javax.jcr.security.AccessControlPolicy;
 import javax.jcr.security.NamedAccessControlPolicy;
 
 import org.apache.jackrabbit.oak.AbstractSecurityTest;
-import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.authorization.AuthorizationConfiguration;
-import org.apache.jackrabbit.oak.spi.security.authorization.accesscontrol.ReadPolicy;
 import org.apache.jackrabbit.oak.spi.security.authorization.permission.PermissionConstants;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,7 +30,6 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * Tests for the special {@code ReadPolicy} exposed at specified paths.
@@ -44,7 +39,6 @@ import static org.junit.Assert.fail;
 public class ReadPolicyTest extends AbstractSecurityTest {
 
     private Set<String> readPaths;
-    private Set<String> subTreePaths = new HashSet<>();
 
     @Override
     @Before
@@ -53,14 +47,6 @@ public class ReadPolicyTest extends AbstractSecurityTest {
 
         ConfigurationParameters options = getConfig(AuthorizationConfiguration.class).getParameters();
         readPaths = options.getConfigValue(PermissionConstants.PARAM_READ_PATHS, PermissionConstants.DEFAULT_READ_PATHS);
-
-        for (String p : readPaths) {
-            Tree t = root.getTree(p);
-            Iterator<Tree> children = t.getChildren().iterator();
-            if (children.hasNext()) {
-                subTreePaths.add(children.next().getPath());
-            }
-        }
     }
 
     @Test
@@ -70,23 +56,12 @@ public class ReadPolicyTest extends AbstractSecurityTest {
             assertTrue(policies.length > 0);
             boolean found = false;
             for (AccessControlPolicy policy : policies) {
-                if (policy instanceof ReadPolicy) {
+                if ("org.apache.jackrabbit.oak.security.authorization.accesscontrol.AccessControlManagerImpl$ReadPolicy".equals(policy.getClass().getName())) {
                     found = true;
                     break;
                 }
             }
             assertTrue(found);
-        }
-    }
-
-    @Test
-    public void tsetGetPoliciesInSubtrees() throws Exception {
-        for (String path : subTreePaths) {
-            for (AccessControlPolicy policy : getAccessControlManager(root).getPolicies(path)) {
-                if (policy instanceof ReadPolicy) {
-                    fail("ReadPolicy must only be bound to configured path.");
-                }
-            }
         }
     }
 
@@ -94,24 +69,10 @@ public class ReadPolicyTest extends AbstractSecurityTest {
     public void testGetEffectivePolicies() throws Exception {
         for (String path : readPaths) {
             AccessControlPolicy[] policies = getAccessControlManager(root).getEffectivePolicies(path);
+            assertTrue(policies.length > 0);
             boolean found = false;
             for (AccessControlPolicy policy : policies) {
-                if (policy instanceof ReadPolicy) {
-                    found = true;
-                    break;
-                }
-            }
-            assertTrue(found);
-        }
-    }
-
-    @Test
-    public void testGetEffectivePoliciesInSubTrees() throws Exception {
-        for (String path : subTreePaths) {
-            AccessControlPolicy[] policies = getAccessControlManager(root).getEffectivePolicies(path);
-            boolean found = false;
-            for (AccessControlPolicy policy : policies) {
-                if (policy instanceof ReadPolicy) {
+                if ("org.apache.jackrabbit.oak.security.authorization.accesscontrol.AccessControlManagerImpl$ReadPolicy".equals(policy.getClass().getName())) {
                     found = true;
                     break;
                 }

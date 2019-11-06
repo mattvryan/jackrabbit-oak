@@ -284,17 +284,10 @@ public class UnionQueryImpl implements Query {
         prepare();
         if (explain) {
             String plan = getPlan();
-            columns = new ColumnImpl[] {
-                    new ColumnImpl("explain", "plan", "plan"),
-                    new ColumnImpl("explain", "statement", "statement")
-            };
+            columns = new ColumnImpl[] { new ColumnImpl("explain", "plan", "plan")};
             ResultRowImpl r = new ResultRowImpl(this,
                     Tree.EMPTY_ARRAY,
-                    new PropertyValue[] {
-                            PropertyValues.newString(plan),
-                            // retrieve the original statement from either of the unioned subqueries, i.e., the left one
-                            PropertyValues.newString(left.getStatement().replaceFirst("(?i)\\bexplain\\s+", ""))
-                    },
+                    new PropertyValue[] { PropertyValues.newString(plan)},
                     null, null);
             return Arrays.asList(r).iterator();
         }

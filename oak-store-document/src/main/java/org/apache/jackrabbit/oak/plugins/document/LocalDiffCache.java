@@ -112,11 +112,6 @@ public class LocalDiffCache extends DiffCache {
         return Collections.singleton(diffCacheStats);
     }
 
-    @Override
-    public void invalidateAll() {
-        diffCache.invalidateAll();
-    }
-
     //-----------------------------< internal >---------------------------------
 
 

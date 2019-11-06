@@ -62,7 +62,6 @@ import org.apache.jackrabbit.oak.api.Descriptors;
 import org.apache.jackrabbit.oak.api.Root;
 import org.apache.jackrabbit.oak.api.jmx.QueryEngineSettingsMBean;
 import org.apache.jackrabbit.oak.api.jmx.RepositoryManagementMBean;
-import org.apache.jackrabbit.oak.commons.IOUtils;
 import org.apache.jackrabbit.oak.commons.concurrent.ExecutorCloser;
 import org.apache.jackrabbit.oak.commons.jmx.AnnotatedStandardMBean;
 import org.apache.jackrabbit.oak.core.ContentRepositoryImpl;
@@ -669,12 +668,7 @@ public class Oak {
      */
     public ContentRepository createContentRepository() {
         if (contentRepository == null) {
-            try {
-                contentRepository = createNewContentRepository();
-            } catch ( RuntimeException e ) {
-                IOUtils.closeQuietly(closer);
-                throw e;
-            }
+            contentRepository = createNewContentRepository();
         }
 
         return contentRepository;
@@ -719,9 +713,7 @@ public class Oak {
         }
 
         final RepoStateCheckHook repoStateCheckHook = new RepoStateCheckHook();
-        closer.register(repoStateCheckHook);
         final List<Registration> regs = Lists.newArrayList();
-        closer.register( () -> new CompositeRegistration(regs).unregister() );
         regs.add(whiteboard.register(Executor.class, getExecutor(), Collections.emptyMap()));
 
         IndexEditorProvider indexEditors = CompositeIndexEditorProvider.compose(indexEditorProviders);
@@ -796,6 +788,8 @@ public class Oak {
             @Override
             public void close() throws IOException {
                 super.close();
+                repoStateCheckHook.close();
+                new CompositeRegistration(regs).unregister();
                 closer.close();
             }
         };

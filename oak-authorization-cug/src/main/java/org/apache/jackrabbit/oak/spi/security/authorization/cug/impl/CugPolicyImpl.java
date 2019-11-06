@@ -16,7 +16,14 @@
  */
 package org.apache.jackrabbit.oak.spi.security.authorization.cug.impl;
 
+import java.security.Principal;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import javax.jcr.security.AccessControlException;
+
 import com.google.common.base.Strings;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import org.apache.jackrabbit.api.security.principal.PrincipalManager;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
@@ -27,13 +34,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.jcr.security.AccessControlException;
-import java.security.Principal;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Implementation of the {@link org.apache.jackrabbit.oak.spi.security.authorization.cug.CugPolicy}
@@ -49,7 +49,7 @@ class CugPolicyImpl implements CugPolicy {
     private final int importBehavior;
     private final CugExclude cugExclude;
 
-    private final Map<String,Principal> principals = new LinkedHashMap<>();
+    private final Set<Principal> principals = new HashSet<>();
 
     CugPolicyImpl(@NotNull String oakPath, @NotNull NamePathMapper namePathMapper,
                   @NotNull PrincipalManager principalManager, int importBehavior, @NotNull CugExclude cugExclude) {
@@ -58,31 +58,28 @@ class CugPolicyImpl implements CugPolicy {
 
     CugPolicyImpl(@NotNull String oakPath, @NotNull NamePathMapper namePathMapper,
                   @NotNull PrincipalManager principalManager, int importBehavior,
-                  @NotNull CugExclude cugExclude, @NotNull Iterable<Principal> principals) {
+                  @NotNull CugExclude cugExclude, @NotNull Set<Principal> principals) {
         ImportBehavior.nameFromValue(importBehavior);
         this.oakPath = oakPath;
         this.namePathMapper = namePathMapper;
         this.principalManager = principalManager;
         this.importBehavior = importBehavior;
         this.cugExclude = cugExclude;
-        for (Principal principal : principals) {
-            this.principals.put(principal.getName(), principal);
-        }
+        this.principals.addAll(principals);
     }
 
     @NotNull
     @Override
     public Set<Principal> getPrincipals() {
-        return Sets.newHashSet(principals.values());
+        return Sets.newHashSet(principals);
     }
 
     @Override
     public boolean addPrincipals(@NotNull Principal... principals) throws AccessControlException {
         boolean modified = false;
         for (Principal principal : principals) {
-            if (isValidPrincipal(principal) && !this.principals.containsKey(principal.getName())) {
-                this.principals.put(principal.getName(), principal);
-                modified = true;
+            if (isValidPrincipal(principal)) {
+                modified |= this.principals.add(principal);
             }
         }
         return modified;
@@ -92,9 +89,8 @@ class CugPolicyImpl implements CugPolicy {
     public boolean removePrincipals(@NotNull Principal... principals) {
         boolean modified = false;
         for (Principal principal : principals) {
-            if (principal != null && this.principals.containsKey(principal.getName())) {
-                this.principals.remove(principal.getName());
-                modified = true;
+            if (principal != null) {
+                modified |= this.principals.remove(principal);
             }
         }
         return modified;
@@ -108,7 +104,7 @@ class CugPolicyImpl implements CugPolicy {
 
     //--------------------------------------------------------------------------
     Iterable<String> getPrincipalNames() {
-        return Sets.newHashSet(principals.keySet());
+        return Iterables.transform(principals, Principal::getName);
     }
 
     //--------------------------------------------------------------------------

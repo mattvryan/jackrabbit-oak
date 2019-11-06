@@ -16,7 +16,12 @@
  */
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
+import java.util.Properties;
+
+import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,9 +34,14 @@ import org.slf4j.LoggerFactory;
  * src/test/resources/azure.properties
 
  */
+@RunWith(Parameterized.class)
 public class TestAzureDsCacheOff extends TestAzureDS {
 
     protected static final Logger LOG = LoggerFactory.getLogger(TestAzureDsCacheOff.class);
+
+    public TestAzureDsCacheOff(@NotNull final Properties fixture) {
+        super(fixture);
+    }
 
     @Override
     @Before

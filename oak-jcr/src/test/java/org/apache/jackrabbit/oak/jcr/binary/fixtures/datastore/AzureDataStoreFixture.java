@@ -18,25 +18,28 @@
  */
 package org.apache.jackrabbit.oak.jcr.binary.fixtures.datastore;
 
+import java.net.URISyntaxException;
+import java.security.InvalidKeyException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 
+import com.google.common.base.Strings;
+import com.microsoft.azure.storage.CloudStorageAccount;
+import com.microsoft.azure.storage.StorageException;
+import com.microsoft.azure.storage.blob.CloudBlobClient;
+import com.microsoft.azure.storage.blob.CloudBlobContainer;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureConstants;
 import org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.AzureDataStore;
-import org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage.Utils;
 import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.apache.jackrabbit.oak.jcr.binary.fixtures.nodestore.FixtureUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.microsoft.azure.storage.StorageException;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
 
 /**
  * Fixture for AzureDataStore based on an azure.properties config file. It creates
@@ -80,6 +83,65 @@ public class AzureDataStoreFixture implements DataStoreFixture {
         return true;
     }
 
+    private CloudBlobContainer getBlobContainer(@NotNull final Properties properties, @NotNull final String containerName) throws DataStoreException {
+        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, null);
+        if (Strings.isNullOrEmpty(accountName)) {
+            throw new DataStoreException(String.format("%s - %s '%s'",
+                    "Unable to initialize Azure Data Store",
+                    "missing required configuration parameter",
+                    AzureConstants.AZURE_STORAGE_ACCOUNT_NAME
+            ));
+        }
+
+        return getBlobContainer(getConnectionStringFromProperties(properties), containerName);
+    }
+
+    private String getConnectionStringFromProperties(@NotNull final Properties properties) {
+        String sasUri = properties.getProperty(AzureConstants.AZURE_SAS, "");
+        String blobEndpoint = properties.getProperty(AzureConstants.AZURE_BLOB_ENDPOINT, "");
+        String connectionString = properties.getProperty(AzureConstants.AZURE_CONNECTION_STRING, "");
+
+        if (!connectionString.isEmpty()) {
+            return connectionString;
+        }
+
+        if (!sasUri.isEmpty()) {
+            return getConnectionStringForSas(sasUri, blobEndpoint);
+        }
+
+        return getConnectionString(
+                properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, ""),
+                properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY, ""));
+
+    }
+
+    private static CloudBlobClient getBlobClient(final String connectionString) throws URISyntaxException, InvalidKeyException {
+        CloudStorageAccount account = CloudStorageAccount.parse(connectionString);
+        CloudBlobClient client = account.createCloudBlobClient();
+        return client;
+    }
+
+    private static CloudBlobContainer getBlobContainer(final String connectionString, final String containerName) throws DataStoreException {
+        try {
+            CloudBlobClient client = getBlobClient(connectionString);
+            return client.getContainerReference(containerName);
+        } catch (InvalidKeyException | URISyntaxException | StorageException e) {
+            throw new DataStoreException(e);
+        }
+    }
+
+    private static String getConnectionStringForSas(String sasUri, String blobEndpoint) {
+        return String.format("BlobEndpoint=%s;SharedAccessSignature=%s", blobEndpoint, sasUri);
+    }
+
+    private static String getConnectionString(final String accountName, final String accountKey) {
+        return String.format(
+                "DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s",
+                accountName,
+                accountKey
+        );
+    }
+
     @NotNull
     @Override
     public DataStore createDataStore() {
@@ -92,9 +154,8 @@ public class AzureDataStoreFixture implements DataStoreFixture {
 
         log.info("Creating Azure test blob container {}", containerName);
 
-        String connectionString = Utils.getConnectionStringFromProperties(azProps);
         try {
-            CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
+            CloudBlobContainer container = getBlobContainer(azProps, containerName);
             container.createIfNotExists();
 
             // create new properties since azProps is shared for all created DataStores

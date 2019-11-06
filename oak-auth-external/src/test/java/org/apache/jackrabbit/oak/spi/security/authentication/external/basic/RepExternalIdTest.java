@@ -31,7 +31,6 @@ import org.jetbrains.annotations.NotNull;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.apache.jackrabbit.oak.api.CommitFailedException.CONSTRAINT;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -96,7 +95,7 @@ public class RepExternalIdTest extends AbstractExternalAuthTest {
         assertRepExternalId(res);
     }
 
-    @Test(expected = CommitFailedException.class)
+    @Test
     public void testUniqueConstraint() throws Exception {
         SyncResult res = syncCtx.sync(idp.getUser(USER_ID));
 
@@ -107,13 +106,14 @@ public class RepExternalIdTest extends AbstractExternalAuthTest {
             fail("Duplicate value for rep:externalId must be detected in the default setup.");
         } catch (CommitFailedException e) {
             // success: verify nature of the exception
-            assertException(e, CONSTRAINT, 30);
+            assertTrue(e.isConstraintViolation());
+            assertEquals(30, e.getCode());
         } finally {
             r.refresh();
         }
     }
 
-    @Test(expected = CommitFailedException.class)
+    @Test
     public void testUniqueConstraintSubsequentCommit() throws Exception {
         SyncResult res = syncCtx.sync(idp.getUser(USER_ID));
         r.commit();
@@ -125,13 +125,14 @@ public class RepExternalIdTest extends AbstractExternalAuthTest {
             fail("Duplicate value for rep:externalId must be detected in the default setup.");
         } catch (CommitFailedException e) {
             // success: verify nature of the exception
-            assertException(e, CONSTRAINT, 30);
+            assertTrue(e.isConstraintViolation());
+            assertEquals(30, e.getCode());
         } finally {
             r.refresh();
         }
     }
 
-    @Test(expected = CommitFailedException.class)
+    @Test
     public void testUniqueConstraintNonUserNode() throws Exception {
         try {
             SyncResult res = syncCtx.sync(idp.getUser(USER_ID));
@@ -142,7 +143,8 @@ public class RepExternalIdTest extends AbstractExternalAuthTest {
             fail("Duplicate value for rep:externalId must be detected in the default setup.");
         } catch (CommitFailedException e) {
             // success: verify nature of the exception
-            assertException(e, CONSTRAINT, 30);
+            assertTrue(e.isConstraintViolation());
+            assertEquals(30, e.getCode());
         } finally {
             r.refresh();
         }

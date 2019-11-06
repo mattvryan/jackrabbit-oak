@@ -26,7 +26,6 @@ import org.apache.jackrabbit.oak.plugins.index.search.FulltextIndexConstants;
 import org.apache.jackrabbit.oak.spi.mount.MountInfoProvider;
 import org.apache.jackrabbit.oak.spi.mount.Mounts;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -48,8 +47,8 @@ import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.TYPE_PROPER
 import static org.apache.jackrabbit.oak.plugins.index.lucene.TestUtil.shutdown;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 @SuppressWarnings("ConstantConditions")
 public class CompositeNodeStoreLuceneIndexTest extends CompositeNodeStoreQueryTestBase {
@@ -72,14 +71,6 @@ public class CompositeNodeStoreLuceneIndexTest extends CompositeNodeStoreQueryTe
         globalStore = register(nodeStoreRoot.create(null));
         repoV1 = new CompositeRepo(READ_ONLY_MOUNT_V1_NAME);
         repoV1.initCompositeRepo();
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        repoV1.cleanup();
-        if (repoV2 != null) {
-            repoV2.cleanup();
-        }
     }
 
     /**
@@ -107,34 +98,31 @@ public class CompositeNodeStoreLuceneIndexTest extends CompositeNodeStoreQueryTe
 
         long reindexCount2 = luceneTest.getProperty(REINDEX_COUNT).getValue().getLong();
         assertEquals(reindexCount2, reindexCount + 1);
+
+        repoV1.cleanup();
     }
 
     /**
-     * Given a composite node store , create an index in read-write part
-     * with the same index node already existing in the read-only part already.
+     * Given a composite node store , trying to create an index in read-write part
+     * with the same index node already existing in the read only part already
+     * we should get OakConstraint001 . This is the current behaviour,
+     * but can be worked upon (improved) in the future .
      */
     @Test
-    public void addIndexInReadWriteWithIndexExistinginReadOnly() throws Exception {
-        repoV1.setupIndexAndContentInRepo("luceneTest", "foo", true, VERSION_1);
-    }
-
-    @Test
-    public void reindexCounterIndex() throws Exception {
-        Session s = repoV1.getSession();
-        Node c = s.getRootNode().getNode(INDEX_DEFINITIONS_NAME).getNode("counter");
-
-        c.setProperty("async", (String) null);
-        c.setProperty("resolution", 1);
-        c.setProperty("reindex", true);
-        s.save();
-
-        assertFalse(c.getProperty("reindex").getBoolean());
+    public void tryAddIndexInReadWriteWithIndexExistinginReadOnly() {
+        try {
+            repoV1.setupIndexAndContentInRepo("luceneTest", "foo", true, VERSION_1);
+            assertTrue(false);
+        } catch (Exception e) {
+            assert (e.getLocalizedMessage().contains(
+                    "OakConstraint0001: /oak:index/luceneTest/:oak:mount-readOnlyV1-index-data[[]]: The primary type null does not exist"));
+        }
     }
 
     /**
      * Given a composite jcr repo with a lucene index with indexed data from both read only and read write parts
      * We create a V2 of this repo which will have the lucene index removed -
-     * Expected behaviour - The same query that returned results from both readonly
+     * Expected behaviour - The same query that returned resutls from both readonly
      * and readwrite in V1 should now return
      * results - but it would be a traversal query and not use the index .
      */
@@ -297,6 +285,9 @@ public class CompositeNodeStoreLuceneIndexTest extends CompositeNodeStoreQueryTe
         result = repoV1.executeQuery("/jcr:root//*[@foo3 = 'bar'] order by @jcr:path", "xpath");
         assertEquals("/content-foo3/node-0, " +
                 "/content-foo3/node-1", getResult(result, "jcr:path"));
+
+        repoV1.cleanup();
+        repoV2.cleanup();
     }
 
     private static String getResult(QueryResult result, String propertyName) throws RepositoryException {
@@ -341,8 +332,6 @@ public class CompositeNodeStoreLuceneIndexTest extends CompositeNodeStoreQueryTe
         private JackrabbitSession readOnlySession;
         private Node readOnlyRoot;
         private String readOnlyMountName;
-
-        private boolean cleanedUp;
 
         public Node getReadOnlyRoot() {
             return readOnlyRoot;
@@ -480,13 +469,10 @@ public class CompositeNodeStoreLuceneIndexTest extends CompositeNodeStoreQueryTe
         }
 
         private void cleanup() {
-            if (!cleanedUp) {
-                compositeSession.logout();
-                shutdown(compositeRepository);
-                readOnlySession.logout();
-                shutdown(readOnlyRepository);
-            }
-            cleanedUp = true;
+            compositeSession.logout();
+            shutdown(compositeRepository);
+            readOnlySession.logout();
+            shutdown(readOnlyRepository);
         }
 
     }

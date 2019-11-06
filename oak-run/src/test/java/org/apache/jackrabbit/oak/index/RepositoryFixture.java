@@ -22,7 +22,6 @@ package org.apache.jackrabbit.oak.index;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.util.function.Predicate;
 
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
@@ -82,7 +81,7 @@ public class RepositoryFixture implements Closeable {
 
     public AsyncIndexUpdate getAsyncIndexUpdate(String laneName) {
         return (AsyncIndexUpdate) getService(whiteboard, Runnable.class,
-                (Predicate<Runnable>)((runnable) -> runnable instanceof AsyncIndexUpdate && laneName.equals(((AsyncIndexUpdate)runnable).getName())));
+                (runnable) -> runnable instanceof AsyncIndexUpdate && laneName.equals(((AsyncIndexUpdate)runnable).getName()));
     }
 
     @Override

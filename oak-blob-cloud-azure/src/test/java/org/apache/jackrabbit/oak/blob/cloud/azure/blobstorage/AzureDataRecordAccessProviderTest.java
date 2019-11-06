@@ -19,6 +19,8 @@
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -35,8 +37,10 @@ import org.apache.jackrabbit.core.data.DataIdentifier;
 import org.apache.jackrabbit.core.data.DataRecord;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.core.data.RandomInputStream;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.AbstractDataRecordAccessProviderTest;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordDownloadOptions;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUpload;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.DataRecordUploadException;
 import org.apache.jackrabbit.oak.spi.blob.BlobOptions;
@@ -54,11 +58,28 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
 
     @BeforeClass
     public static void setupDataStore() throws Exception {
-        dataStore = AzureDataStoreUtils.setupDirectAccessDataStore(homeDir, expirySeconds, expirySeconds);
+        // Direct binary access is not supported if not authenticating with an account key.
+        assumeTrue(AzureDataStoreUtils.getAzureConfig().containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY));
+
+        assumeTrue(AzureDataStoreUtils.isAzureConfigured());
+        dataStore = (AzureDataStore) AzureDataStoreUtils
+            .getAzureDataStore(getProperties(), homeDir.newFolder().getAbsolutePath());
+        dataStore.setDirectDownloadURIExpirySeconds(expirySeconds);
+        dataStore.setDirectUploadURIExpirySeconds(expirySeconds);
+    }
+
+    private static Properties getProperties() {
+        Properties props = AzureDataStoreUtils.getAzureConfig();
+        props.setProperty("cacheSize", "0");
+        return props;
     }
 
     private static AzureDataStore createDataStore(@NotNull Properties properties) throws Exception {
-        return AzureDataStoreUtils.setupDirectAccessDataStore(homeDir, expirySeconds, expirySeconds, properties);
+        AzureDataStore ds = (AzureDataStore) AzureDataStoreUtils
+                .getAzureDataStore(properties, homeDir.newFolder().getAbsolutePath());
+        ds.setDirectDownloadURIExpirySeconds(expirySeconds);
+        ds.setDirectUploadURIExpirySeconds(expirySeconds);
+        return ds;
     }
 
     @Override
@@ -68,7 +89,10 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
 
     @Override
     protected ConfigurableDataRecordAccessProvider getDataStore(@NotNull Properties overrideProperties) throws Exception {
-        return createDataStore(AzureDataStoreUtils.getDirectAccessDataStoreProperties(overrideProperties));
+        Properties mergedProperties = new Properties();
+        mergedProperties.putAll(getProperties());
+        mergedProperties.putAll(overrideProperties);
+        return createDataStore(mergedProperties);
     }
 
     @Override
@@ -150,5 +174,34 @@ public class AzureDataRecordAccessProviderTest extends AbstractDataRecordAccessP
         // expectedNumURIs still 50000, Azure limit
         upload = ds.initiateDataRecordUpload(uploadSize, -1);
         assertEquals(expectedNumURIs, upload.getUploadURIs().size());
+    }
+
+    @Test
+    public void testGetDownloadURIWithSASAuthIsDisabled() throws Exception {
+        // It is not allowed to generate a signed download URI if the client
+        // uses SAS-based authentication.  This test verifies that SAS-based
+        // authentication will cause the feature to be disabled.
+        Properties props = getProperties();
+        assumeTrue(props.containsKey(AzureConstants.AZURE_SAS));
+        props.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+
+        ConfigurableDataRecordAccessProvider ds = createDataStore(props);
+        DataRecord record = doSynchronousAddRecord((AzureDataStore) ds, new RandomInputStream(System.currentTimeMillis(), 20*1024));
+
+        assertNull(ds.getDownloadURI(record.getIdentifier(), DataRecordDownloadOptions.DEFAULT));
+    }
+
+    @Test
+    public void testInitiateDirectUploadWithSASAuthIsDisabled() throws Exception {
+        // It is not allowed to initiate a signed upload if the client
+        // uses SAS-based authentication.  This test verifies that SAS-based
+        // authentication will cause the feature to be disabled.
+        Properties props = getProperties();
+        assumeTrue(props.containsKey(AzureConstants.AZURE_SAS));
+        props.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+
+        ConfigurableDataRecordAccessProvider ds = createDataStore(props);
+
+        assertNull(ds.initiateDataRecordUpload(20*1024, 10));
     }
 }

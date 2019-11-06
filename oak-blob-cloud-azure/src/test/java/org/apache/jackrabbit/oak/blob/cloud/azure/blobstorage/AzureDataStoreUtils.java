@@ -19,7 +19,6 @@
 package org.apache.jackrabbit.oak.blob.cloud.azure.blobstorage;
 
 import static com.google.common.base.StandardSystemProperty.USER_HOME;
-import static org.junit.Assume.assumeTrue;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -29,23 +28,23 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
 
 import javax.net.ssl.HttpsURLConnection;
 
+import com.azure.core.http.rest.VoidResponse;
+import com.azure.core.util.Context;
+import com.azure.storage.blob.ContainerClient;
 import com.google.common.base.Predicate;
 import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.microsoft.azure.storage.blob.CloudBlobContainer;
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreUtils;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.directaccess.ConfigurableDataRecordAccessProvider;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,10 +66,10 @@ public class AzureDataStoreUtils extends DataStoreUtils {
     public static boolean isAzureConfigured() {
         Properties props = getAzureConfig();
         //need either access keys or sas
-        if (!props.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY) || !props.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME)
-                || !(props.containsKey(AzureConstants.AZURE_BLOB_CONTAINER_NAME))) {
-            if (!props.containsKey(AzureConstants.AZURE_SAS) || !props.containsKey(AzureConstants.AZURE_BLOB_ENDPOINT)
-                    || !(props.containsKey(AzureConstants.AZURE_BLOB_CONTAINER_NAME))) {
+        if (!props.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY) && !props.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME)
+                && !(props.containsKey(AzureConstants.AZURE_BLOB_CONTAINER_NAME))) {
+            if (!props.containsKey(AzureConstants.AZURE_SAS) && !props.containsKey(AzureConstants.AZURE_BLOB_ENDPOINT)
+                    && !(props.containsKey(AzureConstants.AZURE_BLOB_CONTAINER_NAME))) {
                 return false;
             }
         }
@@ -119,6 +118,24 @@ public class AzureDataStoreUtils extends DataStoreUtils {
         return props;
     }
 
+    static Iterable<?> getDataStorePropertyFixtures() {
+        Properties propsAccessKey = AzureDataStoreUtils.getAzureConfig();
+        Properties propsSAS = (Properties) propsAccessKey.clone();
+
+        propsAccessKey.remove(AzureConstants.AZURE_SAS);
+        propsSAS.remove(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY);
+
+        Collection<Properties> fixtures = Lists.newArrayList();
+        if (propsAccessKey.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
+            fixtures.add(propsAccessKey);
+        }
+        if (propsSAS.containsKey(AzureConstants.AZURE_SAS)) {
+            fixtures.add(propsSAS);
+        }
+
+        return fixtures;
+    }
+
     public static DataStore getAzureDataStore(Properties props, String homeDir) throws Exception {
         AzureDataStore ds = new AzureDataStore();
         PropertiesUtil.populate(ds, Maps.fromProperties(props), false);
@@ -128,48 +145,6 @@ public class AzureDataStoreUtils extends DataStoreUtils {
         return ds;
     }
 
-    public static <T extends DataStore> T setupDirectAccessDataStore(
-            @NotNull final TemporaryFolder homeDir,
-            int directDownloadExpirySeconds,
-            int directUploadExpirySeconds)
-            throws Exception {
-        return setupDirectAccessDataStore(homeDir, directDownloadExpirySeconds, directUploadExpirySeconds, null);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <T extends DataStore> T setupDirectAccessDataStore(
-            @NotNull final TemporaryFolder homeDir,
-            int directDownloadExpirySeconds,
-            int directUploadExpirySeconds,
-            @Nullable final Properties overrideProperties)
-            throws Exception {
-        assumeTrue(isAzureConfigured());
-        DataStore ds = (T) getAzureDataStore(getDirectAccessDataStoreProperties(overrideProperties), homeDir.newFolder().getAbsolutePath());
-        if (ds instanceof ConfigurableDataRecordAccessProvider) {
-            ((ConfigurableDataRecordAccessProvider) ds).setDirectDownloadURIExpirySeconds(directDownloadExpirySeconds);
-            ((ConfigurableDataRecordAccessProvider) ds).setDirectUploadURIExpirySeconds(directUploadExpirySeconds);
-        }
-        return (T) ds;
-    }
-
-    public static Properties getDirectAccessDataStoreProperties() {
-        return getDirectAccessDataStoreProperties(null);
-    }
-
-    public static Properties getDirectAccessDataStoreProperties(@Nullable final Properties overrideProperties) {
-        Properties mergedProperties = new Properties();
-        mergedProperties.putAll(getAzureConfig());
-        if (null != overrideProperties) {
-            mergedProperties.putAll(overrideProperties);
-        }
-
-        // set properties needed for direct access testing
-        if (null == mergedProperties.getProperty("cacheSize", null)) {
-            mergedProperties.put("cacheSize", "0");
-        }
-        return mergedProperties;
-    }
-
     public static void deleteContainer(String containerName) throws Exception {
         if (Strings.isNullOrEmpty(containerName)) {
             log.warn("Cannot delete container with null or empty name. containerName={}", containerName);
@@ -177,9 +152,15 @@ public class AzureDataStoreUtils extends DataStoreUtils {
         }
         log.info("Starting to delete container. containerName={}", containerName);
         Properties props = getAzureConfig();
-        CloudBlobContainer container = Utils.getBlobContainer(Utils.getConnectionStringFromProperties(props), containerName);
-        boolean result = container.deleteIfExists();
-        log.info("Container deleted. containerName={} existed={}", containerName, result);
+        ContainerClient container = Utils.getBlobContainer(props, containerName);
+        VoidResponse result = container.deleteWithResponse(null, null, Context.NONE);
+        if (result.statusCode() < 400 || result.statusCode() == 404) {
+            log.info("Container deleted. containerName={} existed={}", containerName, result.statusCode() != 404);
+        }
+        else {
+            log.warn("Unable to delete container. containerName={}, status code={}",
+                    containerName, result.statusCode());
+        }
     }
 
     protected static HttpsURLConnection getHttpsConnection(long length, URI uri) throws IOException {

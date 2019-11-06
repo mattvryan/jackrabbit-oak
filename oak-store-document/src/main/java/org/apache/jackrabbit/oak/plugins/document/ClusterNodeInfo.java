@@ -24,8 +24,6 @@ import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getModuleVer
 
 import java.lang.management.ManagementFactory;
 import java.net.NetworkInterface;
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -166,11 +164,6 @@ public class ClusterNodeInfo {
      * DocumentStore
      */
     private static final String READ_WRITE_MODE_KEY = "readWriteMode";
-
-    /**
-     * Key for invisible flag
-     */
-    public static final String INVISIBLE = "invisible";
 
     /**
      * The unique machine id (the MAC address if available).
@@ -346,14 +339,8 @@ public class ClusterNodeInfo {
      */
     private LeaseFailureHandler leaseFailureHandler;
 
-    /**
-     * Flag to indicate this node is invisible to cluster view and thus recovery.
-     */
-    private boolean invisible;
-
-
     private ClusterNodeInfo(int id, DocumentStore store, String machineId,
-                            String instanceId, boolean newEntry, boolean invisible) {
+                            String instanceId, boolean newEntry) {
         this.id = id;
         this.startTime = getCurrentTime();
         this.leaseEndTime = this.startTime +leaseTime;
@@ -362,7 +349,6 @@ public class ClusterNodeInfo {
         this.machineId = machineId;
         this.instanceId = instanceId;
         this.newEntry = newEntry;
-        this.invisible = invisible;
     }
 
     void setLeaseCheckMode(@NotNull LeaseCheckMode mode) {
@@ -385,10 +371,6 @@ public class ClusterNodeInfo {
         return instanceId;
     }
 
-    boolean isInvisible() {
-        return invisible;
-    }
-
     /**
      * Create a cluster node info instance to be utilized for read only access
      * to underlying store.
@@ -397,7 +379,7 @@ public class ClusterNodeInfo {
      * @return the cluster node info
      */
     public static ClusterNodeInfo getReadOnlyInstance(DocumentStore store) {
-        return new ClusterNodeInfo(0, store, MACHINE_ID, WORKING_DIR, true, true) {
+        return new ClusterNodeInfo(0, store, MACHINE_ID, WORKING_DIR, true) {
             @Override
             public void dispose() {
             }
@@ -436,31 +418,10 @@ public class ClusterNodeInfo {
      * @return the cluster node info
      */
     public static ClusterNodeInfo getInstance(DocumentStore store,
-        RecoveryHandler recoveryHandler,
-        String machineId,
-        String instanceId,
-        int configuredClusterId) {
-
-        return getInstance(store, recoveryHandler, machineId, instanceId, configuredClusterId, false);
-    }
-
-    /**
-     * Get or create a cluster node info instance for the store.
-     *
-     * @param store the document store (for the lease)
-     * @param recoveryHandler the recovery handler to call for a clusterId with
-     *                        an expired lease.
-     * @param machineId the machine id (null for MAC address)
-     * @param instanceId the instance id (null for current working directory)
-     * @param configuredClusterId the configured cluster id (or 0 for dynamic assignment)
-     * @return the cluster node info
-     */
-    public static ClusterNodeInfo getInstance(DocumentStore store,
                                               RecoveryHandler recoveryHandler,
                                               String machineId,
                                               String instanceId,
-                                              int configuredClusterId,
-                                              boolean invisible) {
+                                              int configuredClusterId) {
         // defaults for machineId and instanceID
         if (machineId == null) {
             machineId = MACHINE_ID;
@@ -473,7 +434,7 @@ public class ClusterNodeInfo {
         for (int i = 0; i < retries; i++) {
             Map.Entry<ClusterNodeInfo, Long> suggestedClusterNode =
                     createInstance(store, recoveryHandler, machineId,
-                            instanceId, configuredClusterId, i == 0, invisible);
+                            instanceId, configuredClusterId, i == 0);
             ClusterNodeInfo clusterNode = suggestedClusterNode.getKey();
             Long currentStartTime = suggestedClusterNode.getValue();
             String key = String.valueOf(clusterNode.id);
@@ -485,7 +446,6 @@ public class ClusterNodeInfo {
             update.set(INFO_KEY, clusterNode.toString());
             update.set(STATE, ACTIVE.name());
             update.set(OAK_VERSION_KEY, OAK_VERSION);
-            update.set(INVISIBLE, invisible);
 
             ClusterNodeInfoDocument before = null;
             final boolean success;
@@ -525,8 +485,7 @@ public class ClusterNodeInfo {
                                                                    String machineId,
                                                                    String instanceId,
                                                                    int configuredClusterId,
-                                                                   boolean waitForLease,
-                                                                   boolean invisible) {
+                                                                   boolean waitForLease) {
 
         long now = getCurrentTime();
         int maxId = 0;
@@ -585,7 +544,7 @@ public class ClusterNodeInfo {
                         && iId.equals(instanceId)) {
                     boolean worthRetrying = waitForLeaseExpiry(store, doc, leaseEnd, machineId, instanceId);
                     if (worthRetrying) {
-                        return createInstance(store, recoveryHandler, machineId, instanceId, configuredClusterId, false, invisible);
+                        return createInstance(store, recoveryHandler, machineId, instanceId, configuredClusterId, false);
                     }
                 }
 
@@ -620,7 +579,7 @@ public class ClusterNodeInfo {
 
             // create a candidate. those with matching machine and instance id
             // are preferred, then the one with the lowest clusterId.
-            candidates.add(new ClusterNodeInfo(id, store, mId, iId, false, invisible));
+            candidates.add(new ClusterNodeInfo(id, store, mId, iId, false));
             startTimes.put(id, doc.getStartTime());
         }
 
@@ -637,21 +596,19 @@ public class ClusterNodeInfo {
                 clusterNodeId = maxId + 1;
             }
             // No usable existing entry found so create a new entry
-            candidates.add(new ClusterNodeInfo(clusterNodeId, store, machineId, instanceId, true, invisible));
+            candidates.add(new ClusterNodeInfo(clusterNodeId, store, machineId, instanceId, true));
         }
 
         // use the best candidate
         ClusterNodeInfo info = candidates.first();
         // and replace with an info matching the current machine and instance id
-        info = new ClusterNodeInfo(info.id, store, machineId, instanceId, info.newEntry, invisible);
+        info = new ClusterNodeInfo(info.id, store, machineId, instanceId, info.newEntry);
         return new AbstractMap.SimpleImmutableEntry<>(info, startTimes.get(info.getId()));
     }
 
     private static void logClusterIdAcquired(ClusterNodeInfo clusterNode,
                                              ClusterNodeInfoDocument before) {
         String type = clusterNode.newEntry ? "new" : "existing";
-        type = clusterNode.invisible ? (type + " (invisible)") : type;
-
         String machineInfo = clusterNode.machineId;
         String instanceInfo = clusterNode.instanceId;
         if (before != null) {
@@ -697,7 +654,7 @@ public class ClusterNodeInfo {
                 // check state of cluster node info
                 ClusterNodeInfoDocument reread = store.find(Collection.CLUSTER_NODES, key);
                 if (reread == null) {
-                    LOG.info("Cluster node info " + key + ": gone; continuing.");
+                    LOG.info("Cluster node info " + key + ": gone; continueing.");
                     return true;
                 } else {
                     Long newLeaseEnd = (Long) reread.get(LEASE_END_KEY);
@@ -747,7 +704,7 @@ public class ClusterNodeInfo {
             // (note that once a lease check failed it would not
             // be updated again, ever, as guaranteed by checking
             // for leaseCheckFailed in renewLease() )
-            throw leaseExpired(LEASE_CHECK_FAILED_MSG + " (since " + asISO8601(leaseEndTime) + ")", true);
+            throw leaseExpired(LEASE_CHECK_FAILED_MSG, true);
         }
         long now = getCurrentTime();
         // OAK-3238 put the barrier 1/3 of 60sec=20sec before the end
@@ -762,7 +719,7 @@ public class ClusterNodeInfo {
         synchronized(this) {
             if (leaseCheckFailed) {
                 // someone else won and marked leaseCheckFailed - so we only log/throw
-                throw leaseExpired(LEASE_CHECK_FAILED_MSG + " (since " + asISO8601(leaseEndTime) + ")", true);
+                throw leaseExpired(LEASE_CHECK_FAILED_MSG, true);
             }
             // only retry in lenient mode, fail immediately in strict mode
             final int maxRetries = leaseCheckMode == LeaseCheckMode.STRICT ?
@@ -813,19 +770,20 @@ public class ClusterNodeInfo {
             }
             if (leaseCheckFailed) {
                 // someone else won and marked leaseCheckFailed - so we only log/throw
-                throw leaseExpired(LEASE_CHECK_FAILED_MSG + " (since " + asISO8601(leaseEndTime) + ")", true);
+                throw leaseExpired(LEASE_CHECK_FAILED_MSG, true);
             }
             leaseCheckFailed = true; // make sure only one thread 'wins', ie goes any further
         }
 
-        String template = "%s (mode: %s, leaseEndTime: %d (%s), leaseTime: %d, leaseFailureMargin: %d, "
-                + "lease check end time (leaseEndTime - leaseFailureMargin): %d (%s), now: %d (%s), remaining: %d)"
-                + " Need to stop oak-store-document/DocumentNodeStoreService.";
-        String errorMsg = String.format(template, LEASE_CHECK_FAILED_MSG, leaseCheckMode.name(), leaseEndTime,
-                asISO8601(leaseEndTime), leaseTime, leaseFailureMargin, leaseEndTime - leaseFailureMargin,
-                asISO8601(leaseEndTime - leaseFailureMargin), now, asISO8601(now), (leaseEndTime - leaseFailureMargin) - now);
-
+        final String errorMsg = LEASE_CHECK_FAILED_MSG+" (leaseEndTime: "+leaseEndTime+
+                ", leaseTime: "+leaseTime+
+                ", leaseFailureMargin: "+leaseFailureMargin+
+                ", lease check end time (leaseEndTime-leaseFailureMargin): "+(leaseEndTime - leaseFailureMargin)+
+                ", now: "+now+
+                ", remaining: "+((leaseEndTime - leaseFailureMargin) - now)+
+                ") Need to stop oak-store-document/DocumentNodeStoreService.";
         LOG.error(errorMsg);
+
         handleLeaseFailure(errorMsg);
     }
 
@@ -909,7 +867,7 @@ public class ClusterNodeInfo {
 
             if (leaseCheckFailed) {
                 // prevent lease renewal after it failed
-                throw leaseExpired(LEASE_CHECK_FAILED_MSG + " (since " + asISO8601(leaseEndTime) + ")", true);
+                throw leaseExpired(LEASE_CHECK_FAILED_MSG, true);
             }
             // synchronized could have delayed the 'now', so
             // set it again..
@@ -923,18 +881,20 @@ public class ClusterNodeInfo {
                 synchronized (this) {
                     if (leaseCheckFailed) {
                         // some other thread already noticed and calls failure handler
-                        throw leaseExpired(LEASE_CHECK_FAILED_MSG + " (since " + asISO8601(leaseEndTime) + ")", true);
+                        throw leaseExpired(LEASE_CHECK_FAILED_MSG, true);
                     }
                     // current thread calls failure handler
                     // outside synchronized block
                     leaseCheckFailed = true;
                 }
-                String template = "%s (mode: %s, leaseEndTime: %d (%s), leaseTime: %d, leaseFailureMargin: %d, "
-                        + "lease check end time (leaseEndTime - leaseFailureMargin): %d (%s), now: %d (%s), remaining: %d)"
-                        + " Need to stop oak-store-document/DocumentNodeStoreService.";
-                String errorMsg = String.format(template, LEASE_CHECK_FAILED_MSG, leaseCheckMode.name(), leaseEndTime,
-                        asISO8601(leaseEndTime), leaseTime, leaseFailureMargin, leaseEndTime - leaseFailureMargin,
-                        asISO8601(leaseEndTime - leaseFailureMargin), now, asISO8601(now), (leaseEndTime - leaseFailureMargin) - now);
+                final String errorMsg = LEASE_CHECK_FAILED_MSG + " (mode: " + leaseCheckMode.name() +
+                        ",leaseEndTime: " + leaseEndTime +
+                        ", leaseTime: " + leaseTime +
+                        ", leaseFailureMargin: " + leaseFailureMargin +
+                        ", lease check end time (leaseEndTime-leaseFailureMargin): " + (leaseEndTime - leaseFailureMargin) +
+                        ", now: " + now +
+                        ", remaining: " + ((leaseEndTime - leaseFailureMargin) - now) +
+                        ") Need to stop oak-store-document/DocumentNodeStoreService.";
                 LOG.error(errorMsg);
                 handleLeaseFailure(errorMsg);
                 // should never be reached: handleLeaseFailure throws a DocumentStoreException
@@ -1138,7 +1098,6 @@ public class ClusterNodeInfo {
         UpdateOp update = new UpdateOp("" + id, true);
         update.set(LEASE_END_KEY, null);
         update.set(STATE, null);
-        update.set(INVISIBLE, false);
         store.createOrUpdate(Collection.CLUSTER_NODES, update);
         state = NONE;
     }
@@ -1155,8 +1114,7 @@ public class ClusterNodeInfo {
                 "leaseCheckMode: " + leaseCheckMode.name() + ",\n" +
                 "state: " + state + ",\n" +
                 "oakVersion: " + OAK_VERSION + ",\n" +
-                "formatVersion: " + DocumentNodeStore.VERSION + ",\n" +
-                "invisible: " + invisible;
+                "formatVersion: " + DocumentNodeStore.VERSION;
     }
 
     /**
@@ -1290,8 +1248,4 @@ public class ClusterNodeInfo {
         }
         return new DocumentStoreException(msg);
     }
-
-    private static String asISO8601(long ms) {
-        return DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(ms));
-   }
 }
