@@ -45,6 +45,8 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import com.azure.core.http.rest.Response;
 import com.azure.core.http.rest.VoidResponse;
@@ -1157,12 +1159,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return length;
         }
 
-//        public static AzureBlobInfo fromCloudBlob(CloudBlob cloudBlob) {
-//            return new AzureBlobInfo(cloudBlob.getName(),
-//                                     cloudBlob.getProperties().getLastModified().getTime(),
-//                                     cloudBlob.getProperties().getLength());
-//        }
-
         public static AzureBlobInfo fromBlobItem(BlobItem blobItem) {
             return new AzureBlobInfo(blobItem.name(),
                     blobItem.properties().lastModified().toEpochSecond(),
@@ -1172,7 +1168,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     private class RecordsIterator<T> extends AbstractIterator<T> {
         // Seems to be thread-safe (in 5.0.0)
-//        ResultContinuation resultContinuation;
         String resultContinuation;
         boolean firstCall = true;
         final Function<AzureBlobInfo, T> transformer;
@@ -1209,10 +1204,15 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 containerClient.listBlobsFlat()
                         .streamByPage(resultContinuation)
                         .forEach(result -> {
-                            nResults.addAndGet(result.value().size());
+                            List<BlobItem> blobItems = result.value().stream().filter(new Predicate<BlobItem>() {
+                                @Override
+                                public boolean test(BlobItem blobItem) {
+                                    return ! blobItem.name().startsWith(META_KEY_PREFIX);
+                                }
+                            }).collect(Collectors.toList());
+                            nResults.addAndGet(blobItems.size());
                             items.addAll(Lists.transform(
-                                    result.value(),
-                                    blobItem -> AzureBlobInfo.fromBlobItem(blobItem)
+                                    blobItems, blobItem -> AzureBlobInfo.fromBlobItem(blobItem)
                             ));
                             resultContinuation = result.nextLink();
                         });
@@ -1220,32 +1220,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 LOG.debug("Container records batch read. batchSize={} containerName={} duration={}",
                         nResults.get(), containerName,  (System.currentTimeMillis() - start));
                 return nResults.get() > 0;
-
-
-//                CloudBlobContainer container = Utils.getBlobContainer(connectionString, containerName);
-//                if (!firstCall && (resultContinuation == null || !resultContinuation.hasContinuation())) {
-//                    LOG.trace("No more records in container. containerName={}", container);
-//                    return false;
-//                }
-//                firstCall = false;
-//
-//                ResultSegment<ListBlobItem> results = container.listBlobsSegmented(null, false, EnumSet.noneOf(BlobListingDetails.class), null, resultContinuation, null, null);
-//                resultContinuation = results.getContinuationToken();
-//                for (ListBlobItem item : results.getResults()) {
-//                    if (item instanceof CloudBlob) {
-//                        items.add(AzureBlobInfo.fromCloudBlob((CloudBlob)item));
-//                    }
-//                }
-//
-//                LOG.debug("Container records batch read. batchSize={} containerName={} duration={}",
-//                        results.getLength(), containerName,  (System.currentTimeMillis() - start));
-//                return results.getLength() > 0;
             }
             catch (StorageException e) {
                 LOG.info("Error listing blobs. containerName={}", containerName, e);
-//            }
-//            catch (DataStoreException e) {
-//                LOG.debug("Cannot list blobs. containerName={}", containerName, e);
             } finally {
                 if (contextClassLoader != null) {
                     currentThread().setContextClassLoader(contextClassLoader);
