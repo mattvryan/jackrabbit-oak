@@ -25,11 +25,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
+import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
-import com.azure.storage.blob.ContainerClient;
-import com.azure.storage.common.credentials.SASTokenCredential;
-import com.azure.storage.common.credentials.SharedKeyCredential;
+import com.azure.storage.common.StorageSharedKeyCredential;
 import com.google.common.base.Strings;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.jetbrains.annotations.NotNull;
@@ -47,7 +46,7 @@ public final class Utils {
     }
 
     /**
-     * Create a {@link ContainerClient} from the provided properties (configuration).
+     * Create a {@link BlobContainerClient} from the provided properties (configuration).
      *
      * Tries to create a client using the account name (which must be provided
      * in the {@link Properties}) and the account key, if provided.  If no
@@ -63,10 +62,10 @@ public final class Utils {
      *
      * @param properties Properties to configure the client connection.
      * @param containerName The name of the storage container to use.
-     * @return A {@link ContainerClient} for interaction with the cloud storage.
+     * @return A {@link BlobContainerClient} for interaction with the cloud storage.
      * @throws DataStoreException
      */
-    public static ContainerClient getBlobContainer(@NotNull final Properties properties, @NotNull final String containerName)
+    public static BlobContainerClient getBlobContainer(@NotNull final Properties properties, @NotNull final String containerName)
             throws DataStoreException {
         String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, null);
         if (Strings.isNullOrEmpty(accountName)) {
@@ -98,7 +97,7 @@ public final class Utils {
     }
 
     /**
-     * Create a {@link ContainerClient} using a shared access signature.
+     * Create a {@link BlobContainerClient} using a shared access signature.
      *
      * This only uses the provided information to create a client from the
      * provided shared access signature.  It does not attempt to create a valid
@@ -110,36 +109,35 @@ public final class Utils {
      * @param accountName The name of the Azure Blob Storage account.
      * @param azureSAS The already-provisioned shared access signature string.
      * @param containerName The name of the storage container to use.
-     * @return A {@link ContainerClient} for interaction with the cloud storage.
+     * @return A {@link BlobContainerClient} for interaction with the cloud storage.
      */
-    public static ContainerClient getBlobContainerWithSharedAccessSignature(@NotNull final String accountName,
+    public static BlobContainerClient getBlobContainerWithSharedAccessSignature(@NotNull final String accountName,
                                                                             @NotNull final String azureSAS,
                                                                             @NotNull final String containerName) {
-        SASTokenCredential credential = SASTokenCredential.fromSASTokenString(azureSAS);
         BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
                 .endpoint(String.format("https://%s", getDefaultBlobStorageDomain(accountName)))
-                .credential(credential)
+                .sasToken(azureSAS)
                 .buildClient();
-        return blobServiceClient.getContainerClient(containerName);
+        return blobServiceClient.getBlobContainerClient(containerName);
     }
 
     /**
-     * Create a {@link ContainerClient} from Azure connection information.
+     * Create a {@link BlobContainerClient} from Azure connection information.
      *
      * @param accountName The name of the storage account to connect to.
      * @param accountKey The account key used to authenticate.
      * @param containerName The name of the storage container to use.
-     * @return A {@link ContainerClient} for interaction with the cloud storage.
+     * @return A {@link BlobContainerClient} for interaction with the cloud storage.
      */
-    public static ContainerClient getBlobContainerWithAccountKey(@NotNull final String accountName,
-                                                                 @NotNull final String accountKey,
-                                                                 @NotNull final String containerName) {
-        SharedKeyCredential credential = new SharedKeyCredential(accountName, accountKey);
+    public static BlobContainerClient getBlobContainerWithAccountKey(@NotNull final String accountName,
+                                                                     @NotNull final String accountKey,
+                                                                     @NotNull final String containerName) {
+        StorageSharedKeyCredential credential = new StorageSharedKeyCredential(accountName, accountKey);
         BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
                 .endpoint(String.format("https://%s", getDefaultBlobStorageDomain(accountName)))
                 .credential(credential)
                 .buildClient();
-        return blobServiceClient.getContainerClient(containerName);
+        return blobServiceClient.getBlobContainerClient(containerName);
     }
 
     public static String getDefaultBlobStorageDomain(@NotNull final String accountName) {

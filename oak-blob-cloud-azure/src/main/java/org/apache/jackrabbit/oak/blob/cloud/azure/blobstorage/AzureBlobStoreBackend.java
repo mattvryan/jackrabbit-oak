@@ -36,6 +36,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -49,19 +50,22 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import com.azure.core.http.rest.Response;
-import com.azure.core.http.rest.VoidResponse;
 import com.azure.core.util.Context;
-import com.azure.storage.blob.BlobProperties;
-import com.azure.storage.blob.BlobSASPermission;
-import com.azure.storage.blob.BlockBlobClient;
-import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.BlobClient;
+import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.models.BlobItem;
+import com.azure.storage.blob.models.BlobProperties;
+import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.models.Block;
 import com.azure.storage.blob.models.BlockList;
 import com.azure.storage.blob.models.BlockListType;
 import com.azure.storage.blob.models.CopyStatusType;
 import com.azure.storage.blob.models.ListBlobsOptions;
-import com.azure.storage.blob.models.StorageException;
+import com.azure.storage.blob.sas.BlobSasPermission;
+import com.azure.storage.blob.sas.BlobServiceSasQueryParameters;
+import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
+import com.azure.storage.blob.specialized.BlockBlobClient;
+import com.azure.storage.common.StorageSharedKeyCredential;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import com.google.common.cache.Cache;
@@ -106,7 +110,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     private Properties properties;
     private String containerName;
-    private ContainerClient containerClient;
+    private BlobContainerClient containerClient;
 
     private int concurrentRequestCount = 1;
     private int httpDownloadURIExpirySeconds = 0; // disabled by default
@@ -160,12 +164,12 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 containerClient = Utils.getBlobContainer(properties, containerName);
 
                 if (createBlobContainer && ! containerClient.exists()) {
-                    VoidResponse rsp = containerClient.createWithResponse(null, null, null, Context.NONE);
-                    if (rsp.statusCode() != 201) {
+                    Response rsp = containerClient.createWithResponse(null, null, null, Context.NONE);
+                    if (rsp.getStatusCode() != 201) {
                         String errorMessage = String.format("%s - %s %d.  Container Name='%s'",
                                 "Unable to initialize Azure Data Store",
                                 "container does not exist and creation attempt failed with status",
-                                rsp.statusCode(),
+                                rsp.getStatusCode(),
                                 containerName
                         );
                         LOG.error(errorMessage);
@@ -215,7 +219,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             Thread.currentThread().setContextClassLoader(
                     getClass().getClassLoader());
 
-            BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+            BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
             if (! blob.exists()) {
                 throw new DataStoreException(String.format("Trying to read missing blob. identifier=%s", key));
             }
@@ -229,7 +233,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             }
             return is;
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error reading blob. identifier=%s", key);
             throw new DataStoreException(String.format("Cannot read blob. identifier=%s", key), e);
         } finally {
@@ -256,7 +260,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             long len = file.length();
             LOG.debug("Blob write started. identifier={} length={}", key, len);
-            BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+            BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
             if (!blob.exists()) {
                 boolean useBufferedStream = len < BUFFERED_STREAM_THRESHHOLD;
                 final InputStream in = useBufferedStream  ? new BufferedInputStream(new FileInputStream(file)) : new FileInputStream(file);
@@ -273,15 +277,16 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 return;
             }
 
-            if (blob.getProperties().blobSize() != len) {
+            if (blob.getProperties().getBlobSize() != len) {
                 throw new DataStoreException("Length Collision. identifier=" + key +
                                              " new length=" + len +
-                                             " old length=" + blob.getProperties().blobSize());
+                                             " old length=" + blob.getProperties().getBlobSize());
             }
-            OffsetDateTime oldLastModified = blob.getProperties().lastModified();
+            OffsetDateTime oldLastModified = blob.getProperties().getLastModified();
             LOG.trace("Blob already exists. identifier={} lastModified={}", key, oldLastModified.toString());
 
-            URL sourceUrl = blob.getBlobUrl();
+            //URL sourceUrl = blob.getBlobUrl();
+            URL sourceUrl = new URL(blob.getBlobUrl());
             if (! properties.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
                 // If we got here, we must be authenticated with a SAS - append that SAS to the blob URL
                 String containerSas = properties.getProperty(AzureConstants.AZURE_SAS, null);
@@ -300,16 +305,18 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 sourceUrl = new URL(String.format("https://%s%s%s", sourceUrl.getHost(), sourceUrl.getPath(), queryStr));
             }
 
-            Response rsp = blob.startCopyFromURLWithResponse(sourceUrl,
-                    null, null, null, null,
-                    null, null, Context.NONE);
+            blob.copyFromUrl(sourceUrl.toString());
+//            Response rsp = blob.startCopyFromURLWithResponse(sourceUrl,
+//                    null, null, null, null,
+//                    null, null, Context.NONE);
             //TODO: better way of updating lastModified (use custom metadata?)
-            if (rsp.statusCode() >= 400) {
-                throw new DataStoreException(
-                    String.format("Cannot update lastModified for blob. identifier=%s status=%d",
-                                  key, rsp.statusCode()));
-            }
+//            if (rsp.getStatusCode() >= 400) {
+//                throw new DataStoreException(
+//                    String.format("Cannot update lastModified for blob. identifier=%s status=%d",
+//                                  key, rsp.getStatusCode()));
+//            }
 
+            // TODO:  Is this needed?  Does sync copy actually work now?
             try {
                 // In reality this copy should be really fast since it is all server side
                 // to the blob itself.  Based on testing it doesn't appear to be dependent on size.
@@ -317,23 +324,23 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 // This wait is just to be extra careful.
                 int maxTries=50;
                 int nTries=0;
-                while (CopyStatusType.PENDING == blob.getProperties().copyStatus() &&
+                while (CopyStatusType.PENDING == blob.getProperties().getCopyStatus() &&
                         maxTries >= nTries++) {
                     Thread.sleep(50);
                 }
             }
             catch (InterruptedException e) { }
 
-            if (CopyStatusType.SUCCESS != blob.getProperties().copyStatus() &&
-                    ! (oldLastModified.toInstant().toEpochMilli() < blob.getProperties().lastModified().toInstant().toEpochMilli())) {
+            if (CopyStatusType.SUCCESS != blob.getProperties().getCopyStatus() &&
+                    ! (oldLastModified.toInstant().toEpochMilli() < blob.getProperties().getLastModified().toInstant().toEpochMilli())) {
                 LOG.warn("Attempt to update last modified of blob failed. identifier={}", key);
             }
             else {
                 LOG.debug("Blob updated. identifier={} lastModified={} duration={}", key,
-                        blob.getProperties().lastModified().toString(), (System.currentTimeMillis() - start));
+                        blob.getProperties().getLastModified().toString(), (System.currentTimeMillis() - start));
             }
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error writing blob. identifier={}", key, e);
             throw new DataStoreException(String.format("Cannot write blob. identifier=%s", key), e);
         }
@@ -395,19 +402,19 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+            BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
             BlobProperties properties = blob.getProperties();
             AzureBlobStoreDataRecord record = new AzureBlobStoreDataRecord(
                     this,
                     containerClient,
                     identifier,
-                    blob.getProperties().lastModified().toEpochSecond(),
-                    blob.getProperties().blobSize());
+                    properties.getLastModified().toEpochSecond(),
+                    properties.getBlobSize());
             LOG.debug("Data record read for blob. identifier={} duration={} record={}",
                       key, (System.currentTimeMillis() - start), record);
             return record;
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error getting data record for blob. identifier={}", key, e);
             throw new DataStoreException(String.format("Cannot retrieve blob. identifier=%s", key), e);
         } finally {
@@ -457,7 +464,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            boolean exists = containerClient.getBlockBlobClient(key).exists();
+            boolean exists = containerClient.getBlobClient(key).exists();
             LOG.debug("Blob exists={} identifier={} duration={}", exists, key, (System.currentTimeMillis() - start));
             return exists;
         }
@@ -486,23 +493,23 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            VoidResponse rsp = containerClient.getBlockBlobClient(key).deleteWithResponse(null, null, null, Context.NONE);
-            if (rsp.statusCode() < 400) {
+            Response rsp = containerClient.getBlobClient(key).deleteWithResponse(null, null, null, Context.NONE);
+            if (rsp.getStatusCode() < 400) {
                 LOG.debug("Blob deleted. identifier={} duration={}", key,
                         (System.currentTimeMillis() - start));
             }
-            else if (rsp.statusCode() == 404) {
+            else if (rsp.getStatusCode() == 404) {
                 LOG.debug("Blob delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
                         key,
                         (System.currentTimeMillis() - start));
             }
             else {
-                LOG.warn("Blob delete failed - status={}. identifier={} duration={}", rsp.statusCode(), key,
+                LOG.warn("Blob delete failed - status={}. identifier={} duration={}", rsp.getStatusCode(), key,
                         (System.currentTimeMillis() - start));
             }
         }
-        catch (StorageException e) {
-            if (e.statusCode() == 404) {
+        catch (BlobStorageException e) {
+            if (e.getStatusCode() == 404) {
                 LOG.debug("Blob delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
                         key,
                         (System.currentTimeMillis() - start));
@@ -570,7 +577,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     private void addMetadataRecordImpl(final InputStream input, String name, long recordLength) throws DataStoreException {
         try {
             String metaName = addMetaKeyPrefix(name);
-            BlockBlobClient blob = containerClient.getBlockBlobClient(metaName);
+            BlockBlobClient blob = containerClient.getBlobClient(metaName).getBlockBlobClient();
             if (-1 == recordLength) {
                 try (OutputStream blobStream = blob.getBlobOutputStream()) {
                     IOUtils.copy(input, blobStream);
@@ -580,7 +587,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 blob.upload(input, recordLength);
             }
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error adding metadata record. metadataName={} length={}", name, recordLength, e);
             throw new DataStoreException(e);
         }
@@ -597,7 +604,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
             String metaName = addMetaKeyPrefix(name);
-            BlockBlobClient blob = containerClient.getBlockBlobClient(metaName);
+            BlockBlobClient blob = containerClient.getBlobClient(metaName).getBlockBlobClient();
             if (!blob.exists()) {
                 LOG.warn("Trying to read missing metadata. metadataName={}", name);
                 return null;
@@ -606,13 +613,13 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             AzureBlobStoreDataRecord record =  new AzureBlobStoreDataRecord(this,
                     containerClient,
                     new DataIdentifier(name),
-                    properties.lastModified().toEpochSecond(),
-                    properties.blobSize(),
+                    properties.getLastModified().toEpochSecond(),
+                    properties.getBlobSize(),
                     true);
             LOG.debug("Metadata record read. metadataName={} duration={} record={}", name, (System.currentTimeMillis() - start), record);
             return record;
 
-        } catch (StorageException e) {
+        } catch (BlobStorageException e) {
             LOG.info("Error reading metadata record. metadataName={}", name, e);
             throw new RuntimeException(e);
         } catch (Exception e) {
@@ -638,21 +645,22 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             String metaPrefix = addMetaKeyPrefix(prefix);
             final AzureBlobStoreBackend backend = this;
-            containerClient.listBlobsFlat(new ListBlobsOptions().prefix(metaPrefix), null)
+
+            containerClient.listBlobs(new ListBlobsOptions().setPrefix(metaPrefix), null)
                     .forEach(
                             blobItem -> records.add(new AzureBlobStoreDataRecord(
                                     backend,
                                     containerClient,
-                                    new DataIdentifier(stripMetaKeyPrefix(blobItem.name())),
-                                    blobItem.properties().lastModified().toEpochSecond(),
-                                    blobItem.properties().contentLength(),
+                                    new DataIdentifier(stripMetaKeyPrefix(blobItem.getName())),
+                                    blobItem.getProperties().getLastModified().toEpochSecond(),
+                                    blobItem.getProperties().getContentLength(),
                                     true
                             ))
                     );
 
             LOG.debug("Metadata records read. recordsRead={} metadataFolder={} duration={}", records.size(), prefix, (System.currentTimeMillis() - start));
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error reading all metadata records. metadataFolder={}", prefix, e);
         }
         finally {
@@ -671,26 +679,26 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            BlockBlobClient blob = containerClient.getBlockBlobClient(addMetaKeyPrefix(name));
-            VoidResponse rsp = blob.deleteWithResponse(null, null, null, Context.NONE);
-            if (rsp.statusCode() < 400) {
+            BlockBlobClient blob = containerClient.getBlobClient(addMetaKeyPrefix(name)).getBlockBlobClient();
+            Response rsp = blob.deleteWithResponse(null, null, null, Context.NONE);
+            if (rsp.getStatusCode() < 400) {
                 LOG.debug("Metadata record deleted. identifier={} duration={}", name,
                         (System.currentTimeMillis() - start));
                 success = true;
             }
-            else if (rsp.statusCode() == 404) {
+            else if (rsp.getStatusCode() == 404) {
                 LOG.debug("Metadata record delete requested, but it does not exist (perhaps already deleted). identifier={} duration={}",
                         name,
                         (System.currentTimeMillis() - start));
                 success = true;
             }
             else {
-                LOG.warn("Metadata record delete failed - status={}. identifier={} duration={}", rsp.statusCode(), name,
+                LOG.warn("Metadata record delete failed - status={}. identifier={} duration={}", rsp.getStatusCode(), name,
                         (System.currentTimeMillis() - start));
             }
 
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error deleting metadata record. metadataName={}", name, e);
         }
         finally {
@@ -713,13 +721,13 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             String metaPrefix = addMetaKeyPrefix(prefix);
             final AtomicInteger total = new AtomicInteger(0);
-            containerClient.listBlobsFlat(new ListBlobsOptions().prefix(metaPrefix), null)
+            containerClient.listBlobsByHierarchy(metaPrefix)
                     .forEach(
                             blobItem -> {
                                 if (400 > containerClient
-                                        .getBlockBlobClient(blobItem.name())
+                                        .getBlobClient(blobItem.getName())
                                         .deleteWithResponse(null, null, null, Context.NONE)
-                                    .statusCode()) total.getAndIncrement();
+                                    .getStatusCode()) total.getAndIncrement();
                             }
                     );
 
@@ -727,7 +735,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     total.get(), prefix, (System.currentTimeMillis() - start));
 
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.info("Error deleting all metadata records. metadataFolder={}", prefix, e);
         }
         finally {
@@ -744,12 +752,12 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            BlockBlobClient blob = containerClient.getBlockBlobClient(addMetaKeyPrefix(name));
+            BlobClient blob = containerClient.getBlobClient(addMetaKeyPrefix(name));
             boolean exists = blob.exists();
             LOG.debug("Metadata record {} exists {}. duration={}", name, exists, (System.currentTimeMillis() - start));
             return exists;
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.debug("Error checking existence of metadata record = {}", name, e);
         }
         finally {
@@ -848,8 +856,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 }
 
                 String key = getKeyName(identifier);
-                BlockBlobClient blob = containerClient.getBlockBlobClient(key);
-                BlobSASPermission permission = new BlobSASPermission().read(true);
+                BlobClient blob = containerClient.getBlobClient(key);
+                BlobSasPermission permission = new BlobSasPermission().setReadPermission(true);
 
                 String cacheControl = String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds);
                 String contentType = downloadOptions.getContentTypeHeader();
@@ -963,7 +971,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             }
 
             String key = getKeyName(newIdentifier);
-            BlobSASPermission permission = new BlobSASPermission().write(true);
+            BlobSasPermission permission = new BlobSasPermission().setWritePermission(true);
 //            EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
             Map<String, String> presignedURIRequestParams = Maps.newHashMap();
             presignedURIRequestParams.put("comp", "block");
@@ -971,7 +979,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 presignedURIRequestParams.put("blockId",
                         Base64.encode(String.format("%06d", blockId)));
                 uploadPartURIs.add(
-                        createPresignedURI(key, containerClient.getBlockBlobClient(key),
+                        createPresignedURI(key, containerClient.getBlobClient(key),
                                 permission, httpUploadURIExpirySeconds, presignedURIRequestParams));
             }
         }
@@ -1024,13 +1032,13 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             // record doesn't exist - so this means we are safe to do the complete request
             try {
                 if (uploadToken.getUploadId().isPresent()) {
-                    BlockBlobClient blob = containerClient.getBlockBlobClient(key);
+                    BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
                     BlockList blockList = blob.listBlocks(BlockListType.UNCOMMITTED);
                     List<String> blockIds = Lists.newArrayList();
                     long size = 0L;
-                    for (Block block : blockList.uncommittedBlocks()) {
-                        blockIds.add(block.name());
-                        size += block.size();
+                    for (Block block : blockList.getUncommittedBlocks()) {
+                        blockIds.add(block.getName());
+                        size += block.getSize();
                     }
                     blob.commitBlockList(blockIds);
 
@@ -1038,7 +1046,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                             this,
                             containerClient,
                             blobId,
-                            blob.getProperties().lastModified().toEpochSecond(),
+                            blob.getProperties().getLastModified().toEpochSecond(),
                             size);
                 }
                 else {
@@ -1049,7 +1057,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                                     blobId)
                     );
                 }
-            } catch (StorageException e2) {
+            } catch (BlobStorageException e2) {
                 throw new DataRecordUploadException(
                         String.format("Unable to finalize direct write of binary %s", blobId),
                         e
@@ -1061,8 +1069,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     }
 
     private URI createPresignedURI(String key,
-                                   BlockBlobClient blobClient,
-                                   BlobSASPermission permission,
+                                   BlobClient blobClient,
+                                   BlobSasPermission permission,
                                    String cacheControlHeader,
                                    String contentTypeHeader,
                                    String contentDispositionHeader,
@@ -1071,66 +1079,83 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     }
 
     private URI createPresignedURI(String key,
-                                   BlockBlobClient blobClient,
-                                   BlobSASPermission permission,
+                                   BlobClient blobClient,
+                                   BlobSasPermission permission,
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams) {
         return createPresignedURI(key, blobClient, permission, null, null, null, expirySeconds, additionalQueryParams);
     }
 
     private URI createPresignedURI(String key,
-                                   BlockBlobClient blobClient,
-                                   BlobSASPermission permission,
+                                   BlobClient blobClient,
+                                   BlobSasPermission permission,
                                    String cacheControlHeader,
                                    String contentTypeHeader,
                                    String contentDispositionHeader,
                                    int expirySeconds,
                                    Map<String, String> additionalQueryParams) {
-        OffsetDateTime start = OffsetDateTime.now().minusMinutes(15); // Account for potential time drift between server and cloud service
-        OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
+        String accountName = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_NAME, null);
+        String accountKey = properties.getProperty(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY, null);
+
+        if (Strings.isNullOrEmpty(accountName) ||
+                Strings.isNullOrEmpty(accountKey)) {
+            LOG.info("Cannot generate signed URI when authenticating with SAS; returning null");
+            return null;
+        }
+
+        //OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
+        OffsetDateTime expiry = OffsetDateTime.of(2020, 1, 1, 12, 0, 0, 0, ZoneOffset.UTC);
 
         try {
+            BlobServiceSasSignatureValues sigBuilder = new BlobServiceSasSignatureValues()
+                    .setBlobName(key)
+                    .setPermissions(permission)
+                    .setExpiryTime(expiry);
+            if (! Strings.isNullOrEmpty(cacheControlHeader)) sigBuilder.setCacheControl(cacheControlHeader);
+            if (! Strings.isNullOrEmpty(contentTypeHeader)) sigBuilder.setContentType(contentTypeHeader);
+            if (! Strings.isNullOrEmpty(contentDispositionHeader)) sigBuilder.setContentDisposition(contentDispositionHeader);
+            StorageSharedKeyCredential credential = new StorageSharedKeyCredential(accountName, accountKey);
+            BlobServiceSasQueryParameters queryParameters = sigBuilder.generateSasQueryParameters(credential);
+            String signature = queryParameters.encode();
+
             // URI class will re-encode this signature
-            String signature = blobClient.generateSAS(
-                    null,
-                    permission,
-                    expiry,
-                    start,
-                    null,
-                    null,
-                    null,
-                    Strings.isNullOrEmpty(cacheControlHeader) ? null : cacheControlHeader,
-                    Strings.isNullOrEmpty(contentDispositionHeader) ? null : contentDispositionHeader,
-                    null,
-                    null,
-                    Strings.isNullOrEmpty(contentTypeHeader) ? null : contentTypeHeader
-            );
+//            String signature = blobClient.generateSAS(
+//                    null,
+//                    permission,
+//                    expiry,
+//                    start,
+//                    null,
+//                    null,
+//                    null,
+//                    Strings.isNullOrEmpty(cacheControlHeader) ? null : cacheControlHeader,
+//                    Strings.isNullOrEmpty(contentDispositionHeader) ? null : contentDispositionHeader,
+//                    null,
+//                    null,
+//                    Strings.isNullOrEmpty(contentTypeHeader) ? null : contentTypeHeader
+//            );
 
             for (Map.Entry<String, String> p : additionalQueryParams.entrySet()) {
                 signature = signature + "&" + URLEncoder.encode(p.getKey(), "UTF-8")
                         + "=" + URLEncoder.encode(p.getValue(), "UTF-8");
             }
 
-            URL blobUrl = blobClient.getBlobUrl();
-            URI uri = new URI(String.format("%s://%s%s?%s",
-                    blobUrl.getProtocol(),
-                    blobUrl.getHost(),
-                    blobUrl.getPath(),
+            URI uri = new URI(String.format("%s?%s",
+                    blobClient.getBlobUrl(),
                     signature));
             return uri;
         }
         catch (URISyntaxException | UnsupportedEncodingException e) {
             LOG.error("Can't generate a presigned URI for key {}", key, e);
         }
-        catch (StorageException e) {
+        catch (BlobStorageException e) {
             LOG.error("Azure request to create presigned Azure Blob Storage {} URI failed. " +
                             "Key: {}, Error: {}, HTTP Code: {}, Azure Error Code: {}",
-                    permission.read() ? "GET" :
-                            (permission.write() ? "PUT" : ""),
+                    permission.hasReadPermission() ? "GET" :
+                            (permission.hasWritePermission() ? "PUT" : ""),
                     key,
                     e.getMessage(),
-                    e.statusCode(),
-                    e.errorCode());
+                    e.getStatusCode(),
+                    e.getErrorCode());
         }
 
         return null;
@@ -1160,9 +1185,9 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         }
 
         public static AzureBlobInfo fromBlobItem(BlobItem blobItem) {
-            return new AzureBlobInfo(blobItem.name(),
-                    blobItem.properties().lastModified().toEpochSecond(),
-                    blobItem.properties().contentLength());
+            return new AzureBlobInfo(blobItem.getName(),
+                    blobItem.getProperties().getLastModified().toEpochSecond(),
+                    blobItem.getProperties().getContentLength());
         }
     }
 
@@ -1201,27 +1226,27 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 firstCall = false;
 
                 AtomicInteger nResults = new AtomicInteger(0);
-                containerClient.listBlobsFlat()
+                containerClient.listBlobs()
                         .streamByPage(resultContinuation)
                         .forEach(result -> {
-                            List<BlobItem> blobItems = result.value().stream().filter(new Predicate<BlobItem>() {
+                            List<BlobItem> blobItems = result.getValue().stream().filter(new Predicate<BlobItem>() {
                                 @Override
                                 public boolean test(BlobItem blobItem) {
-                                    return ! blobItem.name().startsWith(META_KEY_PREFIX);
+                                    return ! blobItem.getName().startsWith(META_KEY_PREFIX);
                                 }
                             }).collect(Collectors.toList());
                             nResults.addAndGet(blobItems.size());
                             items.addAll(Lists.transform(
                                     blobItems, blobItem -> AzureBlobInfo.fromBlobItem(blobItem)
                             ));
-                            resultContinuation = result.nextLink();
+                            resultContinuation = result.getContinuationToken();
                         });
 
                 LOG.debug("Container records batch read. batchSize={} containerName={} duration={}",
                         nResults.get(), containerName,  (System.currentTimeMillis() - start));
                 return nResults.get() > 0;
             }
-            catch (StorageException e) {
+            catch (BlobStorageException e) {
                 LOG.info("Error listing blobs. containerName={}", containerName, e);
             } finally {
                 if (contextClassLoader != null) {
@@ -1233,17 +1258,17 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     }
 
     static class AzureBlobStoreDataRecord extends AbstractDataRecord {
-        final ContainerClient client;
+        final BlobContainerClient client;
         final long lastModified;
         final long length;
         final boolean isMeta;
 
-        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, ContainerClient client,
+        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, BlobContainerClient client,
                                         DataIdentifier key, long lastModified, long length) {
             this(backend, client, key, lastModified, length, false);
         }
 
-        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, ContainerClient client,
+        public AzureBlobStoreDataRecord(AbstractSharedBackend backend, BlobContainerClient client,
                                         DataIdentifier key, long lastModified, long length, boolean isMeta) {
             super(backend, key);
             this.client = client;
@@ -1271,8 +1296,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 }
             }
             try {
-                return client.getBlockBlobClient(id).openInputStream();
-            } catch (StorageException e) {
+                return client.getBlobClient(id).openInputStream();
+            } catch (BlobStorageException e) {
                 throw new DataStoreException(e);
             }
         }

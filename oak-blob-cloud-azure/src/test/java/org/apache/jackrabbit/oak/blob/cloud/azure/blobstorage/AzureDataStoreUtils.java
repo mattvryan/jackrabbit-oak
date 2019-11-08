@@ -34,9 +34,9 @@ import java.util.Properties;
 
 import javax.net.ssl.HttpsURLConnection;
 
-import com.azure.core.http.rest.VoidResponse;
+import com.azure.core.http.rest.Response;
 import com.azure.core.util.Context;
-import com.azure.storage.blob.ContainerClient;
+import com.azure.storage.blob.BlobContainerClient;
 import com.google.common.base.Predicate;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
@@ -152,14 +152,14 @@ public class AzureDataStoreUtils extends DataStoreUtils {
         }
         log.info("Starting to delete container. containerName={}", containerName);
         Properties props = getAzureConfig();
-        ContainerClient container = Utils.getBlobContainer(props, containerName);
-        VoidResponse result = container.deleteWithResponse(null, null, Context.NONE);
-        if (result.statusCode() < 400 || result.statusCode() == 404) {
-            log.info("Container deleted. containerName={} existed={}", containerName, result.statusCode() != 404);
+        BlobContainerClient container = Utils.getBlobContainer(props, containerName);
+        Response result = container.deleteWithResponse(null, null, Context.NONE);
+        if (result.getStatusCode() < 400 || result.getStatusCode() == 404) {
+            log.info("Container deleted. containerName={} existed={}", containerName, result.getStatusCode() != 404);
         }
         else {
             log.warn("Unable to delete container. containerName={}, status code={}",
-                    containerName, result.statusCode());
+                    containerName, result.getStatusCode());
         }
     }
 
