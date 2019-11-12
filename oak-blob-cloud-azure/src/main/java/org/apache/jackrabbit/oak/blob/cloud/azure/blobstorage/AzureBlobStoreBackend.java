@@ -34,9 +34,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -51,8 +51,10 @@ import java.util.stream.Collectors;
 
 import com.azure.core.http.rest.Response;
 import com.azure.core.util.Context;
+import com.azure.core.util.polling.SyncPoller;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.models.BlobCopyInfo;
 import com.azure.storage.blob.models.BlobItem;
 import com.azure.storage.blob.models.BlobProperties;
 import com.azure.storage.blob.models.BlobStorageException;
@@ -285,7 +287,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             OffsetDateTime oldLastModified = blob.getProperties().getLastModified();
             LOG.trace("Blob already exists. identifier={} lastModified={}", key, oldLastModified.toString());
 
-            //URL sourceUrl = blob.getBlobUrl();
             URL sourceUrl = new URL(blob.getBlobUrl());
             if (! properties.containsKey(AzureConstants.AZURE_STORAGE_ACCOUNT_KEY)) {
                 // If we got here, we must be authenticated with a SAS - append that SAS to the blob URL
@@ -305,31 +306,16 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 sourceUrl = new URL(String.format("https://%s%s%s", sourceUrl.getHost(), sourceUrl.getPath(), queryStr));
             }
 
-            blob.copyFromUrl(sourceUrl.toString());
-//            Response rsp = blob.startCopyFromURLWithResponse(sourceUrl,
-//                    null, null, null, null,
-//                    null, null, Context.NONE);
+            // Use async copy to copy the blob.  Sync copy causes Azure to return a 404 for some reason.
             //TODO: better way of updating lastModified (use custom metadata?)
-//            if (rsp.getStatusCode() >= 400) {
-//                throw new DataStoreException(
-//                    String.format("Cannot update lastModified for blob. identifier=%s status=%d",
-//                                  key, rsp.getStatusCode()));
-//            }
+            SyncPoller<BlobCopyInfo, Void> poller = blob.beginCopy(sourceUrl.toString(), Duration.ofMillis(50));
 
-            // TODO:  Is this needed?  Does sync copy actually work now?
-            try {
-                // In reality this copy should be really fast since it is all server side
-                // to the blob itself.  Based on testing it doesn't appear to be dependent on size.
-                // The wait is usually on the order of ~60ms.
-                // This wait is just to be extra careful.
-                int maxTries=50;
-                int nTries=0;
-                while (CopyStatusType.PENDING == blob.getProperties().getCopyStatus() &&
-                        maxTries >= nTries++) {
-                    Thread.sleep(50);
-                }
-            }
-            catch (InterruptedException e) { }
+            // In reality this copy should be really fast since it is all server side
+            // to the blob itself.  Based on testing it doesn't appear to be dependent on size.
+            // The wait is usually on the order of ~60ms.
+            int maxTries=50;
+            int nTries=0;
+            while (! poller.poll().getStatus().isComplete() && maxTries >= nTries++);
 
             if (CopyStatusType.SUCCESS != blob.getProperties().getCopyStatus() &&
                     ! (oldLastModified.toInstant().toEpochMilli() < blob.getProperties().getLastModified().toInstant().toEpochMilli())) {
@@ -972,7 +958,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             String key = getKeyName(newIdentifier);
             BlobSasPermission permission = new BlobSasPermission().setWritePermission(true);
-//            EnumSet<SharedAccessBlobPermissions> perms = EnumSet.of(SharedAccessBlobPermissions.WRITE);
             Map<String, String> presignedURIRequestParams = Maps.newHashMap();
             presignedURIRequestParams.put("comp", "block");
             for (long blockId = 1; blockId <= numParts; ++blockId) {
@@ -1103,12 +1088,12 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             return null;
         }
 
-        //OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
-        OffsetDateTime expiry = OffsetDateTime.of(2020, 1, 1, 12, 0, 0, 0, ZoneOffset.UTC);
+        OffsetDateTime expiry = OffsetDateTime.now().plusSeconds(expirySeconds);
 
         try {
             BlobServiceSasSignatureValues sigBuilder = new BlobServiceSasSignatureValues()
                     .setBlobName(key)
+                    .setContainerName(containerName)
                     .setPermissions(permission)
                     .setExpiryTime(expiry);
             if (! Strings.isNullOrEmpty(cacheControlHeader)) sigBuilder.setCacheControl(cacheControlHeader);
@@ -1117,22 +1102,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             StorageSharedKeyCredential credential = new StorageSharedKeyCredential(accountName, accountKey);
             BlobServiceSasQueryParameters queryParameters = sigBuilder.generateSasQueryParameters(credential);
             String signature = queryParameters.encode();
-
-            // URI class will re-encode this signature
-//            String signature = blobClient.generateSAS(
-//                    null,
-//                    permission,
-//                    expiry,
-//                    start,
-//                    null,
-//                    null,
-//                    null,
-//                    Strings.isNullOrEmpty(cacheControlHeader) ? null : cacheControlHeader,
-//                    Strings.isNullOrEmpty(contentDispositionHeader) ? null : contentDispositionHeader,
-//                    null,
-//                    null,
-//                    Strings.isNullOrEmpty(contentTypeHeader) ? null : contentTypeHeader
-//            );
 
             for (Map.Entry<String, String> p : additionalQueryParams.entrySet()) {
                 signature = signature + "&" + URLEncoder.encode(p.getKey(), "UTF-8")
