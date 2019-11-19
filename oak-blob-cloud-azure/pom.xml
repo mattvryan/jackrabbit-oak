@@ -31,9 +31,9 @@
     <packaging>bundle</packaging>
 
     <properties>
-        <azure.version>12.0.0</azure.version>
-        <jackson.version>2.10.0</jackson.version>
         <netty.version>4.1.42.Final</netty.version>
+        <jackson.version>2.10.0</jackson.version>
+        <azure.version>12.0.0</azure.version>
     </properties>
 
     <build>
@@ -156,12 +156,13 @@
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
+            <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
         </dependency>
+        <!--
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <artifactId>jackson-annotations</artifactId>
             <version>${jackson.version}</version>
         </dependency>
         <dependency>
@@ -179,6 +180,7 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
             <version>${jackson.version}</version>
         </dependency>
+        -->
 
 
         <!-- Specify embedded Netty dependencies to avoid conflict with the rest of
@@ -192,12 +194,12 @@
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>netty-buffer</artifactId>
+            <artifactId>netty-transport</artifactId>
             <version>${netty.version}</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>netty-transport</artifactId>
+            <artifactId>netty-buffer</artifactId>
             <version>${netty.version}</version>
         </dependency>
         <dependency>

@@ -237,72 +237,23 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- These dependencies must be specified here to ensure that AzureDataStore on Azure SDK version 12
+             can continue to work with Azure Segment Store on Azure SDK version 8.  Since both modules
+             are dependencies of this module, we need to specify these transient dependency versions.
+             Once OAK-8413 is complete and both modules are on the same SDK version, we should be
+             able to get rid of these dependencies. -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
             <version>2.10.0</version>
             <scope>test</scope>
         </dependency>
-        <!--
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>2.10.0</version>
-            <scope>test</scope>
-        </dependency>
-        -->
-        <!--
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>2.10.0</version>
-            <scope>test</scope>
-        </dependency>
-        -->
-        <!--
-        <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-xml</artifactId>
-            <version>2.10.0</version>
-            <scope>test</scope>
-        </dependency>
-        -->
-        <!--
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-            <version>2.10.0</version>
-            <scope>test</scope>
-        </dependency>
-        -->
-        <!--
-        <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-jaxb-annotations</artifactId>
-            <version>2.10.0</version>
-            <scope>test</scope>
-        </dependency>
-        -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-common</artifactId>
             <version>4.1.42.Final</version>
             <scope>test</scope>
         </dependency>
-        <!--
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-resolver</artifactId>
-            <version>4.1.42.Final</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-buffer</artifactId>
-            <version>4.1.42.Final</version>
-            <scope>test</scope>
-        </dependency>
-        -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport</artifactId>
@@ -327,21 +278,7 @@
             <version>4.1.42.Final</version>
             <scope>test</scope>
         </dependency>
-        <!--
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-codec-socks</artifactId>
-            <version>4.1.42.Final</version>
-            <scope>test</scope>
-        </dependency>
-        -->
-        <!--
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-handler-proxy</artifactId>
-            <version>4.1.42.Final</version>
-            <scope>test</scope>
-        </dependency>
-        -->
+        <!-- End of the specified transient dependencies needed until we fix OAK-8413. -->
+
     </dependencies>
 </project>

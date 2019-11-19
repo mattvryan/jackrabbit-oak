@@ -16,6 +16,10 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import static org.apache.jackrabbit.oak.plugins.blob.datastore.SharedDataStoreUtils.SharedStoreRecordType.REPOSITORY;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -42,7 +46,6 @@ import com.google.common.io.Closeables;
 import com.mongodb.BasicDBObject;
 import com.mongodb.ReadPreference;
 import com.mongodb.client.MongoCollection;
-
 import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.commons.FileIOUtils;
@@ -56,8 +59,8 @@ import org.apache.jackrabbit.oak.plugins.blob.datastore.SharedDataStoreUtils;
 import org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.VersionGCStats;
 import org.apache.jackrabbit.oak.plugins.document.mongo.MongoBlobReferenceIterator;
 import org.apache.jackrabbit.oak.plugins.document.mongo.MongoTestUtils;
-import org.apache.jackrabbit.oak.spi.cluster.ClusterRepositoryInfo;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
+import org.apache.jackrabbit.oak.spi.cluster.ClusterRepositoryInfo;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
@@ -68,11 +71,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.apache.jackrabbit.oak.plugins.blob.datastore.SharedDataStoreUtils
-    .SharedStoreRecordType.REPOSITORY;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 /**
  * Tests for MongoMK GC
@@ -335,6 +333,10 @@ public class MongoBlobGCTest extends AbstractMongoConnectionTest {
         Iterator<ReferencedBlob> blobs = mk.getNodeStore().getReferencedBlobsIterator();
         assertTrue(blobs instanceof MongoBlobReferenceIterator);
     }
+
+    protected int getMaxLastModifiedInterval() {
+        return 5000;
+    }
     
     @Test
     public void gcLongRunningBlobCollection() throws Exception {
@@ -354,7 +356,7 @@ public class MongoBlobGCTest extends AbstractMongoConnectionTest {
         TestGarbageCollector gc =
             new TestGarbageCollector(new DocumentBlobReferenceRetriever(store),
                 (GarbageCollectableBlobStore) store.getBlobStore(), executor,
-                folder.newFolder().getAbsolutePath(), 5, 5000, repoId);
+                folder.newFolder().getAbsolutePath(), 5, getMaxLastModifiedInterval(), repoId);
         gc.collectGarbage(false);
         Set<String> existingAfterGC = iterate();
         log.info("{} Blobs existing after gc {}", existingAfterGC.size(), existingAfterGC);
