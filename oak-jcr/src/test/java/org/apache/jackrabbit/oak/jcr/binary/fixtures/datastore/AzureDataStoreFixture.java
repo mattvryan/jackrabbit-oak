@@ -159,7 +159,8 @@ public class AzureDataStoreFixture implements DataStoreFixture {
             container.createIfNotExists();
 
             // create new properties since azProps is shared for all created DataStores
-            Properties clonedAzProps = new Properties(azProps);
+            Properties clonedAzProps = new Properties();
+            clonedAzProps.putAll(azProps);
             clonedAzProps.setProperty(AzureConstants.AZURE_BLOB_CONTAINER_NAME, container.getName());
 
             // setup Oak DS
