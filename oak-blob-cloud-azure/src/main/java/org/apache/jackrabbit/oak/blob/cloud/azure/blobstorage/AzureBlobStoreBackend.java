@@ -112,7 +112,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
     private Properties properties;
     private String containerName;
-    private BlobContainerClient containerClient;
 
     private int concurrentRequestCount = 1;
     private int httpDownloadURIExpirySeconds = 0; // disabled by default
@@ -163,7 +162,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     ));
                 }
 
-                containerClient = Utils.getBlobContainer(properties, containerName);
+                BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
 
                 if (createBlobContainer && ! containerClient.exists()) {
                     Response rsp = containerClient.createWithResponse(null, null, null, Context.NONE);
@@ -221,7 +220,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             Thread.currentThread().setContextClassLoader(
                     getClass().getClassLoader());
 
-            BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
+            BlockBlobClient blob = Utils.getBlobContainer(properties, containerName).getBlobClient(key).getBlockBlobClient();
             if (! blob.exists()) {
                 throw new DataStoreException(String.format("Trying to read missing blob. identifier=%s", key));
             }
@@ -262,7 +261,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             long len = file.length();
             LOG.debug("Blob write started. identifier={} length={}", key, len);
-            BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
+            BlockBlobClient blob = Utils.getBlobContainer(properties, containerName).getBlobClient(key).getBlockBlobClient();
             if (!blob.exists()) {
                 boolean useBufferedStream = len < BUFFERED_STREAM_THRESHHOLD;
                 final InputStream in = useBufferedStream  ? new BufferedInputStream(new FileInputStream(file)) : new FileInputStream(file);
@@ -388,6 +387,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
+            BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
             BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
             BlobProperties properties = blob.getProperties();
             AzureBlobStoreDataRecord record = new AzureBlobStoreDataRecord(
@@ -427,6 +427,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     @Override
     public Iterator<DataRecord> getAllRecords() throws DataStoreException {
         final AbstractSharedBackend backend = this;
+        final BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
         return new RecordsIterator<DataRecord>(
                 new Function<AzureBlobInfo, DataRecord>() {
                     @Override
@@ -450,7 +451,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            boolean exists = containerClient.getBlobClient(key).exists();
+            boolean exists = Utils.getBlobContainer(properties, containerName).getBlobClient(key).exists();
             LOG.debug("Blob exists={} identifier={} duration={}", exists, key, (System.currentTimeMillis() - start));
             return exists;
         }
@@ -479,7 +480,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            Response rsp = containerClient.getBlobClient(key).deleteWithResponse(null, null, null, Context.NONE);
+            Response rsp = Utils.getBlobContainer(properties, containerName).getBlobClient(key).deleteWithResponse(null, null, null, Context.NONE);
             if (rsp.getStatusCode() < 400) {
                 LOG.debug("Blob deleted. identifier={} duration={}", key,
                         (System.currentTimeMillis() - start));
@@ -563,7 +564,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
     private void addMetadataRecordImpl(final InputStream input, String name, long recordLength) throws DataStoreException {
         try {
             String metaName = addMetaKeyPrefix(name);
-            BlockBlobClient blob = containerClient.getBlobClient(metaName).getBlockBlobClient();
+            BlockBlobClient blob = Utils.getBlobContainer(properties, containerName).getBlobClient(metaName).getBlockBlobClient();
             if (-1 == recordLength) {
                 try (OutputStream blobStream = blob.getBlobOutputStream()) {
                     IOUtils.copy(input, blobStream);
@@ -590,6 +591,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
             String metaName = addMetaKeyPrefix(name);
+            BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
             BlockBlobClient blob = containerClient.getBlobClient(metaName).getBlockBlobClient();
             if (!blob.exists()) {
                 LOG.warn("Trying to read missing metadata. metadataName={}", name);
@@ -631,6 +633,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             String metaPrefix = addMetaKeyPrefix(prefix);
             final AzureBlobStoreBackend backend = this;
+            BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
 
             containerClient.listBlobs(new ListBlobsOptions().setPrefix(metaPrefix), null)
                     .forEach(
@@ -646,8 +649,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             LOG.debug("Metadata records read. recordsRead={} metadataFolder={} duration={}", records.size(), prefix, (System.currentTimeMillis() - start));
         }
-        catch (BlobStorageException e) {
-            LOG.info("Error reading all metadata records. metadataFolder={}", prefix, e);
+        catch (DataStoreException e1) {
+            LOG.warn("Unable to create Azure storage service client", e1);
+        }
+        catch (BlobStorageException e2) {
+            LOG.info("Error reading all metadata records. metadataFolder={}", prefix, e2);
         }
         finally {
             if (null != contextClassLoader) {
@@ -665,7 +671,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            BlockBlobClient blob = containerClient.getBlobClient(addMetaKeyPrefix(name)).getBlockBlobClient();
+            BlockBlobClient blob = Utils.getBlobContainer(properties, containerName).getBlobClient(addMetaKeyPrefix(name)).getBlockBlobClient();
             Response rsp = blob.deleteWithResponse(null, null, null, Context.NONE);
             if (rsp.getStatusCode() < 400) {
                 LOG.debug("Metadata record deleted. identifier={} duration={}", name,
@@ -684,8 +690,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             }
 
         }
-        catch (BlobStorageException e) {
-            LOG.info("Error deleting metadata record. metadataName={}", name, e);
+        catch (DataStoreException e1) {
+            LOG.warn("Unable to create Azure storage service client", e1);
+        }
+        catch (BlobStorageException e2) {
+            LOG.info("Error deleting metadata record. metadataName={}", name, e2);
         }
         finally {
             if (contextClassLoader != null) {
@@ -707,6 +716,8 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
 
             String metaPrefix = addMetaKeyPrefix(prefix);
             final AtomicInteger total = new AtomicInteger(0);
+            BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
+
             containerClient.listBlobsByHierarchy(metaPrefix)
                     .forEach(
                             blobItem -> {
@@ -721,8 +732,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     total.get(), prefix, (System.currentTimeMillis() - start));
 
         }
-        catch (BlobStorageException e) {
-            LOG.info("Error deleting all metadata records. metadataFolder={}", prefix, e);
+        catch (DataStoreException e1) {
+            LOG.warn("Unable to create Azure storage service client", e1);
+        }
+        catch (BlobStorageException e2) {
+            LOG.info("Error deleting all metadata records. metadataFolder={}", prefix, e2);
         }
         finally {
             if (null != contextClassLoader) {
@@ -738,13 +752,16 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         try {
             Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 
-            BlobClient blob = containerClient.getBlobClient(addMetaKeyPrefix(name));
+            BlobClient blob = Utils.getBlobContainer(properties, containerName).getBlobClient(addMetaKeyPrefix(name));
             boolean exists = blob.exists();
             LOG.debug("Metadata record {} exists {}. duration={}", name, exists, (System.currentTimeMillis() - start));
             return exists;
         }
-        catch (BlobStorageException e) {
-            LOG.debug("Error checking existence of metadata record = {}", name, e);
+        catch (DataStoreException e1) {
+            LOG.warn("Unable to create Azure storage service client", e1);
+        }
+        catch (BlobStorageException e2) {
+            LOG.debug("Error checking existence of metadata record = {}", name, e2);
         }
         finally {
             if (contextClassLoader != null) {
@@ -841,17 +858,23 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                     }
                 }
 
-                String key = getKeyName(identifier);
-                BlobClient blob = containerClient.getBlobClient(key);
-                BlobSasPermission permission = new BlobSasPermission().setReadPermission(true);
+                try {
+                    String key = getKeyName(identifier);
+                    BlobClient blob = Utils.getBlobContainer(properties, containerName).getBlobClient(key);
+                    BlobSasPermission permission = new BlobSasPermission().setReadPermission(true);
 
-                String cacheControl = String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds);
-                String contentType = downloadOptions.getContentTypeHeader();
-                String contentDisposition = downloadOptions.getContentDispositionHeader();
+                    String cacheControl = String.format("private, max-age=%d, immutable", httpDownloadURIExpirySeconds);
+                    String contentType = downloadOptions.getContentTypeHeader();
+                    String contentDisposition = downloadOptions.getContentDispositionHeader();
 
-                uri = createPresignedURI(key, blob, permission,
-                        cacheControl, contentType, contentDisposition,
-                        httpDownloadURIExpirySeconds);
+                    uri = createPresignedURI(key, blob, permission,
+                            cacheControl, contentType, contentDisposition,
+                            httpDownloadURIExpirySeconds);
+                }
+                catch (DataStoreException e) {
+                    LOG.warn("Unable to create Azure storage service client", e);
+                    uri = null;
+                }
 
                 if (uri != null && httpDownloadURICache != null) {
                     httpDownloadURICache.put(identifier, uri);
@@ -960,12 +983,18 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             BlobSasPermission permission = new BlobSasPermission().setWritePermission(true);
             Map<String, String> presignedURIRequestParams = Maps.newHashMap();
             presignedURIRequestParams.put("comp", "block");
-            for (long blockId = 1; blockId <= numParts; ++blockId) {
-                presignedURIRequestParams.put("blockId",
-                        Base64.encode(String.format("%06d", blockId)));
-                uploadPartURIs.add(
-                        createPresignedURI(key, containerClient.getBlobClient(key),
-                                permission, httpUploadURIExpirySeconds, presignedURIRequestParams));
+            try {
+                for (long blockId = 1; blockId <= numParts; ++blockId) {
+                    presignedURIRequestParams.put("blockId",
+                            Base64.encode(String.format("%06d", blockId)));
+                    uploadPartURIs.add(
+                            createPresignedURI(key, Utils.getBlobContainer(properties, containerName).getBlobClient(key),
+                                    permission, httpUploadURIExpirySeconds, presignedURIRequestParams));
+                }
+            }
+            catch (DataStoreException e1) {
+                LOG.warn("Unable to create Azure storage service client", e1);
+                return null;
             }
         }
 
@@ -988,7 +1017,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 public Collection<URI> getUploadURIs() { return uploadPartURIs; }
             };
         }
-        catch (DataStoreException e) {
+        catch (DataStoreException e2) {
             LOG.warn("Unable to obtain data store key");
         }
 
@@ -1013,9 +1042,10 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             // (we don't need to do anything in this case - blob is already uploaded)
             // or it was completed before with the same token.
         }
-        catch (DataStoreException e) {
+        catch (DataStoreException e1) {
             // record doesn't exist - so this means we are safe to do the complete request
             try {
+                BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
                 if (uploadToken.getUploadId().isPresent()) {
                     BlockBlobClient blob = containerClient.getBlobClient(key).getBlockBlobClient();
                     BlockList blockList = blob.listBlocks(BlockListType.UNCOMMITTED);
@@ -1045,7 +1075,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
             } catch (BlobStorageException e2) {
                 throw new DataRecordUploadException(
                         String.format("Unable to finalize direct write of binary %s", blobId),
-                        e
+                        e2
                 );
             }
         }
@@ -1195,6 +1225,7 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                 firstCall = false;
 
                 AtomicInteger nResults = new AtomicInteger(0);
+                BlobContainerClient containerClient = Utils.getBlobContainer(properties, containerName);
                 containerClient.listBlobs()
                         .streamByPage(resultContinuation)
                         .forEach(result -> {
@@ -1215,8 +1246,11 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
                         nResults.get(), containerName,  (System.currentTimeMillis() - start));
                 return nResults.get() > 0;
             }
-            catch (BlobStorageException e) {
-                LOG.info("Error listing blobs. containerName={}", containerName, e);
+            catch (DataStoreException e1) {
+                LOG.warn("Unable to create Azure storage service client", e1);
+            }
+            catch (BlobStorageException e2) {
+                LOG.info("Error listing blobs. containerName={}", containerName, e2);
             } finally {
                 if (contextClassLoader != null) {
                     currentThread().setContextClassLoader(contextClassLoader);
