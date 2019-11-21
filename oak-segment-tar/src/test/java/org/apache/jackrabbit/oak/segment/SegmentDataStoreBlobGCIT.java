@@ -145,6 +145,10 @@ public class SegmentDataStoreBlobGCIT {
         return DataStoreUtils.getBlobStore(folder);
     }
 
+    protected int getMaxLastModifiedInterval() {
+        return 5000;
+    }
+
     public DataStoreState setUp(int count) throws Exception {
         if (blobStore == null) {
             blobStore = getBlobStore(folder.newFolder());
@@ -368,7 +372,8 @@ public class SegmentDataStoreBlobGCIT {
         }
         TestGarbageCollector gc = new TestGarbageCollector(
             new SegmentBlobReferenceRetriever(store),
-            (GarbageCollectableBlobStore) store.getBlobStore(), executor, folder.newFolder().getAbsolutePath(), 5, 5000, repoId);
+            (GarbageCollectableBlobStore) store.getBlobStore(), executor, folder.newFolder().getAbsolutePath(),
+                5, getMaxLastModifiedInterval(), repoId);
         gc.collectGarbage(false);
         Set<String> existingAfterGC = iterate();
         log.info("{} Blobs existing after gc {}", existingAfterGC.size(), existingAfterGC);
