@@ -51,9 +51,6 @@
                         </Export-Package>
                         <DynamicImport-Package>sun.io</DynamicImport-Package>
                         <Embed-Dependency>
-                            <!--
-                            netty-*,
-                            -->
                             jackson-*,
                             azure-*
                         </Embed-Dependency>
