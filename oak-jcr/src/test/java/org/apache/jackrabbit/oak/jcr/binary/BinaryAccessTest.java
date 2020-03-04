@@ -455,7 +455,7 @@ public class BinaryAccessTest extends AbstractRepositoryTest {
     public void testAuthorizableProperty() throws Exception {
         try {
             lock.lock();
-            
+
             assertTrue(getAdminSession() instanceof JackrabbitSession);
             JackrabbitSession session = (JackrabbitSession) getAdminSession();
             UserManager userMgr = session.getUserManager();
