@@ -1057,7 +1057,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         String domain = ignoreDomainOverride
                 ? getDefaultBlobStorageDomain()
                 : downloadDomainOverride;
-                //: properties.getProperty(AzureConstants.PRESIGNED_HTTP_DOWNLOAD_URI_DOMAIN_OVERRIDE, null);
         if (Strings.isNullOrEmpty(domain)) {
             domain = getDefaultBlobStorageDomain();
         }
@@ -1068,7 +1067,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         String domain = ignoreDomainOverride
                 ? getDefaultBlobStorageDomain()
                 : uploadDomainOverride;
-                //: properties.getProperty(AzureConstants.PRESIGNED_HTTP_UPLOAD_URI_DOMAIN_OVERRIDE, null);
         if (Strings.isNullOrEmpty(domain)) {
             domain = getDefaultBlobStorageDomain();
         }
