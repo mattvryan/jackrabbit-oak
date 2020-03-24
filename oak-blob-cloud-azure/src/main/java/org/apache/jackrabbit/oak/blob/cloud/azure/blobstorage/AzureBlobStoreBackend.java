@@ -780,14 +780,6 @@ public class AzureBlobStoreBackend extends AbstractSharedBackend {
         }
     }
 
-    void setUploadDomainOverride(String domainOverride) {
-        uploadDomainOverride = domainOverride;
-    }
-
-    void setDownloadDomainOverride(String domainOverride) {
-        downloadDomainOverride = domainOverride;
-    }
-
     URI createHttpDownloadURI(@NotNull DataIdentifier identifier,
                               @NotNull DataRecordDownloadOptions downloadOptions) {
         URI uri = null;
