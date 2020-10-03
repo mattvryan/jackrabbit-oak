@@ -16,16 +16,6 @@
  */
 package org.apache.jackrabbit.oak.jcr.session;
 
-import static com.google.common.collect.Lists.newArrayListWithCapacity;
-import static org.apache.jackrabbit.oak.api.Type.NAME;
-import static org.apache.jackrabbit.oak.api.Type.NAMES;
-import static org.apache.jackrabbit.oak.api.Type.PATH;
-import static org.apache.jackrabbit.oak.api.Type.PATHS;
-import static org.apache.jackrabbit.oak.api.Type.STRING;
-import static org.apache.jackrabbit.oak.api.Type.UNDEFINED;
-import static org.apache.jackrabbit.oak.api.Type.UNDEFINEDS;
-import static org.apache.jackrabbit.oak.plugins.memory.PropertyStates.createProperty;
-
 import java.util.List;
 
 import javax.jcr.AccessDeniedException;
@@ -55,6 +45,16 @@ import org.apache.jackrabbit.oak.plugins.nodetype.write.ReadWriteNodeTypeManager
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.google.common.collect.Lists.newArrayListWithCapacity;
+import static org.apache.jackrabbit.oak.api.Type.NAME;
+import static org.apache.jackrabbit.oak.api.Type.NAMES;
+import static org.apache.jackrabbit.oak.api.Type.PATH;
+import static org.apache.jackrabbit.oak.api.Type.PATHS;
+import static org.apache.jackrabbit.oak.api.Type.STRING;
+import static org.apache.jackrabbit.oak.api.Type.UNDEFINED;
+import static org.apache.jackrabbit.oak.api.Type.UNDEFINEDS;
+import static org.apache.jackrabbit.oak.plugins.memory.PropertyStates.createProperty;
 
 /**
  * TODO document
@@ -112,6 +112,19 @@ abstract class ItemImpl<T extends ItemDelegate> implements Item {
         return sessionDelegate.perform(op);
     }
 
+    private static final String itemPath(final String path) {
+        return null == path ? "" : PathUtils.getParentPath(path) + " " + PathUtils.getName(path);
+    }
+
+    private void trace() {
+        try {
+            throw new Exception();
+        }
+        catch (Exception e) {
+            log.trace(this.toString(), e);
+        }
+    }
+
     //---------------------------------------------------------------< Item >---
 
     /**
@@ -120,10 +133,11 @@ abstract class ItemImpl<T extends ItemDelegate> implements Item {
     @Override
     @NotNull
     public String getName() throws RepositoryException {
-        String oakName = perform(new ItemOperation<String>(dlg, "getName") {
+        String oakName = perform(new ItemOperation<String>(dlg, "Item.getName " + itemPath(dlg.getPath())) {
             @NotNull
             @Override
             public String perform() {
+                trace();
                 return item.getName();
             }
         });
@@ -137,10 +151,11 @@ abstract class ItemImpl<T extends ItemDelegate> implements Item {
     @Override
     @NotNull
     public String getPath() throws RepositoryException {
-        return toJcrPath(perform(new ItemOperation<String>(dlg, "getPath") {
+        return toJcrPath(perform(new ItemOperation<String>(dlg, "Item.getPath " + itemPath(dlg.getPath())) {
             @NotNull
             @Override
             public String perform() {
+                trace();
                 return item.getPath();
             }
         }));
@@ -160,10 +175,11 @@ abstract class ItemImpl<T extends ItemDelegate> implements Item {
             return sessionContext.getSession().getRootNode();
         }
 
-        ItemDelegate ancestor = perform(new ItemOperation<ItemDelegate>(dlg, "getAncestor") {
+        ItemDelegate ancestor = perform(new ItemOperation<ItemDelegate>(dlg, "Item.getAncestor " + itemPath(dlg.getPath())) {
             @NotNull
             @Override
             public ItemDelegate perform() throws RepositoryException {
+                trace();
                 String path = item.getPath();
 
                 int slash = 0;
@@ -285,9 +301,10 @@ abstract class ItemImpl<T extends ItemDelegate> implements Item {
         if (!keepChanges) {
             log.warn("Item#refresh invokes Session#refresh!");
         }
-        sessionDelegate.performVoid(new SessionOperation<Void>("refresh") {
+        sessionDelegate.performVoid(new SessionOperation<Void>("Item.refresh " + itemPath(dlg.getPath())) {
             @Override
             public void performVoid() throws InvalidItemStateException {
+                trace();
                 sessionDelegate.refresh(keepChanges);
                 if (!dlg.exists()) {
                     throw new InvalidItemStateException(

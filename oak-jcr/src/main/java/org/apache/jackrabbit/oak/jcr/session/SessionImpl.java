@@ -16,11 +16,6 @@
  */
 package org.apache.jackrabbit.oak.jcr.session;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.Sets.newTreeSet;
-import static org.apache.jackrabbit.api.stats.RepositoryStatistics.Type.SESSION_COUNT;
-import static org.apache.jackrabbit.oak.commons.PathUtils.getParentPath;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -76,6 +71,11 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Sets.newTreeSet;
+import static org.apache.jackrabbit.api.stats.RepositoryStatistics.Type.SESSION_COUNT;
+import static org.apache.jackrabbit.oak.commons.PathUtils.getParentPath;
+
 /**
  * TODO document
  */
@@ -112,6 +112,15 @@ public class SessionImpl implements JackrabbitSession {
             if ("0123456789".indexOf(ch) == -1) {
                 return;
             }
+        }
+    }
+
+    private void trace() {
+        try {
+            throw new Exception();
+        }
+        catch (Exception e) {
+            log.trace(this.toString(), e);
         }
     }
 
@@ -179,9 +188,10 @@ public class SessionImpl implements JackrabbitSession {
     public Node getNodeOrNull(final String absPath) throws RepositoryException {
         checkNotNull(absPath);
         checkAlive();
-        return sd.performNullable(new ReadOperation<Node>("getNodeOrNull") {
+        return sd.performNullable(new ReadOperation<Node>("Session.getNodeOrNull") {
             @Override
             public Node performNullable() throws RepositoryException {
+                trace();
                 try {
                     return NodeImpl.createNodeOrNull(sd.getNode(getOakPathOrThrow(absPath)), sessionContext);
                 } catch (PathNotFoundException e) {
@@ -204,9 +214,10 @@ public class SessionImpl implements JackrabbitSession {
             } catch (PathNotFoundException e) {
                 return null;
             }
-            return sd.performNullable(new ReadOperation<Property>("getPropertyOrNull") {
+            return sd.performNullable(new ReadOperation<Property>("Session.getPropertyOrNull") {
                 @Override
                 public Property performNullable() {
+                    trace();
                     PropertyDelegate pd = sd.getProperty(oakPath);
                     if (pd != null) {
                         return new PropertyImpl(pd, sessionContext);
@@ -223,9 +234,10 @@ public class SessionImpl implements JackrabbitSession {
     public Item getItemOrNull(final String absPath) throws RepositoryException {
         checkNotNull(absPath);
         checkAlive();
-        return sd.performNullable(new ReadOperation<Item>("getItemOrNull") {
+        return sd.performNullable(new ReadOperation<Item>("Session.getItemOrNull") {
             @Override
             public Item performNullable() throws RepositoryException {
+                trace();
                 return getItemInternal(getOakPathOrThrow(absPath));
             }
         });
@@ -286,10 +298,11 @@ public class SessionImpl implements JackrabbitSession {
     @NotNull
     public Node getRootNode() throws RepositoryException {
         checkAlive();
-        return sd.perform(new ReadOperation<Node>("getRootNode") {
+        return sd.perform(new ReadOperation<Node>("Session.getRootNode") {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
+                trace();
                 NodeDelegate nd = sd.getRootNode();
                 if (nd == null) {
                     throw new AccessDeniedException("Root node is not accessible.");
@@ -316,10 +329,11 @@ public class SessionImpl implements JackrabbitSession {
     @NotNull
     private Node getNodeById(@NotNull final String id) throws RepositoryException {
         checkAlive();
-        return sd.perform(new ReadOperation<Node>("getNodeById") {
+        return sd.perform(new ReadOperation<Node>("Session.getNodeById") {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
+                trace();
                 try {
                     NodeDelegate nd = sd.getNodeByIdentifier(id);
                     if (nd == null) {

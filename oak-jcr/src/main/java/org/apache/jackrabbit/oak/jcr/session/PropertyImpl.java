@@ -16,8 +16,6 @@
  */
 package org.apache.jackrabbit.oak.jcr.session;
 
-import static com.google.common.collect.Lists.newArrayListWithCapacity;
-
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.Calendar;
@@ -41,6 +39,7 @@ import javax.jcr.version.VersionException;
 
 import org.apache.jackrabbit.oak.api.Tree.Status;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.jcr.delegate.NodeDelegate;
 import org.apache.jackrabbit.oak.jcr.delegate.PropertyDelegate;
 import org.apache.jackrabbit.oak.jcr.session.operation.PropertyOperation;
@@ -49,6 +48,8 @@ import org.apache.jackrabbit.value.ValueHelper;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.google.common.collect.Lists.newArrayListWithCapacity;
 
 /**
  * TODO document
@@ -69,13 +70,27 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
         return false;
     }
 
+    private static final String propertyPath(final String path) {
+        return null == path ? "" : "@" + PathUtils.getParentPath(path) + " " + PathUtils.getName(path);
+    }
+
+    private final void trace() {
+        try {
+            throw new Exception();
+        }
+        catch (Exception e) {
+            LOG.trace(this.toString(), e);
+        }
+    }
+
     @Override
     @NotNull
     public Node getParent() throws RepositoryException {
-        return perform(new PropertyOperation<Node>(dlg, "getParent") {
+        return perform(new PropertyOperation<Node>(dlg, "Property.getParent " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
+                trace();
                 NodeDelegate parent = property.getParent();
                 if (parent == null) {
                     throw new AccessDeniedException();
@@ -245,10 +260,11 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public Value getValue() throws RepositoryException {
-        return perform(new PropertyOperation<Value>(dlg, "getValue") {
+        return perform(new PropertyOperation<Value>(dlg, "Property.getValue " + propertyPath(dlg.getPath()) ) {
             @NotNull
             @Override
             public Value perform() throws RepositoryException {
+                trace();
                 return new PartialValueFactory(sessionContext, sessionContext.getBlobAccessProvider())
                         .createValue(property.getSingleState());
             }
@@ -258,10 +274,11 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public Value[] getValues() throws RepositoryException {
-        return perform(new PropertyOperation<List<Value>>(dlg, "getValues") {
+        return perform(new PropertyOperation<List<Value>>(dlg, "Property.getValues " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public List<Value> perform() throws RepositoryException {
+                trace();
                 return new PartialValueFactory(sessionContext, sessionContext.getBlobAccessProvider())
                         .createValues(property.getMultiState());
             }
@@ -317,10 +334,12 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public Node getNode() throws RepositoryException {
-        return perform(new PropertyOperation<Node>(dlg, "getNode") {
+        return perform(new PropertyOperation<Node>(dlg, "Property.getNode " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
+                trace();
+
                 // TODO: avoid nested calls
                 Value value = getValue();
                 switch (value.getType()) {
@@ -371,10 +390,12 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public Property getProperty() throws RepositoryException {
-        return perform(new PropertyOperation<Property>(dlg, "getProperty") {
+        return perform(new PropertyOperation<Property>(dlg, "Property.getProperty " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public Property perform() throws RepositoryException {
+                trace();
+
                 // TODO: avoid nested calls
                 Value value = getValue();
                 Value pathValue = ValueHelper.convert(value, PropertyType.PATH, getValueFactory());
@@ -408,10 +429,11 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
     @Override
     @NotNull
     public PropertyDefinition getDefinition() throws RepositoryException {
-        return perform(new PropertyOperation<PropertyDefinition>(dlg, "getDefinition") {
+        return perform(new PropertyOperation<PropertyDefinition>(dlg, "Property.getDefinition " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public PropertyDefinition perform() throws RepositoryException {
+                trace();
                 return getNodeTypeManager().getDefinition(
                         property.getParent().getTree(),
                         property.getPropertyState(), true);
@@ -421,10 +443,11 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
 
     @Override
     public int getType() throws RepositoryException {
-        return perform(new PropertyOperation<Integer>(dlg, "getType") {
+        return perform(new PropertyOperation<Integer>(dlg, "Property.getType " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public Integer perform() throws RepositoryException {
+                trace();
                 return property.getPropertyState().getType().tag();
             }
         });
@@ -432,10 +455,11 @@ public class PropertyImpl extends ItemImpl<PropertyDelegate> implements Property
 
     @Override
     public boolean isMultiple() throws RepositoryException {
-        return perform(new PropertyOperation<Boolean>(dlg, "isMultiple") {
+        return perform(new PropertyOperation<Boolean>(dlg, "Property.isMultiple " + propertyPath(dlg.getPath())) {
             @NotNull
             @Override
             public Boolean perform() throws RepositoryException {
+                trace();
                 return property.getPropertyState().isArray();
             }
         });
