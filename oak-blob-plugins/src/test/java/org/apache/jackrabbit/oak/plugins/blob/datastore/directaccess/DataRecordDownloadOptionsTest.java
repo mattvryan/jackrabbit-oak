@@ -273,8 +273,8 @@ public class DataRecordDownloadOptionsTest {
                 "image.png",
                 "text.txt",
                 "filename with spaces.jpg",
-                "\"filename-with-double-quotes\".jpg",
-                "filename-with-one\"double-quote.jpg",
+                "\\\"filename-with-double-quotes\\\".jpg",
+                "filename-with-one\\\"double-quote.jpg",
                 "Umla?utfile.jpg"
         );
         List<String> rfc8187_filenames = Lists.newArrayList(
