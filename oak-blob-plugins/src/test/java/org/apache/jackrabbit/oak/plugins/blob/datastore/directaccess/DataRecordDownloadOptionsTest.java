@@ -266,6 +266,7 @@ public class DataRecordDownloadOptionsTest {
                 "text.txt",
                 "filename with spaces.jpg",
                 "\"filename-with-double-quotes\".jpg",
+                "filename-with-one\"double-quote.jpg",
                 "Umläutfile.jpg"
         );
         List<String> iso_8859_1_filenames = Lists.newArrayList(
@@ -273,6 +274,7 @@ public class DataRecordDownloadOptionsTest {
                 "text.txt",
                 "filename with spaces.jpg",
                 "\"filename-with-double-quotes\".jpg",
+                "filename-with-one\"double-quote.jpg",
                 "Umla?utfile.jpg"
         );
         List<String> rfc8187_filenames = Lists.newArrayList(
@@ -280,6 +282,7 @@ public class DataRecordDownloadOptionsTest {
                 "text.txt",
                 "filename%20with%20spaces.jpg",
                 "%22filename-with-double-quotes%22.jpg",
+                "filename-with-one%22double-quote.jpg",
                 "Umla%CC%88utfile.jpg"
         );
 

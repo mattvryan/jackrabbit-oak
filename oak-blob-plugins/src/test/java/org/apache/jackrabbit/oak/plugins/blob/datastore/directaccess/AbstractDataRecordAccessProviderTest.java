@@ -180,18 +180,21 @@ public abstract class AbstractDataRecordAccessProviderTest {
                 "image.png",
                 "beautiful landscape.png",
                 "\"filename-with-double-quotes\".png",
+                "filename-with-one\"double-quote.jpg",
                 "Umläutfile.png"
                 );
         List<String> iso_8859_1_fileNames = Lists.newArrayList(
                 "image.png",
                 "beautiful landscape.png",
                 "\"filename-with-double-quotes\".png",
+                "filename-with-one\"double-quote.jpg",
                 "Umla?utfile.png"
         );
         List<String> rfc8187_fileNames = Lists.newArrayList(
                 "image.png",
                 "beautiful%20landscape.png",
                 "%22filename-with-double-quotes%22.png",
+                "filename-with-one%22double-quote.jpg",
                 "Umla%CC%88utfile.png"
         );
 
